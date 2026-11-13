@@ -63,6 +63,13 @@
 - Keep a linear history. Rebase branches when integrating upstream changes and use rebase and merge for integration.
 - Follow the existing user Git identity and the task's authorization for commits and remote operations.
 
+## Automatic delivery
+
+- The user authorizes automatic commits, pushes, and integration for completed work in this repository. Carry an accepted task through delivery without requesting confirmation again for those routine actions.
+- Until GitHub Actions acceptance gates are established, use the task's documented local acceptance checks as the integration gate. Bootstrap the empty repository with a coherent initial default-branch commit.
+- Once Actions gates are established, push a task branch, open a PR, follow its checks, address failures, and merge using rebase merge when the required checks pass. Verify checks against the current PR head and keep the resulting history linear.
+- Preserve repository permissions and branch rules. Record the commit/PR and integration result in the task or handoff; report an external blocker if delivery requires access or a decision outside the authorized scope.
+
 ## Dependencies, artifacts, and handoff
 
 - Pin dependency revisions and toolchains. Preserve licenses, source provenance, and local adaptation patches.

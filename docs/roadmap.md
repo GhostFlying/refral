@@ -46,6 +46,14 @@ Inspect the actual existing command buffer, GL provider, upload path, threads, a
 
 ## Task execution
 
+### Delivery and CI
+
+Task 010 establishes automatic commit/push/integration after documented task acceptance. The initial verified repository baseline is published directly to the default branch. GitHub Actions is the next delivery-infrastructure task: add deterministic TypeScript/JS/Rust checks and actual-Wasm build/tests first, then a separately identified compiler/browser tier with reproducible dependencies and uploaded failure evidence. Keep software-renderer CI results distinct from actual hardware GPU validation and performance evidence.
+
+Once Actions acceptance gates are established, deliver subsequent work through task branches and pull requests, follow the required checks, and rebase merge successful changes. The current policy does not imply that workflows or required-check settings already exist.
+
+### Ownership
+
 The integrating agent owns root configuration, architecture, shared contracts, integration, and support reporting. Bounded tasks advance JS semantics, Rust semantics, shared modules, and verification. Each task records scope, dependencies, owned files, commands, evidence, status, and parity gaps. Coordinate interface changes with the integrating agent.
 
 ## Recorded stage status

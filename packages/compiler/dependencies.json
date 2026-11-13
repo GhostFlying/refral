@@ -1,0 +1,11 @@
+{
+  "angle": {
+    "repository": "https://github.com/google/angle",
+    "revision": "a03f7cbe9746a577b50629b78f10505744a40291"
+  },
+  "emsdk": {
+    "repository": "https://github.com/emscripten-core/emsdk",
+    "revision": "1693ce7359fc9694f198694f902a2cc061239b86",
+    "sdkVersion": "4.0.23"
+  }
+}

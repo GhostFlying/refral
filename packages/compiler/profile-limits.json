@@ -1,0 +1,9 @@
+{
+  "vertexAttributes": 8,
+  "vertexUniformVectors": 128,
+  "fragmentUniformVectors": 64,
+  "varyingVectors": 8,
+  "vertexTextureUnits": 8,
+  "fragmentTextureUnits": 8,
+  "combinedTextureUnits": 8
+}

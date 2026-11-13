@@ -1,0 +1,13 @@
+{
+  "name": "@refral/core-wasm",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "test:wasm": "vitest run --config vitest.wasm.config.ts"
+  },
+  "dependencies": {
+    "@refral/core-api": "workspace:*"
+  }
+}

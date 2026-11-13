@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Refral · Runtime core comparison</title>
+    <style>
+      body { max-width: 1080px; margin: 48px auto; padding: 0 24px; color: #172126; background: #f5f7f8; font: 15px/1.5 Geist, sans-serif; }
+      h1 { margin-bottom: 8px; font-size: 30px; letter-spacing: -0.03em; }
+      p { max-width: 780px; color: #4b5c65; }
+      button { margin: 16px 0; padding: 10px 16px; border: 0; border-radius: 6px; background: #155c56; color: white; font: inherit; cursor: pointer; }
+      button:disabled { opacity: 0.6; cursor: progress; }
+      table { width: 100%; border-collapse: collapse; background: white; }
+      th, td { padding: 10px 14px; border-bottom: 1px solid #dce3e7; text-align: left; }
+      th { font-weight: 600; }
+      #status { font-weight: 600; }
+      pre { overflow: auto; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Runtime core comparison</h1>
+    <p>Compare the same seeded state traces in JavaScript and Rust/Wasm, then verify every emitted draw color through a common WebGPU executor.</p>
+    <button id="run">Run core comparison</button>
+    <p id="status" role="status">Ready</p>
+    <table hidden id="results">
+      <thead><tr><th>Scene</th><th>Path</th><th>CPU p50, ms</th><th>CPU p95, ms</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <pre id="details"></pre>
+    <script type="module">
+      import { runBrowserSelection } from './browser.mjs';
+      const button = document.querySelector('#run');
+      const status = document.querySelector('#status');
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        status.textContent = 'Running CPU samples and WebGPU verification';
+        window.selectionResult = null;
+        window.selectionFailure = null;
+        try {
+          const result = await runBrowserSelection();
+          const body = document.querySelector('tbody');
+          body.replaceChildren();
+          for (const record of result.records) {
+            const row = document.createElement('tr');
+            for (const value of [record.scene, record.path, record.p50Ms.toFixed(6), record.p95Ms.toFixed(6)]) {
+              const cell = document.createElement('td');
+              cell.textContent = value;
+              row.append(cell);
+            }
+            body.append(row);
+          }
+          document.querySelector('#results').hidden = false;
+          document.querySelector('#details').textContent = JSON.stringify({
+            configuration: result.configuration,
+            adapter: result.environment.adapter,
+            wasmBytes: result.wasmBytes,
+            gpuCasesPassed: result.gpuProof.filter(({ correct }) => correct).length,
+            limitations: result.limitations,
+          }, null, 2);
+          window.selectionResult = result;
+          status.textContent = 'Completed · 9 CPU comparisons and 9 GPU checks passed';
+        } catch (error) {
+          window.selectionFailure = String(error?.stack ?? error);
+          status.textContent = 'Failed';
+          document.querySelector('#details').textContent = window.selectionFailure;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

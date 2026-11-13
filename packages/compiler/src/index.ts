@@ -1,0 +1,219 @@
+import type {
+  CompiledShader, Compiler, LinkedProgram, ProgramSampler, ProgramUniform,
+  ShaderStage, ShaderVariable,
+} from "./types.js";
+import profileLimits from "../profile-limits.json" with { type: "json" };
+
+export type * from "./types.js";
+export const COMPILER_LIMITS = Object.freeze(profileLimits);
+
+interface AngleModule {
+  ccall(name: string, returnType: string, parameterTypes: string[], parameters: unknown[]): string;
+}
+
+const samplerTypes = new Set([0x8b5e, 0x8b60, 0x8b62, 0x8dc1, 0x8dc4, 0x8dca, 0x8dd2]);
+
+function isSampler(variable: ShaderVariable): boolean {
+  return samplerTypes.has(variable.type);
+}
+
+function matrixColumns(type: number): number {
+  if (type === 0x8b5a) return 2;
+  if (type === 0x8b5b) return 3;
+  if (type === 0x8b5c) return 4;
+  return 1;
+}
+
+function active(variables: ShaderVariable[]): ShaderVariable[] {
+  return variables.filter((variable) => variable.active && !variable.name.startsWith("gl_"));
+}
+
+function sameType(left: ShaderVariable, right: ShaderVariable): boolean {
+  return left.type === right.type && left.size === right.size &&
+    left.fields.length === right.fields.length && left.fields.every((field, index) => {
+      const other = right.fields[index];
+      return other !== undefined && field.name === other.name && sameType(field, other);
+    });
+}
+
+function failedProgram(log: string): LinkedProgram {
+  return {
+    success: false, log, vertexWGSL: "", fragmentWGSL: "",
+    vertexEntryPoint: "wgslMain", fragmentEntryPoint: "wgslMain",
+    attributes: [], uniforms: [], samplers: [], vertexUniformBufferSize: 0,
+    fragmentUniformBufferSize: 0, driverUniformBufferSize: 32,
+  };
+}
+
+function names(variable: ShaderVariable): string[] {
+  return [variable.name, variable.mappedName, `_u${variable.name}`];
+}
+
+function setLocation(map: Map<string, number>, variable: ShaderVariable, location: number): void {
+  for (const name of names(variable)) map.set(name, location);
+}
+
+/** Finalize ANGLE's explicitly documented WGSL link markers. ESSL parsing stays in ANGLE. */
+function finalizeWGSL(source: string, locations: Map<string, number>): string {
+  return source.replace(/@location\(@@@@@@\)\s+(\S+)\s*:/g, (_match, name: string) => {
+    const location = locations.get(name);
+    if (location === undefined) throw new Error(`Unassigned WGSL location for ${name}`);
+    return `@location(${location}) ${name} :`;
+  }).replace(/@group\(1\) @binding\(@@@@@@\) var (\S+) :[^;]+;/g,
+    (match, name: string) => {
+      const location = locations.get(name);
+      // ANGLE can emit inactive split sampler declarations. They have no executable references.
+      if (location === undefined) return "";
+      return match.replace("@@@@@@", String(location));
+    });
+}
+
+export function linkShaders(vertex: CompiledShader, fragment: CompiledShader,
+  attributeLocations: Record<string, number> = {}): LinkedProgram {
+  if (!vertex.success || !fragment.success) return failedProgram("Attached shader compilation failed.");
+  if (vertex.stage !== "vertex" || fragment.stage !== "fragment") {
+    return failedProgram("A vertex shader and a fragment shader are required.");
+  }
+  if (vertex.version !== fragment.version) return failedProgram("Shader language versions differ.");
+  const vertexVaryings = active(vertex.varyings);
+  for (const varying of active(fragment.varyings)) {
+    const output = vertexVaryings.find((candidate) => candidate.name === varying.name);
+    if (!output || !sameType(output, varying)) {
+      return failedProgram(`Varying interface mismatch for ${varying.name}.`);
+    }
+  }
+  const allUniforms = new Map<string, ShaderVariable>();
+  for (const variable of [...active(vertex.uniforms), ...active(fragment.uniforms)]) {
+    const previous = allUniforms.get(variable.name);
+    if (previous && (!sameType(previous, variable) || previous.precision !== variable.precision)) {
+      return failedProgram(`Uniform interface mismatch for ${variable.name}.`);
+    }
+    if (variable.fields.length !== 0) {
+      return failedProgram(`Struct uniform ${variable.name} is outside the initial compiler profile.`);
+    }
+    if (isSampler(variable) && (variable.size !== 1 || variable.type !== 0x8b5e)) {
+      return failedProgram(`Sampler ${variable.name} requires an unsupported type or array layout.`);
+    }
+    allUniforms.set(variable.name, variable);
+  }
+  const locations = new Map<string, number>();
+  const occupied = new Set<number>();
+  const attributes: LinkedProgram["attributes"] = [];
+  const vertexAttributes = active(vertex.attributes);
+  const explicitLocation = (name: string): number | undefined =>
+    Object.hasOwn(attributeLocations, name) ? attributeLocations[name] : undefined;
+  for (const variable of vertexAttributes) {
+    const bound = explicitLocation(variable.name);
+    if (bound === undefined) continue;
+    const columns = matrixColumns(variable.type);
+    if (!Number.isInteger(bound) || bound < 0 || bound + columns > COMPILER_LIMITS.vertexAttributes) {
+      return failedProgram(`Invalid or overlapping attribute binding for ${variable.name}.`);
+    }
+    for (let column = 0; column < columns; column++) {
+      if (occupied.has(bound + column)) {
+        return failedProgram(`Invalid or overlapping attribute binding for ${variable.name}.`);
+      }
+      occupied.add(bound + column);
+    }
+  }
+  for (const variable of vertexAttributes) {
+    if (variable.size !== 1) {
+      return failedProgram(`Attribute array ${variable.name} is outside the initial compiler profile.`);
+    }
+    const columns = matrixColumns(variable.type);
+    let location = explicitLocation(variable.name);
+    if (location === undefined) {
+      location = 0;
+      for (const used of [...occupied].sort((left, right) => left - right)) {
+        if (used >= location && used < location + columns) location = used + 1;
+      }
+    }
+    if (location + columns > COMPILER_LIMITS.vertexAttributes) {
+      return failedProgram("Attribute count exceeds the initial profile limit.");
+    }
+    for (let column = 0; column < columns; column++) occupied.add(location + column);
+    if (columns === 1) setLocation(locations, variable, location);
+    else {
+      for (const name of names(variable)) {
+        for (let column = 0; column < columns; column++) locations.set(`${name}_col${column}`, location + column);
+      }
+    }
+    attributes.push({ name: variable.name, type: variable.type, size: variable.size, location });
+  }
+  const fragmentLocations = new Map<string, number>();
+  let varyingLocation = 0;
+  for (const varying of vertexVaryings) {
+    const columns = matrixColumns(varying.type);
+    if (varying.size !== 1) return failedProgram(`Varying array ${varying.name} is unsupported by this ANGLE backend.`);
+    for (const name of names(varying)) {
+      if (columns === 1) {
+        locations.set(name, varyingLocation);
+        fragmentLocations.set(name, varyingLocation);
+      } else {
+        for (let column = 0; column < columns; column++) {
+          locations.set(`${name}_col${column}`, varyingLocation + column);
+          fragmentLocations.set(`${name}_col${column}`, varyingLocation + column);
+        }
+      }
+    }
+    varyingLocation += columns;
+  }
+  if (varyingLocation > COMPILER_LIMITS.varyingVectors) return failedProgram("Varying count exceeds the initial profile limit.");
+  let outputLocation = 0;
+  for (const output of active(fragment.outputs)) setLocation(fragmentLocations, output, outputLocation++);
+  const uniforms: ProgramUniform[] = [];
+  const samplers: ProgramSampler[] = [];
+  for (const variable of allUniforms.values()) {
+    if (isSampler(variable)) {
+      const samplerBinding = samplers.length * 2;
+      const textureBinding = samplerBinding + 1;
+      samplers.push({ name: variable.name, type: variable.type, size: variable.size, samplerBinding, textureBinding });
+      for (const map of [locations, fragmentLocations]) {
+        map.set(`ANGLE_sampler_${variable.name}`, samplerBinding);
+        map.set(`ANGLE_texture_${variable.name}`, textureBinding);
+      }
+    } else {
+      const vertexVariable = active(vertex.uniforms).find((candidate) => candidate.name === variable.name);
+      const fragmentVariable = active(fragment.uniforms).find((candidate) => candidate.name === variable.name);
+      uniforms.push({ name: variable.name, type: variable.type, size: variable.size,
+        vertexOffset: vertexVariable?.offset ?? null, fragmentOffset: fragmentVariable?.offset ?? null,
+        arrayStride: variable.arrayStride, matrixStride: variable.matrixStride });
+    }
+  }
+  if (samplers.length > COMPILER_LIMITS.combinedTextureUnits) {
+    return failedProgram("Combined texture count exceeds the initial profile limit.");
+  }
+  try {
+    const vertexWGSL = finalizeWGSL(vertex.wgsl, locations);
+    const fragmentWGSL = finalizeWGSL(fragment.wgsl, fragmentLocations);
+    if (vertexWGSL.includes("@@@@@@") || fragmentWGSL.includes("@@@@@@")) {
+      return failedProgram("Unresolved ANGLE WGSL link markers.");
+    }
+    return { success: true, log: "", vertexWGSL, fragmentWGSL,
+      vertexEntryPoint: "wgslMain", fragmentEntryPoint: "wgslMain", attributes, uniforms, samplers,
+      vertexUniformBufferSize: vertex.uniformBufferSize,
+      fragmentUniformBufferSize: fragment.uniformBufferSize, driverUniformBufferSize: 32 };
+  } catch (error) {
+    return failedProgram(error instanceof Error ? error.message : String(error));
+  }
+}
+
+export async function createCompiler(baseURL = "/artifacts/compiler/"): Promise<Compiler> {
+  const moduleURL = new URL("compiler.mjs", new URL(baseURL, globalThis.location?.href ?? import.meta.url)).href;
+  const imported = await import(/* @vite-ignore */ moduleURL) as {
+    default: (options?: Record<string, unknown>) => Promise<AngleModule>;
+  };
+  const module = await imported.default();
+  return {
+    compile(source: string, stage: ShaderStage, version: 1 | 2 = 1): CompiledShader {
+      const raw: Partial<CompiledShader> = source.includes("\0")
+        ? { success: false, log: "Shader source contains an embedded NUL character." }
+        : JSON.parse(module.ccall("RefralCompile", "string", ["string", "number", "number"],
+          [source, stage === "vertex" ? 0 : 1, version]));
+      return { source, stage, version, success: raw.success ?? false, log: raw.log ?? "",
+        wgsl: raw.wgsl ?? "", attributes: raw.attributes ?? [], uniforms: raw.uniforms ?? [],
+        varyings: raw.varyings ?? [], outputs: raw.outputs ?? [], uniformBufferSize: raw.uniformBufferSize ?? 0 };
+    },
+    link: linkShaders,
+  };
+}

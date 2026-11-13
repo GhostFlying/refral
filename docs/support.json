@@ -1,0 +1,1491 @@
+{
+  "version": 2,
+  "profile": "webgl1-prototype",
+  "updated": "2026-11-13",
+  "implementationRevision": "working-tree",
+  "compilerLimitsSource": "packages/compiler/profile-limits.json",
+  "environments": {
+    "chrome-macos-arm64": {
+      "browser": "Google Chrome 157.0.8103.51",
+      "osArchitecture": "macOS arm64",
+      "adapterVendor": "apple",
+      "adapterArchitecture": "metal-3",
+      "evidence": "artifacts/environment/chrome-probe.json",
+      "compilerEvidence": "artifacts/compiler/chrome-corpus.json",
+      "scope": "Observed local Chrome configuration; each entry limits its verified behavior to the listed fixtures."
+    }
+  },
+  "thirdPartyRevisions": {
+    "cts": {
+      "repository": "https://github.com/KhronosGroup/WebGL",
+      "revision": "39443210f7f81db4773eb104facadfb85d05dfa4",
+      "license": "MIT",
+      "tests": [
+        "sdk/tests/conformance/glsl/misc/shader-with-invalid-identifier.frag.html",
+        "sdk/tests/conformance/glsl/misc/shader-without-precision.frag.html",
+        "sdk/tests/conformance/glsl/misc/shaders-with-mis-matching-varyings.html",
+        "sdk/tests/conformance/uniforms/null-uniform-location.html",
+        "sdk/tests/conformance/programs/gl-get-active-attribute.html"
+      ]
+    },
+    "demo": {
+      "repository": "https://github.com/gfxfundamentals/webgl-fundamentals",
+      "revision": "fd4401e2741a68ebb7c3beb33ed064a5859d22d7",
+      "license": "BSD",
+      "source": "webgl/webgl-render-to-texture.html"
+    }
+  },
+  "statusMeaning": {
+    "unimplemented": "No supported implementation in the public initial profile",
+    "implemented-unverified": "Implementation exists with incomplete, pending, or failing direct verification",
+    "differential-verified": "Listed behavior passed its recorded native WebGL pixel/state differential fixtures",
+    "cts-verified": "Listed behavior also passed the identified original upstream CTS assertions"
+  },
+  "entries": [
+    {
+      "id": "context-webgl1",
+      "api": "createWebGLOnWebGPU(canvas, {version:1}) and getContextAttributes",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Explicit asynchronous WebGL1 factory. Differential fixtures request alpha=false, depth=true, stencil=false, antialias=false, preserveDrawingBuffer=true.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/uniform-snapshot/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "WebGL-like structural context identity",
+            "Antialias is reported false",
+            "Stencil context requests raise NotSupportedError",
+            "Preserved drawing buffer is the implemented presentation profile"
+          ]
+        },
+        "rust": {
+          "status": "implemented-unverified",
+          "coverage": "The Rust Buffer profile implements the Buffer-related subset; the full group requires further parity work.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "limits": [
+            "See buffer-lifecycle-contract for the independently verified common Buffer scope."
+          ]
+        }
+      }
+    },
+    {
+      "id": "errors-and-cpu-state",
+      "api": "getError, getParameter, isEnabled, buffer/attribute/program getters",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Invalid buffer target and negative viewport preserve prior valid state. Buffer binding and context ownership queries are compared.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential error-state",
+            "tests/chrome/differential.spec.ts::WebGL1 differential resource-ownership"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/error-state/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/resource-ownership/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "The implemented getter enums are enumerated in SemanticContext",
+            "Unknown getter enums report INVALID_ENUM"
+          ]
+        },
+        "rust": {
+          "status": "implemented-unverified",
+          "coverage": "The Rust Buffer profile implements the Buffer-related subset; the full group requires further parity work.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "limits": [
+            "See buffer-lifecycle-contract for the independently verified common Buffer scope."
+          ]
+        }
+      }
+    },
+    {
+      "id": "shader-essl100",
+      "api": "createShader, shaderSource, compileShader, getShaderParameter, getShaderInfoLog",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "ANGLE Wasm handles ESSL100 vertex/fragment compilation and real diagnostics. Differential verifies a missing identifier fails with a nonempty log.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential relink-and-errors",
+            "tests/chrome/compiler.spec.ts::ANGLE Wasm compiles ESSL corpus and WebGPU accepts linked WGSL",
+            "tests/chrome/cts.spec.ts::sdk/tests/conformance/glsl/misc/shader-with-invalid-identifier.frag.html",
+            "tests/chrome/cts.spec.ts::sdk/tests/conformance/glsl/misc/shader-without-precision.frag.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/relink-and-errors/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "compilerEvidence": [
+            "artifacts/compiler/corpus.json",
+            "artifacts/compiler/chrome-corpus.json"
+          ],
+          "ctsCandidates": [
+            "sdk/tests/conformance/glsl/misc/shader-with-invalid-identifier.frag.html",
+            "sdk/tests/conformance/glsl/misc/shader-without-precision.frag.html"
+          ],
+          "limits": [
+            "Compiler extensions use the pinned initial resources",
+            "Embedded NUL is diagnosed before the C string boundary"
+          ],
+          "ctsEvidence": {
+            "path": "artifacts/cts/results.json",
+            "revision": "39443210f7f81db4773eb104facadfb85d05dfa4",
+            "scope": "Invalid reserved identifiers and missing fragment float precision produce the original expected compiler failures.",
+            "tests": [
+              {
+                "path": "sdk/tests/conformance/glsl/misc/shader-with-invalid-identifier.frag.html",
+                "native": "pass",
+                "refral": "pass",
+                "passedAssertions": 2,
+                "failedAssertions": 0
+              },
+              {
+                "path": "sdk/tests/conformance/glsl/misc/shader-without-precision.frag.html",
+                "native": "pass",
+                "refral": "pass",
+                "passedAssertions": 2,
+                "failedAssertions": 0
+              }
+            ],
+            "adaptations": [
+              "Asynchronous compiler/device preinitialization",
+              "Iframe-scoped getContext injection",
+              "Original scripts and assertions executed unchanged"
+            ]
+          }
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "program-link-and-reflection",
+      "api": "attachShader, detachShader, bindAttribLocation, linkProgram, getActiveAttrib, getActiveUniform, getAttribLocation",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Valid ESSL100 programs render. Relink resets the executable generation and stale uniform locations produce INVALID_OPERATION. Compiler corpus validates attribute binding, stage varying mismatch and reflected layouts. Matrix attributes retain their GL type, base location, and consecutive-column link assignment.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential relink-and-errors",
+            "tools/compiler-test.mjs",
+            "tests/chrome/cts.spec.ts::sdk/tests/conformance/glsl/misc/shaders-with-mis-matching-varyings.html",
+            "tests/chrome/cts.spec.ts::sdk/tests/conformance/programs/gl-get-active-attribute.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/relink-and-errors/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "ctsCandidates": [
+            "sdk/tests/conformance/glsl/misc/shaders-with-mis-matching-varyings.html",
+            "sdk/tests/conformance/programs/gl-get-active-attribute.html"
+          ],
+          "limits": [
+            "Struct uniforms, sampler arrays, attribute arrays, and varying arrays return explicit link diagnostics",
+            "Uniform and stage resource caps come from packages/compiler/profile-limits.json"
+          ],
+          "ctsEvidence": {
+            "path": "artifacts/cts/results.json",
+            "revision": "39443210f7f81db4773eb104facadfb85d05dfa4",
+            "scope": "Original varying interface mismatch assertions and getActiveAttrib metadata for float, vec2/3/4 and mat2/3/4 pass. Matrix vertex drawing remains outside the runtime profile.",
+            "tests": [
+              {
+                "path": "sdk/tests/conformance/glsl/misc/shaders-with-mis-matching-varyings.html",
+                "native": "pass",
+                "refral": "pass",
+                "passedAssertions": 22,
+                "failedAssertions": 0
+              },
+              {
+                "path": "sdk/tests/conformance/programs/gl-get-active-attribute.html",
+                "native": "pass",
+                "refral": "pass",
+                "passedAssertions": 22,
+                "failedAssertions": 0
+              }
+            ],
+            "adaptations": [
+              "Asynchronous compiler/device preinitialization",
+              "Iframe-scoped getContext injection",
+              "Original scripts and assertions executed unchanged"
+            ]
+          }
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "buffer-storage-and-snapshots",
+      "api": "bufferData, bufferSubData, bindBuffer, getBufferParameter",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "ArrayBuffer and view bytes are copied synchronously. Storage replacement and same-buffer updates between draws retain earlier draw contents.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update",
+            "tests/chrome/differential.spec.ts::WebGL1 differential upload-snapshot",
+            "tests/chrome/differential.spec.ts::WebGL1 differential storage-replacement"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/vertex-index-update/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/upload-snapshot/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/storage-replacement/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "overloads": [
+            "bufferData(target, byteSize, usage)",
+            "bufferData(target, ArrayBufferView|ArrayBuffer, usage)",
+            "bufferSubData(target, byteOffset, ArrayBufferView|ArrayBuffer)"
+          ]
+        },
+        "rust": {
+          "status": "implemented-unverified",
+          "coverage": "The Rust Buffer profile implements the Buffer-related subset; the full group requires further parity work.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "limits": [
+            "See buffer-lifecycle-contract for the independently verified common Buffer scope."
+          ]
+        }
+      }
+    },
+    {
+      "id": "vertex-input",
+      "api": "vertexAttribPointer, enableVertexAttribArray, disableVertexAttribArray, vertexAttrib*f",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "FLOAT attributes with sizes 1-4, aligned offsets and strides, and constant attributes. Pixel differential currently exercises enabled vec2 FLOAT data.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
+            "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/uniform-snapshot/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/vertex-index-update/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "Maximum 8 attribute locations, matching the initial host buffer slots",
+            "Non-FLOAT vertexAttribPointer raises NotSupportedError",
+            "Constant attributes are implemented with generated vertex data and remain separately unverified",
+            "Matrix attributes support compilation/linking/reflection; drawing them raises NotSupportedError in the initial runtime profile."
+          ],
+          "overloadStates": {
+            "vertexAttribPointer_FLOAT_vec2": "differential-verified",
+            "vertexAttribPointer_FLOAT_otherSizes": "implemented-unverified",
+            "constantVertexAttributes": "implemented-unverified",
+            "matrixAttributeDrawing": "unimplemented"
+          }
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "triangle-drawing",
+      "api": "drawArrays and drawElements",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "TRIANGLES render through real WebGPU. Differential fixtures verify UNSIGNED_SHORT updates and interpreting the same index storage through UNSIGNED_BYTE and UNSIGNED_SHORT without a stale format cache.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
+            "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update",
+            "tests/chrome/differential.spec.ts::WebGL1 differential index-format-cache"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/uniform-snapshot/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/vertex-index-update/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/index-format-cache/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "overloadStates": {
+            "drawArrays_TRIANGLES": "differential-verified",
+            "drawElements_UNSIGNED_SHORT": "differential-verified",
+            "drawElements_UNSIGNED_BYTE": "differential-verified"
+          },
+          "limits": [
+            "Other valid primitive modes raise NotSupportedError",
+            "UNSIGNED_INT indices report INVALID_ENUM with no index extension advertised"
+          ]
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "uniform-scalars-vectors-and-samplers",
+      "api": "uniform*f, uniform*fv, uniform*i, uniform*iv, getUniformLocation",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Per-draw uniform snapshots and scalar sampler unit assignment. Pixel differential verifies uniform4f and sampler uniform1i.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
+            "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture",
+            "tests/chrome/differential.spec.ts::WebGL1 differential relink-and-errors",
+            "tests/chrome/cts.spec.ts::sdk/tests/conformance/uniforms/null-uniform-location.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/uniform-snapshot/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/render-to-texture/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/relink-and-errors/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "ctsCandidates": [
+            "sdk/tests/conformance/uniforms/null-uniform-location.html"
+          ],
+          "limits": [
+            "Locations carry context, program and link generation",
+            "Additional scalar/vector overloads are implemented with shared packing and have narrower direct test coverage"
+          ],
+          "ctsEvidence": {
+            "path": "artifacts/cts/results.json",
+            "revision": "39443210f7f81db4773eb104facadfb85d05dfa4",
+            "scope": "Original null-uniform-location assertions pass across the tested scalar/vector/matrix setter overloads.",
+            "tests": [
+              {
+                "path": "sdk/tests/conformance/uniforms/null-uniform-location.html",
+                "native": "pass",
+                "refral": "pass",
+                "passedAssertions": 41,
+                "failedAssertions": 0
+              }
+            ],
+            "adaptations": [
+              "Asynchronous compiler/device preinitialization",
+              "Iframe-scoped getContext injection",
+              "Original scripts and assertions executed unchanged"
+            ]
+          }
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "uniform-matrices-arrays",
+      "api": "uniformMatrix2fv, uniformMatrix3fv, uniformMatrix4fv, uniform arrays",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "The fixed-revision 320x240 render-to-texture demo exercises mat4 uniforms and matches native output within its recorded tolerance. Compiler corpus also verifies reflected mat4 and vec4 array packing.",
+          "tests": [
+            "tests/chrome/demo.spec.ts::pinned render-to-texture demo renders through both backends",
+            "tools/compiler-test.mjs"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/demo/result.json",
+              "passed": true,
+              "differingPixels": 0,
+              "unmatchedPixels": 0,
+              "tolerance": {
+                "channelBytes": 2,
+                "rasterEdgeNeighborhood": 1
+              }
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "compilerEvidence": [
+            "artifacts/compiler/corpus.json"
+          ],
+          "limits": [
+            "Transpose=true reports INVALID_VALUE",
+            "Struct uniform layouts return link diagnostics",
+            "Runtime mat2/mat3 and uniform-array pixel cases remain pending"
+          ],
+          "overloadStates": {
+            "uniformMatrix4fv": "differential-verified",
+            "uniformMatrix2fv": "implemented-unverified",
+            "uniformMatrix3fv": "implemented-unverified",
+            "uniformArrays": "implemented-unverified"
+          }
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "texture2d-typed-upload",
+      "api": "texImage2D level0 RGBA UNSIGNED_BYTE with TypedArray or null",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "RGBA8 level-zero textures render and preserve caller bytes after the source array is modified. The zero-initialized RGB fixture verifies implicit opaque alpha and zero-initialized color storage.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential texture-orientation",
+            "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture",
+            "tests/chrome/differential.spec.ts::WebGL1 differential zero-initialized-rgb"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/texture-orientation/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/render-to-texture/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/zero-initialized-rgb/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "formats": [
+            "RGBA/UNSIGNED_BYTE",
+            "RGB/UNSIGNED_BYTE null storage"
+          ],
+          "limits": [
+            "Image dimensions are bounded by device maxTextureDimension2D",
+            "RGB, ALPHA, LUMINANCE and LUMINANCE_ALPHA conversion paths are implemented with pending format-specific pixel cases"
+          ]
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "texture-dom-sources",
+      "api": "texImage2D and texSubImage2D DOM source overloads",
+      "cores": {
+        "js": {
+          "status": "implemented-unverified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Browser facade consumes supported DOM sources through a 2D canvas snapshot before calling the semantic core.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "Same-origin or CORS-readable sources follow browser canvas extraction restrictions",
+            "DOM/video/color-space combinations have pending dedicated tests"
+          ]
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "texture-storage-updates",
+      "api": "texImage2D redefinition and texSubImage2D",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Texture redefinition, filtering changes, and draw-separated full-level RGBA8 subimage uploads pass native pixel differentials. Modifying the subimage source array after upload preserves the queued upload contents.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential texture-reallocation",
+            "tests/chrome/differential.spec.ts::WebGL1 differential texture-subimage-snapshot"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/texture-reallocation/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/texture-subimage-snapshot/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "Subimage updates use versioned GPU image copies",
+            "Only level0 is implemented",
+            "Subregion and non-RGBA subimage combinations have narrower direct verification coverage"
+          ],
+          "overloadStates": {
+            "texImage2D_RGBA8_redefinition": "differential-verified",
+            "texSubImage2D_RGBA8_fullLevel": "differential-verified",
+            "texSubImage2D_partialRegion": "implemented-unverified"
+          }
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "texture-sampling",
+      "api": "texParameteri, texParameterf, activeTexture, bindTexture",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Nearest filtered sampling, Texture2D unit0 and clamp addressing are pixel-verified by the texture and framebuffer fixtures.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential texture-orientation",
+            "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/texture-orientation/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/render-to-texture/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "NEAREST and LINEAR min/mag are implemented",
+            "REPEAT and MIRRORED_REPEAT are available for POT textures with pending wrap-specific differential tests",
+            "Incomplete textures sample opaque black",
+            "Mipmap min filters make the current level-zero profile incomplete"
+          ]
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "pixel-unpack",
+      "api": "pixelStorei UNPACK_ALIGNMENT, UNPACK_FLIP_Y_WEBGL, UNPACK_PREMULTIPLY_ALPHA_WEBGL",
+      "cores": {
+        "js": {
+          "status": "implemented-unverified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Alignment, Y flip and alpha premultiplication are implemented. The current orientation fixture validates the default alignment and unflipped RGBA8 path.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential texture-orientation"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/texture-orientation/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "Dedicated nondefault alignment, flipY, premultiplication and color-space tests remain pending"
+          ],
+          "overloadStates": {
+            "defaultRGBAAlignment": "differential-verified",
+            "pixelStorei_nondefaultAlignment": "implemented-unverified",
+            "pixelStorei_flipY": "implemented-unverified",
+            "pixelStorei_premultiplyAlpha": "implemented-unverified"
+          }
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "viewport-scissor-and-clear",
+      "api": "viewport, scissor, colorMask, clearColor, clearDepth, clear",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Masked/scissored color clear and viewport-separated draws match native pixels. Clear uses a draw-based path that honors masks.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential masked-clear",
+            "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/masked-clear/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/uniform-snapshot/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "Draw viewports outside the target require an emulation path and raise NotSupportedError",
+            "Depth/stencil clear combinations have narrower tested coverage"
+          ]
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "depth-state",
+      "api": "DEPTH_TEST, depthFunc, depthMask, depthRange",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Depth testing, writes, and GL-to-WebGPU depth conversion pass the saved native pixel differential with LEQUAL and shared depth values.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential depth-blend"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/depth-blend/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "Depth render storage uses WebGPU depth24plus",
+            "Nondefault depthRange has a review fix with dedicated verification pending"
+          ]
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "blend-state",
+      "api": "BLEND, blendFunc, blendFuncSeparate, blendEquation, blendColor",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "SRC_ALPHA/ONE_MINUS_SRC_ALPHA and CONSTANT_ALPHA factors pass native pixel differentials on the opaque default drawing buffer.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential depth-blend",
+            "tests/chrome/differential.spec.ts::WebGL1 differential constant-alpha-blend"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/depth-blend/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/constant-alpha-blend/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "GL constant-alpha factors use a host conversion path",
+            "Special factor combinations require their own coverage"
+          ]
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "framebuffer-rgba8",
+      "api": "createFramebuffer, framebufferTexture2D, checkFramebufferStatus, bindFramebuffer",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Render to an RGBA8 texture followed by sampling in a later pass matches native WebGL.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/render-to-texture/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "formats": [
+            "Texture2D RGBA/UNSIGNED_BYTE level0 color attachment"
+          ],
+          "limits": [
+            "One color attachment",
+            "Texture feedback loops report INVALID_OPERATION",
+            "Other color attachment formats are outside the verified initial profile"
+          ]
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "framebuffer-depth-and-resize",
+      "api": "renderbufferStorage DEPTH_COMPONENT16, framebufferRenderbuffer, attachment replacement",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Depth renderbuffer allocation and generation retirement, framebuffer dimension checks, and resized color/depth attachments are implemented.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential resize-framebuffer"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/resize-framebuffer/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "DEPTH_COMPONENT16 API storage uses depth24plus internally",
+            "Non-depth renderbuffer storage raises NotSupportedError",
+            "Stencil attachments are outside the initial profile"
+          ]
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "resource-lifetime-and-ownership",
+      "api": "deleteBuffer, deleteTexture, deleteRenderbuffer, deleteFramebuffer, deleteProgram, deleteShader, is*",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Deletion after encoded draws, buffer unbinding and cross-context buffer rejection are pixel/state verified. Other object classes have implemented reference and retirement handling.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential resource-ownership"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/resource-ownership/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "Direct differential evidence currently covers buffers and foreign-buffer ownership",
+            "Program/shader deferred deletion and texture attachment retention have pending dedicated CTS coverage"
+          ],
+          "overloadStates": {
+            "deleteBuffer": "differential-verified",
+            "deleteTexture": "implemented-unverified",
+            "deleteRenderbuffer": "implemented-unverified",
+            "deleteFramebuffer": "implemented-unverified",
+            "deleteProgram": "implemented-unverified",
+            "deleteShader": "implemented-unverified"
+          }
+        },
+        "rust": {
+          "status": "implemented-unverified",
+          "coverage": "The Rust Buffer profile implements the Buffer-related subset; the full group requires further parity work.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "limits": [
+            "See buffer-lifecycle-contract for the independently verified common Buffer scope."
+          ]
+        }
+      }
+    },
+    {
+      "id": "automatic-submission",
+      "api": "automatic microtask submission and flush",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Draws outside rAF and inside rAF submit automatically. Explicit flush works with pending drawing.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential automatic-submit"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/automatic-submit/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "flush signals submission rather than GPU completion",
+            "Public normal drawing uses the automatic host schedule"
+          ]
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "resize-and-context-loss",
+      "api": "drawingBufferWidth, drawingBufferHeight, resize, device loss and disposal",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Resize and resource disposal paths are implemented. Device loss dispatches the browser context event and marks the semantic context lost.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential resize-framebuffer",
+            "tests/chrome/lifecycle.spec.ts::device loss notifies the context and terminates resource creation"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/resize-framebuffer/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "Full context restoration is future coverage",
+            "Same-size canvas reset and complete lost-context API behavior require dedicated tests"
+          ],
+          "gpuVerification": {
+            "test": "tests/chrome/lifecycle.spec.ts::device loss notifies the context and terminates resource creation",
+            "status": "passed",
+            "scope": "Device destruction produces a cancelable loss event, fresh invalidated Buffer wrappers, null shader/context-attribute/state queries, and a single CONTEXT_LOST_WEBGL error."
+          }
+        },
+        "rust": {
+          "status": "implemented-unverified",
+          "coverage": "The Rust Buffer profile implements the Buffer-related subset; the full group requires further parity work.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "limits": [
+            "See buffer-lifecycle-contract for the independently verified common Buffer scope."
+          ]
+        }
+      }
+    },
+    {
+      "id": "testing-asynchronous-readback",
+      "api": "getTestingHooks(context).capture()",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Test-only asynchronous RGBA8 capture is compared against native readPixels in the differential harness.",
+          "tests": [
+            "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
+            "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/differential/uniform-snapshot/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/differential/render-to-texture/result.json",
+              "passed": true,
+              "maxDifference": 0,
+              "mismatchedChannels": 0
+            }
+          ],
+          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
+          "limits": [
+            "This is a library testing hook",
+            "Public synchronous readPixels support is tracked separately"
+          ]
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "extension-discovery",
+      "api": "getSupportedExtensions and getExtension",
+      "cores": {
+        "js": {
+          "status": "implemented-unverified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "The initial profile advertises an empty extension list and returns null for requested extensions.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The initial getSupportedExtensions list is empty and getExtension returns null for unadvertised extensions.",
+          "limits": [
+            "Extension-specific API behavior is future coverage"
+          ]
+        },
+        "rust": {
+          "status": "implemented-unverified",
+          "coverage": "The Rust Buffer profile implements the Buffer-related subset; the full group requires further parity work.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "limits": [
+            "See buffer-lifecycle-contract for the independently verified common Buffer scope."
+          ]
+        }
+      }
+    },
+    {
+      "id": "public-synchronous-gpu-readback",
+      "api": "readPixels, getBufferSubData, finish, sync/query completion APIs",
+      "cores": {
+        "js": {
+          "status": "unimplemented",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Synchronous GPU-dependent public APIs remain future coverage.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "finish and missing GPU-dependent API methods throw NotSupportedError. Pixel testing uses the internal asynchronous capture hook."
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "additional-rendering-capabilities",
+      "api": "generateMipmap, texture mip levels, compressed textures, non-triangle primitives, non-FLOAT attributes, stencil and polygon offset",
+      "cores": {
+        "js": {
+          "status": "unimplemented",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "These capability groups remain outside the implemented initial profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "Implemented profile guards or missing-method proxies throw NotSupportedError. Unsupported enum values use the implemented GL validation path."
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+        }
+      }
+    },
+    {
+      "id": "public-webgl2",
+      "api": "createWebGLOnWebGPU(canvas, {version:2}) and WebGL2-specific context APIs",
+      "cores": {
+        "js": {
+          "status": "unimplemented",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "The public context is WebGL1. ESSL300 compiler corpus evidence is recorded separately.",
+          "tests": [
+            "tests/chrome/compiler.spec.ts::ANGLE Wasm compiles ESSL corpus and WebGPU accepts linked WGSL"
+          ],
+          "evidence": [],
+          "unsupportedBehavior": "The public factory rejects unsupported WebGL versions with NotSupportedError."
+        },
+        "rust": {
+          "status": "unimplemented",
+          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "tests": [],
+          "evidence": [],
+          "unsupportedBehavior": "The common factory rejects version 2 with NotSupportedError."
+        }
+      }
+    },
+    {
+      "id": "buffer-lifecycle-contract",
+      "api": "createBuffer, bindBuffer, bufferData, bufferSubData, getBufferParameter, Buffer binding getParameter, deleteBuffer, isBuffer, getError, context loss",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Creation and extensible wrapper identity, bindings, allocation/subrange updates, queries, deletion, WebIDL normalization, validation order, error-state preservation, context ownership, caller-input snapshots, and context loss passed the shared Chrome fixtures. Logical slot/generation reuse and versions passed the same core contract.",
+          "tests": [
+            "tests/chrome/buffers.spec.ts::shared native, JS and Rust public Buffer fixtures",
+            "tests/chrome/buffers.spec.ts::foreign buffers are rejected across JS and Rust cores",
+            "tests/chrome/buffers.spec.ts::js shared logical Buffer contract",
+            "tests/chrome/buffers.spec.ts::js Buffer context loss"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/buffers/public-js.json",
+              "passed": true,
+              "checks": 201,
+              "reference": "artifacts/buffers/public-native.json",
+              "nativeChecks": 171
+            },
+            {
+              "path": "artifacts/buffers/contract-js.json",
+              "passed": true,
+              "checks": 36
+            },
+            {
+              "path": "artifacts/buffers/cross-core.json",
+              "passed": true,
+              "checks": 16
+            },
+            {
+              "path": "artifacts/buffers/loss-js.json",
+              "passed": true,
+              "checks": 20,
+              "reference": "artifacts/buffers/loss-native.json",
+              "nativeChecks": 18
+            }
+          ],
+          "limits": [
+            "Buffer-only common contract; draw snapshot parity is tracked by the rendering groups.",
+            "Host capacity is supplied during initialization. Wasm32 allocation failure reports OUT_OF_MEMORY.",
+            "Context restoration remains future coverage.",
+            "Native WebGL1 has no Buffer byte-readback query. Byte snapshots and versions are compared between JS and Rust; native comparison covers public state/errors/identity."
+          ],
+          "unsupportedBehavior": "Invalid supported inputs produce GL errors; invalid JS overloads produce TypeError in the shared facade. Errors preserve existing valid state."
+        },
+        "rust": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Creation and extensible wrapper identity, bindings, allocation/subrange updates, queries, deletion, WebIDL normalization, validation order, error-state preservation, context ownership, caller-input snapshots, and context loss passed the shared Chrome fixtures. Logical slot/generation reuse and versions passed the same core contract.",
+          "tests": [
+            "tests/chrome/buffers.spec.ts::shared native, JS and Rust public Buffer fixtures",
+            "tests/chrome/buffers.spec.ts::foreign buffers are rejected across JS and Rust cores",
+            "tests/chrome/buffers.spec.ts::rust shared logical Buffer contract",
+            "tests/chrome/buffers.spec.ts::rust Buffer context loss"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/buffers/public-rust.json",
+              "passed": true,
+              "checks": 201,
+              "reference": "artifacts/buffers/public-native.json",
+              "nativeChecks": 171
+            },
+            {
+              "path": "artifacts/buffers/contract-rust.json",
+              "passed": true,
+              "checks": 36
+            },
+            {
+              "path": "artifacts/buffers/cross-core.json",
+              "passed": true,
+              "checks": 16
+            },
+            {
+              "path": "artifacts/buffers/loss-rust.json",
+              "passed": true,
+              "checks": 20,
+              "reference": "artifacts/buffers/loss-native.json",
+              "nativeChecks": 18
+            }
+          ],
+          "limits": [
+            "Buffer-only common contract; draw snapshot parity is tracked by the rendering groups.",
+            "Host capacity is supplied during initialization. Wasm32 allocation failure reports OUT_OF_MEMORY.",
+            "Context restoration remains future coverage.",
+            "Native WebGL1 has no Buffer byte-readback query. Byte snapshots and versions are compared between JS and Rust; native comparison covers public state/errors/identity."
+          ],
+          "unsupportedBehavior": "Invalid supported inputs produce GL errors; invalid JS overloads produce TypeError in the shared facade. Errors preserve existing valid state."
+        }
+      }
+    }
+  ],
+  "observability": {
+    "evidence": "artifacts/benchmarks/chrome.json",
+    "tests": [
+      "tests/chrome/benchmark.spec.ts::records paired native WebGL and Refral CPU baseline samples"
+    ],
+    "cpuTiming": "API processing, encoding and submission elapsed CPU time. Readback pacing is outside the sampled interval.",
+    "gpuTiming": {
+      "status": "not-measured",
+      "reason": "The current benchmark does not record GPU timestamp queries."
+    },
+    "memoryAccounting": {
+      "bufferCapacity": "Application-visible GPUBuffer.size capacities for tracked buffers.",
+      "textureCapacity": "Estimated width * height * 4 bytes per tracked image. Depth24plus backing allocation is implementation-defined.",
+      "peakCounters": [
+        "peakAllocatedBufferBytes",
+        "peakAllocatedTextureBytes"
+      ],
+      "scope": "Current and peak tracked resource capacities. Driver VRAM, browser process memory and total Wasm memory are separate unmeasured quantities."
+    },
+    "observedCapacityPeaks": [
+      {
+        "scene": "uniform-draws",
+        "peakBufferCapacityBytes": 17280,
+        "peakTextureCapacityEstimateBytes": 32768
+      },
+      {
+        "scene": "state-changes",
+        "peakBufferCapacityBytes": 17280,
+        "peakTextureCapacityEstimateBytes": 32768
+      },
+      {
+        "scene": "dynamic-upload",
+        "peakBufferCapacityBytes": 41472,
+        "peakTextureCapacityEstimateBytes": 32768
+      }
+    ],
+    "samplingLimit": "The saved end-to-end samples are an initial paired run. Longer repeated experiments are required for performance budgets and stable speedup conclusions.",
+    "core": "js"
+  },
+  "verificationSummary": {
+    "chromeTests": 26,
+    "chromeResult": "passed",
+    "differentialFixtures": 18,
+    "ctsFiles": 5,
+    "ctsAssertions": 89,
+    "compilerCorpusCases": 23,
+    "compilerPipelines": 3,
+    "demo": {
+      "width": 320,
+      "height": 240,
+      "differingPixels": 0,
+      "unmatchedPixels": 0,
+      "tolerance": {
+        "channelBytes": 2,
+        "rasterEdgeNeighborhood": 1
+      }
+    },
+    "evidence": "artifacts/chrome-results.json",
+    "scope": "Historical initial JS prototype acceptance. Current per-core integration evidence is recorded separately.",
+    "core": "js",
+    "report": "docs/validation.md"
+  },
+  "compilerVerification": {
+    "node": {
+      "evidence": "artifacts/compiler/corpus.json",
+      "passedCases": 23,
+      "totalCases": 23
+    },
+    "browser": {
+      "evidence": "artifacts/compiler/chrome-corpus.json",
+      "passedCases": 23,
+      "totalCases": 23,
+      "pipelines": 3
+    },
+    "profileSource": "packages/compiler/profile-limits.json",
+    "note": "The shared 8-attribute profile and boundary corpus passed Node and actual Chrome verification. The browser test creates real ESSL100, ESSL300, and matrix-attribute WebGPU pipelines."
+  },
+  "deploymentVerification": {
+    "evidence": "artifacts/deployment/result.json",
+    "scope": "Built Chrome deployment with JS compiler/demo rendering; current checks also load and exercise the packaged Rust Buffer Wasm ABI."
+  },
+  "defaultCore": "js",
+  "cores": {
+    "js": {
+      "profile": "webgl1-rendering",
+      "implementation": "packages/core-js",
+      "contract": "packages/core-api",
+      "facade": "packages/webgl",
+      "scope": "Current WebGL1 rendering profile plus the common Buffer contract."
+    },
+    "rust": {
+      "profile": "webgl1-buffer",
+      "implementation": "crates/core",
+      "binding": "crates/wasm + packages/core-wasm",
+      "contract": "packages/core-api",
+      "facade": "packages/webgl",
+      "scope": "Buffer lifecycle/data/query/errors in Rust/Wasm. Shader, texture, vertex-input, and draw parity are pending."
+    }
+  },
+  "coreVerification": {
+    "report": "docs/validation/2026-11-13-dual-core-buffers.md",
+    "environment": "chrome-macos-arm64",
+    "allChromeTests": {
+      "passed": 34,
+      "failed": 0,
+      "skipped": 0,
+      "evidence": "artifacts/chrome-results.json"
+    },
+    "deterministicChecks": {
+      "typescript": "passed",
+      "jsUnitTests": 25,
+      "rustNativeTests": 15,
+      "rustFmt": "passed",
+      "rustClippy": "passed",
+      "actualWasmAdapterTests": 4,
+      "evidence": [
+        "artifacts/dual-core-check.log",
+        "artifacts/dual-core-wasm-tests.log"
+      ]
+    },
+    "js": {
+      "profile": "webgl1-rendering",
+      "bufferSuite": "passed",
+      "renderingDifferentialFixtures": 18,
+      "ctsFiles": 5,
+      "ctsAssertions": 89,
+      "remainingParity": "Expand original CTS coverage and define further shared contracts."
+    },
+    "rust": {
+      "profile": "webgl1-buffer",
+      "bufferSuite": "passed",
+      "renderingDifferentialFixtures": 0,
+      "ctsFiles": 0,
+      "remainingParity": "Shader/program, vertex input, uniforms, textures, framebuffer state, and draw planning."
+    },
+    "sharedCompiler": {
+      "corpusCases": 23,
+      "realPipelines": 3,
+      "evidence": "artifacts/compiler/chrome-corpus.json",
+      "scope": "Standalone compiler/pipeline verification; Rust public shader/program semantics remain pending."
+    },
+    "explicitSelectionTest": "tests/chrome/core-profile.spec.ts::explicit Rust selection reports its Buffer profile and JS remains the rendering default",
+    "deployment": {
+      "status": "passed",
+      "evidence": "artifacts/deployment/result.json",
+      "scope": "Built JS rendering demo and packaged Rust Buffer ABI smoke."
+    }
+  }
+}

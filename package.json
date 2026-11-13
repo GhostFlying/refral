@@ -1,0 +1,44 @@
+{
+  "name": "refral",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.12.3",
+  "engines": {
+    "node": ">=24.14.0 <25"
+  },
+  "scripts": {
+    "doctor": "node tools/doctor.mjs",
+    "deps:sync": "node tools/deps-sync.mjs",
+    "compiler:build": "node tools/compiler-build.mjs",
+    "compiler:test": "node tools/compiler-test.mjs",
+    "core:build": "node tools/core-selection-build.mjs",
+    "core:bench": "node tools/core-selection-run.mjs",
+    "rust:check": "node tools/rust.mjs check",
+    "rust:test": "node tools/rust.mjs test",
+    "rust:test:wasm": "pnpm --filter @refral/core-wasm test:wasm",
+    "rust:build": "node tools/rust.mjs build",
+    "dev": "vite --host 127.0.0.1 --port 4173 --strictPort",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run",
+    "test:chrome": "playwright test",
+    "test:probe": "playwright test probe.spec.ts",
+    "test:cts": "playwright test cts.spec.ts",
+    "test:buffers": "playwright test buffers.spec.ts",
+    "test:dist": "node tools/verify-dist.mjs",
+    "snapshot": "node tools/snapshot.mjs",
+    "bench:chrome": "playwright test benchmark.spec.ts",
+    "check": "pnpm typecheck && pnpm test:unit && pnpm rust:check && pnpm rust:test && node tools/check-support.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "26.6.6",
+    "@types/pngjs": "6.0.5",
+    "@webgpu/types": "0.1.74",
+    "pngjs": "7.0.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
+  }
+}

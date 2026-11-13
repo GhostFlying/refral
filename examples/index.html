@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Refral · Chrome validation</title>
+    <style>
+      :root { font-family: 'Geist', system-ui, sans-serif; color: #e8edf4; background: #131820; color-scheme: dark; }
+      body { margin: 0 auto; max-width: 1050px; padding: 36px 28px; }
+      h1 { font-size: 28px; margin: 0 0 12px; font-weight: 550; }
+      p { color: #a9b6c6; line-height: 1.6; }
+      button, select { font: inherit; padding: 9px 14px; border: 1px solid #536477; border-radius: 5px; background: #243140; color: inherit; cursor: pointer; }
+      button:disabled { cursor: wait; opacity: .5; }
+      .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 20px 0; }
+      .canvases { display: flex; gap: 24px; flex-wrap: wrap; }
+      figure { margin: 0; }
+      figcaption { margin-bottom: 10px; color: #a9b6c6; }
+      canvas { width: 320px; height: 240px; border: 1px solid #405269; border-radius: 4px; background: #090d13; }
+      pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #1a232f; padding: 20px; border-radius: 5px; line-height: 1.5; }
+      output { color: #91d9b0; }
+    </style>
+  </head>
+  <body>
+    <h1>Refral</h1>
+    <p>WebGL1 on WebGPU. Validate the Chrome adapter, shader compiler, rendering, and native reference.</p>
+    <div class="controls">
+      <button id="probe">Run GPU probe</button>
+      <label for="backend">Demo backend</label>
+      <select id="backend"><option value="native">Native WebGL</option><option value="refral">Refral WebGPU</option></select>
+      <button id="demo">Render to texture</button>
+      <output id="status" aria-live="polite">Ready</output>
+    </div>
+    <div class="canvases">
+      <figure><figcaption>WebGPU / demo</figcaption><canvas id="gpu" width="320" height="240"></canvas></figure>
+      <figure><figcaption>Native WebGL reference</figcaption><canvas id="native" width="320" height="240"></canvas></figure>
+    </div>
+    <pre id="report">Run the GPU probe to record the actual Chrome adapter and pixel readback.</pre>
+    <script type="module" src="/examples/main.ts"></script>
+  </body>
+</html>

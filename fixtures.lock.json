@@ -1,0 +1,20 @@
+{
+  "cts": {
+    "repository": "https://github.com/KhronosGroup/WebGL",
+    "revision": "39443210f7f81db4773eb104facadfb85d05dfa4",
+    "license": "MIT",
+    "tests": [
+      "sdk/tests/conformance/glsl/misc/shader-with-invalid-identifier.frag.html",
+      "sdk/tests/conformance/glsl/misc/shader-without-precision.frag.html",
+      "sdk/tests/conformance/glsl/misc/shaders-with-mis-matching-varyings.html",
+      "sdk/tests/conformance/uniforms/null-uniform-location.html",
+      "sdk/tests/conformance/programs/gl-get-active-attribute.html"
+    ]
+  },
+  "demo": {
+    "repository": "https://github.com/gfxfundamentals/webgl-fundamentals",
+    "revision": "fd4401e2741a68ebb7c3beb33ed064a5859d22d7",
+    "license": "BSD",
+    "source": "webgl/webgl-render-to-texture.html"
+  }
+}

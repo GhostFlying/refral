@@ -1,0 +1,14 @@
+{
+  "name": "@refral/webgl",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@refral/compiler": "workspace:*",
+    "@refral/browser-host": "workspace:*",
+    "@refral/core-js": "workspace:*",
+    "@refral/core-api": "workspace:*",
+    "@refral/core-wasm": "workspace:*"
+  }
+}

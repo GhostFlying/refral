@@ -48,6 +48,7 @@
 
 - Use repository command entry points. `pnpm run doctor` checks the environment; `pnpm check` runs TypeScript, deterministic unit/native Rust checks, and support validation. Compiler builds and actual-Wasm/GPU verification have separate commands.
 - Match verification to the change. Documentation changes check links, facts, and status consistency. Semantic changes add or reuse meaningful behavior regressions and run affected core/browser tests.
+- Before stable, keep required Actions checks lightweight and critical to affected modules. Start with type checking, deterministic CPU tests, and support metadata. Run expensive Wasm, ANGLE, browser/CTS, deployment, and performance checks locally, on demand, or daily as optional verification. Use measured CI feedback time when revising the required set.
 - Run applicable formatting and language checks for changed code. Use strict TypeScript, rustfmt for Rust, and Google C++ Style for project C++.
 - Browser verification uses Playwright's installed `chrome` channel, an isolated profile, and one GPU test worker. Coordinate an exclusive measurement window for performance sampling.
 - Identify unit/mock, compiler, real GPU, differential, CTS, and performance evidence in reports. Preserve upstream CTS identities, assertions, and adapter changes.
@@ -67,7 +68,8 @@
 
 - The user authorizes automatic commits, pushes, and integration for completed work in this repository. Carry an accepted task through delivery without requesting confirmation again for those routine actions.
 - Until GitHub Actions acceptance gates are established, use the task's documented local acceptance checks as the integration gate. Bootstrap the empty repository with a coherent initial default-branch commit.
-- Once Actions gates are established, push a task branch, open a PR, follow its checks, address failures, and merge using rebase merge when the required checks pass. Verify checks against the current PR head and keep the resulting history linear.
+- Once Actions gates are established, push a task branch, open a PR, address required-check failures, and merge using rebase merge when the required checks pass. Verify checks against the current PR head and keep the resulting history linear.
+- Optional and daily checks are non-blocking for PR integration and auto-merge. Record their results and prioritize failures as follow-up work.
 - Preserve repository permissions and branch rules. Record the commit/PR and integration result in the task or handoff; report an external blocker if delivery requires access or a decision outside the authorized scope.
 
 ## Dependencies, artifacts, and handoff

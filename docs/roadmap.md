@@ -48,9 +48,22 @@ Inspect the actual existing command buffer, GL provider, upload path, threads, a
 
 ### Delivery and CI
 
-Task 010 establishes automatic commit/push/integration after documented task acceptance. The initial verified repository baseline is published directly to the default branch. GitHub Actions is the next delivery-infrastructure task: add deterministic TypeScript/JS/Rust checks and actual-Wasm build/tests first, then a separately identified compiler/browser tier with reproducible dependencies and uploaded failure evidence. Keep software-renderer CI results distinct from actual hardware GPU validation and performance evidence.
+Task 010 establishes automatic commit/push/integration after documented task acceptance. Task 011 records the user's pre-stable priority of short iteration cycles and a small required CI set. The initial repository baseline is published on the default branch. Workflow implementation is the next delivery-infrastructure task.
 
-Once Actions acceptance gates are established, deliver subsequent work through task branches and pull requests, follow the required checks, and rebase merge successful changes. The current policy does not imply that workflows or required-check settings already exist.
+Before stable, start with the following checks and select them according to affected modules. Documentation-only changes use documentation and metadata validation. Rust-native checks apply to Rust-affecting changes. Record actual runner startup, queue, and execution times before expanding the required set.
+
+| Verification | Initial pre-stable use |
+| --- | --- |
+| TypeScript type check, JS CPU unit tests, support metadata | Lightweight required checks for affected code and contracts |
+| Native Rust compilation and semantic tests | Lightweight required checks for Rust-affecting changes |
+| Actual Wasm build and adapter tests | Optional local, manual, or daily verification |
+| ANGLE acquisition/build and shader/link corpus | Optional local, manual, or daily verification |
+| Chrome differential scenes, CTS, demo, and deployment | Optional local, manual, or daily verification |
+| Performance sampling | Optional local or scheduled measurements with recorded environment |
+
+Keep `pnpm check` available as the comprehensive deterministic local entry point. CI can invoke its individual commands to run the selected lightweight checks. Authors choose focused local verification appropriate to their task and record the results. Manual Actions runs should allow selection of a test group. Daily runs should exercise the latest main revision and preserve diagnostics and failure artifacts. Track software-renderer correctness and hardware GPU measurements with their actual environment.
+
+Once Actions gates are established, deliver subsequent work through task branches and pull requests, follow the required checks, and rebase merge successful changes. Optional and daily outcomes inform follow-up priorities and remain non-blocking for auto-merge. Revisit the required set as stable release criteria take shape, using observed regressions and runner cost. The roadmap records the workflow design and its implementation status.
 
 ### Ownership
 

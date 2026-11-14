@@ -41,7 +41,7 @@ if (operation === 'check') {
     channel, target: 'wasm32-unknown-unknown', profile: 'release', bytes,
     sha256: createHash('sha256').update(binary).digest('hex'),
   }, null, 2) + '\n');
-  console.log(`Built formal Buffer core Wasm (${bytes} bytes).`);
+  console.log(`Built formal semantic core Wasm (${bytes} bytes).`);
 } else {
   throw new Error('Use node tools/rust.mjs check, test, or build.');
 }

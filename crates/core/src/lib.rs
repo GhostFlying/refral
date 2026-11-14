@@ -16,6 +16,11 @@ pub const BUFFER_USAGE: u32 = 0x8765;
 
 const MAX_SAFE_VERSION: u64 = 9_007_199_254_740_991;
 
+mod render;
+pub use render::*;
+#[cfg(test)]
+mod render_tests;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BufferHandle {
     pub context_id: u32,
@@ -69,7 +74,7 @@ struct Slot {
     buffer: Option<Buffer>,
 }
 
-pub struct BufferCore {
+pub struct ContextCore {
     context_id: u32,
     max_buffer_bytes: u64,
     slots: Vec<Slot>,
@@ -79,9 +84,12 @@ pub struct BufferCore {
     error_count: usize,
     lost: bool,
     lost_error_pending: bool,
+    render: RenderState,
 }
 
-impl BufferCore {
+pub type BufferCore = ContextCore;
+
+impl ContextCore {
     pub fn new(context_id: u32, max_buffer_bytes: u64) -> Result<Self, InitializationError> {
         if context_id == 0 {
             return Err(InitializationError::InvalidContextId);
@@ -99,6 +107,7 @@ impl BufferCore {
             error_count: 0,
             lost: false,
             lost_error_pending: false,
+            render: RenderState::default(),
         })
     }
 
@@ -153,6 +162,7 @@ impl BufferCore {
         self.error_count = 0;
         self.array_binding = None;
         self.element_binding = None;
+        self.render = RenderState::default();
         for slot in &mut self.slots {
             slot.buffer = None;
         }
@@ -306,6 +316,11 @@ impl BufferCore {
             return;
         }
         slot.buffer = None;
+        for attribute in &mut self.render.attributes {
+            if attribute.buffer == Some(handle) {
+                attribute.buffer = None;
+            }
+        }
         if self.array_binding == Some(handle) {
             self.array_binding = None;
         }

@@ -20,6 +20,8 @@
 
 ## Observable behavior
 
+- Before implementing a semantic feature, map its supported inputs, state transitions, validation order and errors to the pinned WebGL/IDL specification and applicable GLES/ESSL rules in `docs/spec-map.md` and the task. Preserve original CTS identities and assertions when adding coverage.
+- Use explicit specification-derived assertions alongside native comparison. Record reproducible browser deviations with their exact environment and evidence, and retain the specification's expected behavior in the cores.
 - Consume or snapshot mutable caller inputs before the GL upload call returns. Define ownership and reuse points for implementation-owned staging data.
 - Preserve the state and data version visible to every draw, including updates and resource replacement between draws.
 - Track object identity, storage generation, content version, and program link generation separately. Include context ownership and resource generations in validation and cache identity.

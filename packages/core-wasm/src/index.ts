@@ -1,6 +1,6 @@
 import type { BufferCore, BufferCoreOptions, BufferHandle, BufferSnapshot } from '@refral/core-api';
 
-const ABI_VERSION = 1;
+const ABI_VERSION = 2;
 const DEFAULT_WASM_URL = '/artifacts/core-wasm/refral_core.wasm';
 const UINT32_MAX = 0xffff_ffff;
 
@@ -85,7 +85,8 @@ type HandleCall<T> = (contextId: number, slot: number, generation: number) => T;
 
 function withHandle<T>(buffer: BufferHandle | null, call: HandleCall<T>): T {
   if (buffer === null) return call(0, 0, 0);
-  if (!isPositiveU32(buffer.contextId) || !isPositiveU32(buffer.slot) || !isPositiveU32(buffer.generation)) {
+  if (buffer.kind !== 'buffer' || !isPositiveU32(buffer.contextId)
+    || !isPositiveU32(buffer.slot) || !isPositiveU32(buffer.generation)) {
     // Preserve a nonnull invalid handle across the i32 ABI, rather than wrapping
     // a malformed number onto a live object or turning it into a null binding.
     return call(0, 1, 1);
@@ -121,7 +122,7 @@ export async function createRustBufferCore(
 
   function resultHandle(slot: number): BufferHandle | null {
     if (slot === 0) return null;
-    return Object.freeze({ contextId, slot: slot >>> 0, generation: abi.rf_result_generation() >>> 0 });
+    return Object.freeze({ kind: 'buffer', contextId, slot: slot >>> 0, generation: abi.rf_result_generation() >>> 0 });
   }
 
   function upload(data: Uint8Array): void {
@@ -168,7 +169,7 @@ export async function createRustBufferCore(
       }
       const byteLength = abi.rf_snapshot_length() >>> 0;
       return {
-        handle: Object.freeze({ contextId: buffer.contextId, slot: buffer.slot, generation: buffer.generation }),
+        handle: Object.freeze({ kind: 'buffer', contextId: buffer.contextId, slot: buffer.slot, generation: buffer.generation }),
         byteLength,
         usage: abi.rf_snapshot_usage() >>> 0,
         storageGeneration: abi.rf_snapshot_storage_generation(),
@@ -179,3 +180,4 @@ export async function createRustBufferCore(
     dispose: () => abi.rf_dispose(),
   });
 }
+export { createRustDrawingCore, createRustDrawingCoreFromModule, prepareRustModule } from './render.js';

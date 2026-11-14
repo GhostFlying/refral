@@ -1,16 +1,18 @@
 import { prepareContextFactory, getTestingHooks } from '@refral/webgl';
 
+export type CtsBackend = 'native' | 'js' | 'rust' | 'refral';
 interface Assertion { success: boolean; message: string; skipped: boolean }
 interface Harness {
   reportResults(path: string, success: boolean, message: string, skipped?: boolean): void;
   notifyFinished(path: string): void;
 }
 
-export async function runCts(path: string, backend: 'native' | 'refral') {
+export async function runCts(path: string, requestedBackend: CtsBackend) {
+  const backend = requestedBackend === 'refral' ? 'js' : requestedBackend;
   const response = await fetch(`/third_party/cts/${path}`);
   if (!response.ok) throw new Error(`CTS fixture missing (${response.status}): ${path}. Run pnpm deps:sync.`);
   const html = new DOMParser().parseFromString(await response.text(), 'text/html');
-  const factory = backend === 'refral' ? await prepareContextFactory() : null;
+  const factory = backend === 'native' ? null : await prepareContextFactory({ core: backend });
   const iframe = document.createElement('iframe');
   iframe.src = '/tests/fixtures/cts-frame.html';
   const loaded = new Promise<void>((resolve) => { iframe.onload = () => resolve(); });
@@ -75,18 +77,31 @@ export async function runCts(path: string, backend: 'native' | 'refral') {
       }
     }
     const completionStatus = await completion;
+    const environments: Record<string, unknown>[] = contexts.map(context => {
+      const hooks = getTestingHooks(context);
+      if (hooks.core !== backend) errors.push({ name: 'CoreSelectionError',
+        message: `Requested ${backend}, received ${hooks.core}` });
+      return { core: hooks.core, ...hooks.environment, attributes: context.getContextAttributes() };
+    });
+    if (!factory) {
+      for (const canvas of doc.querySelectorAll('canvas')) {
+        const context = canvas.getContext('webgl');
+        if (context) environments.push({ core: 'native', userAgent: frame.navigator.userAgent,
+          version: context.getParameter(context.VERSION), renderer: context.getParameter(context.RENDERER),
+          attributes: context.getContextAttributes() });
+      }
+    }
     const failed = assertions.filter((assertion) => !assertion.success && !assertion.skipped).length;
     const passed = assertions.filter((assertion) => assertion.success && !assertion.skipped).length;
     const status = completionStatus === 'timeout' ? 'timeout'
       : errors.some((error) => error.name === 'NotSupportedError') ? 'unsupported'
       : failed || errors.length || !passed ? 'fail' : 'pass';
     return {
-      path, backend, status, completionStatus, passed, failed, assertions, errors,
-      adaptations: backend === 'refral' ? ['asynchronous compiler/device preinitialization', 'iframe-scoped canvas getContext injection', 'original test scripts and assertions executed unchanged'] : [],
+      path, backend, requestedBackend, status, completionStatus, passed, failed, assertions, errors, environments,
+      adaptations: factory ? ['asynchronous compiler/device/core preinitialization', 'iframe-scoped canvas getContext injection', 'original test scripts and assertions executed unchanged'] : [],
     };
   } finally {
     clearTimeout(timer);
-    for (const context of contexts) await getTestingHooks(context).dispose();
     await factory?.dispose();
     globals.webglTestHarness = previous;
     iframe.remove();

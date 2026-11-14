@@ -9,7 +9,7 @@ Current direction is parallel JS/TypeScript and Rust/Wasm semantic cores sharing
 | [Roadmap](roadmap.md) | Stages, implementation order, and acceptance |
 | [Support matrix](support.json) | Actual implementation scope and evidence |
 | [Actions and PR delivery](ci.md) | Required checks, optional runs, and repository integration constraints |
-| [Shared core contract](core-api.md) | Buffer handles, validation, input ownership, and lifecycle |
+| [Shared core contract](core-api.md) | Object handles, shader/program state, draw snapshots, validation, and lifecycle |
 | [Specification map](spec-map.md) | Pinned WebGL/IDL/GLES sources, semantic assertions, and original CTS identities |
 | [Architecture decisions](adr/) | Accepted decisions and their rationale |
 | [Agent tasks](tasks/) | Bounded implementation plans, dependencies, acceptance, and results |
@@ -21,3 +21,5 @@ ADR 003 records the current [parallel-core direction](adr/003-parallel-cores.md)
 ADR 004 records the first [Buffer contract and Rust Wasm boundary](adr/004-buffer-core-boundary.md).
 
 Dated reports live under `docs/validation/`; the initial JS report remains `docs/validation.md`. Source/reference material belongs under `docs/references/` when needed. Each report identifies the tested implementation and revision. Support entries record JS and Rust progress independently; the broad rendering profile currently belongs to JS.
+
+ADR 005 records the [unified drawing core and compiler-artifact boundary](adr/005-drawing-core-boundary.md) introduced by task 013.

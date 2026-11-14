@@ -55,6 +55,11 @@ function bytesOf(value: ArrayBufferView | ArrayBuffer): Uint8Array {
     : new Uint8Array(value);
 }
 
+interface SemanticCompiler extends Compiler {
+  releaseShader?(shader: CompiledShader): void;
+  releaseProgram?(program: LinkedProgram): void;
+}
+
 export class SemanticContext {
   private readonly owner = {};
   private readonly errors = new ErrorState();
@@ -81,7 +86,7 @@ export class SemanticContext {
   private maxBufferBytes: number;
 
   constructor(readonly canvas: DrawingSurface, private readonly host: SemanticHost,
-    private readonly compiler: Compiler, private readonly contextAttributes: ContextAttributes,
+    private readonly compiler: SemanticCompiler, private readonly contextAttributes: ContextAttributes,
     private readonly profile: RuntimeProfile) {
     this.maxBufferBytes = host.limits.maxBufferSize ?? Number.MAX_SAFE_INTEGER;
     this.state = createRasterState(canvas.width, canvas.height);
@@ -114,8 +119,9 @@ export class SemanticContext {
   private valid<T extends LogicalObject>(object: unknown, type: new (...args: never[]) => T,
     allowDeleted = false): object is T {
     if (this.lost) return false;
+    const retained = (object instanceof ShaderObject || object instanceof ProgramObject) && this.objects.has(object);
     if (!(object instanceof type) || object.owner !== this.owner ||
-        (!allowDeleted && object.deleted)) {
+        (!allowDeleted && object.deleted && !retained)) {
       this.errors.set(GL.INVALID_OPERATION);
       return false;
     }
@@ -250,8 +256,10 @@ export class SemanticContext {
   }
   compileShader(shader: ShaderObject): void {
     if (!this.valid(shader, ShaderObject)) return;
+    const previous = shader.result;
     shader.result = this.compiler.compile(shader.source,
       shader.type === GL.VERTEX_SHADER ? "vertex" : "fragment", 1);
+    if (previous) this.compiler.releaseShader?.(previous);
   }
   getShaderParameter(shader: ShaderObject, parameter: number): unknown {
     if (!this.valid(shader, ShaderObject, true)) return null;
@@ -277,6 +285,7 @@ export class SemanticContext {
     if (retained) return;
     this.objects.delete(shader);
     shader.source = "";
+    if (shader.result) this.compiler.releaseShader?.(shader.result);
     shader.result = null;
   }
   isShader(shader: unknown): boolean {
@@ -310,6 +319,7 @@ export class SemanticContext {
     if (!this.valid(program, ProgramObject)) return;
     program.generation++;
     program.validateStatus = false;
+    program.linkStatus = false;
     const vertex = program.shaders.find(shader => shader.type === GL.VERTEX_SHADER)?.result;
     const fragment = program.shaders.find(shader => shader.type === GL.FRAGMENT_SHADER)?.result;
     if (!vertex || !fragment) {
@@ -317,8 +327,13 @@ export class SemanticContext {
     }
     const executable = this.compiler.link(vertex, fragment, program.attributeLocations);
     program.linkStatus = executable.success; program.log = executable.log;
-    if (!executable.success) return;
+    if (!executable.success) {
+      this.compiler.releaseProgram?.(executable);
+      return;
+    }
+    const previous = program.executable;
     program.executable = executable;
+    if (previous) this.compiler.releaseProgram?.(previous);
     program.vertexUniforms = new Uint8Array(Math.max(16, executable.vertexUniformBufferSize));
     program.fragmentUniforms = new Uint8Array(Math.max(16, executable.fragmentUniformBufferSize));
     program.values.clear(); program.samplerUnits.clear();
@@ -332,7 +347,7 @@ export class SemanticContext {
   }
   useProgram(program: ProgramObject | null): void {
     if (program !== null && !this.valid(program, ProgramObject)) return;
-    if (program !== null && !program.linkStatus) return this.error(GL.INVALID_OPERATION);
+    if (program !== null && (program.deleted || !program.linkStatus)) return this.error(GL.INVALID_OPERATION);
     const previous = this.program;
     this.program = program;
     if (previous && previous !== program) this.releaseProgram(previous);
@@ -393,6 +408,7 @@ export class SemanticContext {
     this.objects.delete(program);
     const shaders = program.shaders;
     program.shaders = [];
+    if (program.executable) this.compiler.releaseProgram?.(program.executable);
     program.executable = null;
     program.vertexUniforms = new Uint8Array(0);
     program.fragmentUniforms = new Uint8Array(0);
@@ -517,22 +533,24 @@ export class SemanticContext {
     if (![GL.FLOAT, GL.BYTE, GL.UNSIGNED_BYTE, GL.SHORT, GL.UNSIGNED_SHORT].includes(type as 0x1406)) return this.error(GL.INVALID_ENUM);
     if (type !== GL.FLOAT) return unsupported("non-FLOAT vertexAttribPointer");
     if (stride % 4 || offset % 4) return this.error(GL.INVALID_OPERATION);
-    if (!this.arrayBuffer) return this.error(GL.INVALID_OPERATION);
+    if (!this.arrayBuffer && offset !== 0) return this.error(GL.INVALID_OPERATION);
     Object.assign(attribute, { buffer: this.arrayBuffer, size, type, normalized: !!normalized, stride, offset });
   }
-  private constantAttribute(index: number, values: number[]): void {
+  private constantAttribute(index: number, values: ArrayLike<number>, components: number): void {
     const attribute = this.attributes[index];
     if (!attribute) return this.error(GL.INVALID_VALUE);
-    attribute.constant = [values[0] ?? 0, values[1] ?? 0, values[2] ?? 0, values[3] ?? 1];
+    if (values.length < components) return this.error(GL.INVALID_VALUE);
+    attribute.constant = [values[0] ?? 0, components > 1 ? values[1] ?? 0 : 0,
+      components > 2 ? values[2] ?? 0 : 0, components > 3 ? values[3] ?? 1 : 1];
   }
-  vertexAttrib1f(index: number, x: number): void { this.constantAttribute(index, [x]); }
-  vertexAttrib2f(index: number, x: number, y: number): void { this.constantAttribute(index, [x, y]); }
-  vertexAttrib3f(index: number, x: number, y: number, z: number): void { this.constantAttribute(index, [x, y, z]); }
-  vertexAttrib4f(index: number, x: number, y: number, z: number, w: number): void { this.constantAttribute(index, [x, y, z, w]); }
-  vertexAttrib1fv(index: number, values: ArrayLike<number>): void { this.constantAttribute(index, [values[0]!]); }
-  vertexAttrib2fv(index: number, values: ArrayLike<number>): void { this.constantAttribute(index, [values[0]!, values[1]!]); }
-  vertexAttrib3fv(index: number, values: ArrayLike<number>): void { this.constantAttribute(index, [values[0]!, values[1]!, values[2]!]); }
-  vertexAttrib4fv(index: number, values: ArrayLike<number>): void { this.constantAttribute(index, [values[0]!, values[1]!, values[2]!, values[3]!]); }
+  vertexAttrib1f(index: number, x: number): void { this.constantAttribute(index, [x], 1); }
+  vertexAttrib2f(index: number, x: number, y: number): void { this.constantAttribute(index, [x, y], 2); }
+  vertexAttrib3f(index: number, x: number, y: number, z: number): void { this.constantAttribute(index, [x, y, z], 3); }
+  vertexAttrib4f(index: number, x: number, y: number, z: number, w: number): void { this.constantAttribute(index, [x, y, z, w], 4); }
+  vertexAttrib1fv(index: number, values: ArrayLike<number>): void { this.constantAttribute(index, values, 1); }
+  vertexAttrib2fv(index: number, values: ArrayLike<number>): void { this.constantAttribute(index, values, 2); }
+  vertexAttrib3fv(index: number, values: ArrayLike<number>): void { this.constantAttribute(index, values, 3); }
+  vertexAttrib4fv(index: number, values: ArrayLike<number>): void { this.constantAttribute(index, values, 4); }
   getVertexAttrib(index: number, parameter: number): unknown {
     if (this.lost) return null;
     const attribute = this.attributes[index];
@@ -1001,6 +1019,39 @@ export class SemanticContext {
     const target = this.target();
     if (!target) throw new Error("Cannot capture an incomplete framebuffer");
     return target;
+  }
+
+  dispose(): void {
+    this.markLost();
+    for (const object of this.objects) {
+      object.deleted = true;
+      if (object instanceof ShaderObject) {
+        if (object.result) this.compiler.releaseShader?.(object.result);
+        object.result = null;
+        object.source = "";
+      } else if (object instanceof ProgramObject) {
+        if (object.executable) this.compiler.releaseProgram?.(object.executable);
+        object.executable = null;
+        object.shaders = [];
+        object.values.clear();
+        object.samplerUnits.clear();
+        object.vertexUniforms = new Uint8Array(0);
+        object.fragmentUniforms = new Uint8Array(0);
+      } else if (object instanceof BufferObject) object.data = new Uint8Array(0);
+      else if (object instanceof TextureObject) object.storage = null;
+      else if (object instanceof FramebufferObject) {
+        object.color = null;
+        object.depth = null;
+      }
+    }
+    this.objects.clear();
+    this.program = null;
+    this.arrayBuffer = null;
+    this.elementBuffer = null;
+    this.framebuffer = null;
+    this.renderbuffer = null;
+    this.textureUnits.fill(null);
+    for (const attribute of this.attributes) attribute.buffer = null;
   }
 
   markLost(): boolean {

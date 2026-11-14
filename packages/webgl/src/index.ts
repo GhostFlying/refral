@@ -1,13 +1,13 @@
 import { GL, allocateContextId } from "@refral/core-api";
-import type { BufferCore, BufferSnapshot, CoreKind } from "@refral/core-api";
-import { SemanticContext, createJsBufferCore } from "@refral/core-js";
-import type { JsBufferCore } from "@refral/core-js";
-import { createRustBufferCore } from "@refral/core-wasm";
+import type { BufferHandle, BufferSnapshot, CoreKind, DrawingCore } from "@refral/core-api";
+import { createJsDrawingCore } from "@refral/core-js";
+import { createRustDrawingCore, createRustDrawingCoreFromModule, prepareRustModule } from "@refral/core-wasm";
 import { BrowserHost } from "@refral/browser-host";
 import type { CapturedPixels } from "@refral/browser-host";
-import { createCompiler, COMPILER_LIMITS } from "@refral/compiler";
+import { createCompiler, createCompilerRegistry, COMPILER_LIMITS } from "@refral/compiler";
 import type { Compiler } from "@refral/compiler";
 import { createBufferFacade, isBufferBinding, requireArguments, toEnum } from "./buffers.js";
+import { createProgramFacade } from "./programs.js";
 
 export interface ContextOptions extends WebGLContextAttributes {
   version: 1;
@@ -95,55 +95,48 @@ function actualAttributes(requested: WebGLContextAttributes): WebGLContextAttrib
 }
 
 function wrapContext(canvas: HTMLCanvasElement, host: BrowserHost,
-  attributes: WebGLContextAttributes, buffers: BufferCore,
-  core: SemanticContext | null, jsBuffers: JsBufferCore | null): WebGL1PrototypeContext {
-  const bufferFacade = createBufferFacade(buffers);
+  attributes: WebGLContextAttributes, core: DrawingCore,
+  disposeCompiler: () => void): WebGL1PrototypeContext {
+  const bufferFacade = createBufferFacade(core);
+  const programFacade = createProgramFacade(core);
   void host.device.lost.then(info => {
-    if (buffers.markLost()) canvas.dispatchEvent(new WebGLContextEvent("webglcontextlost", {
+    if (core.markLost()) canvas.dispatchEvent(new WebGLContextEvent("webglcontextlost", {
       cancelable: true, statusMessage: info.message,
     }));
   });
   const methods = new Map<string, (...args: unknown[]) => unknown>();
   const invoke = (property: string, args: unknown[]): unknown => {
-    if (property === 'getError') return buffers.getError();
-    if (property === 'isContextLost') return buffers.isContextLost();
+    if (property === 'getError') return core.getError();
+    if (property === 'isContextLost') return core.isContextLost();
     if (Object.hasOwn(bufferFacade.methods, property)) return bufferFacade.methods[property]!(...args);
     if (property === 'getParameter') {
       requireArguments(property, args, 1);
       const parameter = toEnum(args[0]);
       if (isBufferBinding(parameter)) return bufferFacade.binding(parameter);
+      if (parameter === GL.CURRENT_PROGRAM) return programFacade.current();
+      args = [parameter];
     }
-    if (core) {
-      if (property === 'texImage2D' || property === 'texSubImage2D') {
-        if (core.isContextLost()) return core.invoke(property, args);
-        args = normalizeImageInput(args, property === 'texSubImage2D', core.getParameter(GL.UNPACK_ALIGNMENT) as number);
-      }
-      const result = core.invoke(property, args);
-      if (property === 'getVertexAttrib' && toEnum(args[1]) === GL.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) {
-        return bufferFacade.wrap(jsBuffers!.toHandle(result));
-      }
-      return result;
-    }
-    if (buffers.isContextLost()) {
-      if (property === 'getAttribLocation') return -1;
-      if (property === 'getVertexAttribOffset') return 0;
-      if (property === 'checkFramebufferStatus') return GL.FRAMEBUFFER_UNSUPPORTED;
-      if (property.startsWith('get') || property.startsWith('create')) return null;
-      if (property.startsWith('is')) return false;
-      return undefined;
-    }
-    if (property === 'getContextAttributes') return { ...attributes };
-    if (property === 'getSupportedExtensions') return [];
+    if (property === 'getContextAttributes') return core.isContextLost() ? null : { ...attributes };
+    if (property === 'getSupportedExtensions') return core.isContextLost() ? null : [];
     if (property === 'getExtension') return null;
-    if (property === 'flush') return host.flush();
-    return unsupported(`${property} for the Rust Buffer profile`);
+    if (property === 'texImage2D' || property === 'texSubImage2D') {
+      if (core.isContextLost()) return core.invoke(property, args);
+      args = normalizeImageInput(args, property === 'texSubImage2D',
+        core.invoke('getParameter', [GL.UNPACK_ALIGNMENT]) as number);
+    }
+    const result = Object.hasOwn(programFacade.methods, property)
+      ? programFacade.methods[property]!(...args) : core.invoke(property, args);
+    if (property === 'getVertexAttrib' && toEnum(args[1]) === GL.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) {
+      return bufferFacade.wrap(result as BufferHandle | null);
+    }
+    return result;
   };
   const proxy = new Proxy({}, {
     get(_target, property) {
       if (typeof property === "string" && property in GL) return GL[property as keyof typeof GL];
       if (property === 'canvas') return canvas;
-      if (property === 'drawingBufferWidth') return buffers.isContextLost() ? 0 : canvas.width;
-      if (property === 'drawingBufferHeight') return buffers.isContextLost() ? 0 : canvas.height;
+      if (property === 'drawingBufferWidth') return core.isContextLost() ? 0 : canvas.width;
+      if (property === 'drawingBufferHeight') return core.isContextLost() ? 0 : canvas.height;
       if (property === 'drawingBufferColorSpace') return 'srgb';
       if (property === "then") return undefined;
       if (typeof property !== 'string') return undefined;
@@ -152,16 +145,15 @@ function wrapContext(canvas: HTMLCanvasElement, host: BrowserHost,
     },
   });
   hooks.set(proxy, {
-    core: buffers.kind,
+    core: core.kind,
     inspectBuffer: bufferFacade.inspect,
-    capture: () => {
-      if (!core) return unsupported('GPU pixel capture for the Rust Buffer profile');
-      return host.capture(core.captureTarget());
-    },
+    capture: () => host.capture(core.captureTarget()),
     stats: host.stats, environment: host.environment, errors: host.errors, device: host.device,
     dispose: async () => {
-      buffers.dispose();
+      core.dispose();
       bufferFacade.dispose();
+      programFacade.dispose();
+      disposeCompiler();
       await host.dispose();
     },
   });
@@ -176,33 +168,67 @@ export async function createWebGLOnWebGPU(canvas: HTMLCanvasElement,
   const attributes = actualAttributes({ ...options, ...options.contextAttributes, ...options.attributes });
   const compiler = options.compiler ?? await createCompiler(options.compilerBaseURL);
   const host = await BrowserHost.create(canvas, { alpha: attributes.alpha!, depth: attributes.depth! });
+  const registry = createCompilerRegistry(compiler);
   try {
-    const bufferOptions = { contextId: allocateContextId(), maxBufferBytes: host.limits.maxBufferSize };
-    if (kind === 'rust') {
-      const buffers = await createRustBufferCore(bufferOptions, options.coreWasmURL);
-      return wrapContext(canvas, host, attributes, buffers, null, null);
-    }
-    const core = new SemanticContext(canvas, host, compiler, attributes, COMPILER_LIMITS);
-    const buffers = createJsBufferCore(core, bufferOptions);
-    return wrapContext(canvas, host, attributes, buffers, core, buffers);
+    const coreOptions = {
+      contextId: allocateContextId(), maxBufferBytes: host.limits.maxBufferSize,
+      surface: canvas, attributes, profile: COMPILER_LIMITS,
+    };
+    const services = { compiler: registry, host };
+    const core = kind === 'rust'
+      ? await createRustDrawingCore(coreOptions, services, options.coreWasmURL)
+      : createJsDrawingCore(coreOptions, services);
+    return wrapContext(canvas, host, attributes, core, () => registry.dispose());
   } catch (error) {
+    registry.dispose();
     await host.dispose();
     throw error;
   }
 }
 
 /** Harness-only synchronous construction after browser device/compiler initialization. */
-export async function prepareContextFactory(): Promise<PreparedContextFactory> {
-  const [compiler, makeHost] = await Promise.all([createCompiler(), BrowserHost.prepare()]);
+export async function prepareContextFactory(
+  options: Pick<ContextOptions, 'core' | 'coreWasmURL'> = {},
+): Promise<PreparedContextFactory> {
+  const kind = options.core ?? 'js';
+  if (kind !== 'js' && kind !== 'rust') return unsupported('core selection');
+  const prepared = await Promise.allSettled([
+    createCompiler(), BrowserHost.prepare(),
+    kind === 'rust' ? prepareRustModule(options.coreWasmURL) : null,
+  ]);
+  const [compilerResult, hostResult, moduleResult] = prepared;
+  const failure = prepared.find(result => result.status === 'rejected');
+  if (failure?.status === 'rejected') {
+    if (hostResult.status === 'fulfilled') hostResult.value.dispose();
+    throw failure.reason;
+  }
+  if (compilerResult.status !== 'fulfilled' || hostResult.status !== 'fulfilled'
+    || moduleResult.status !== 'fulfilled') throw new Error('Context preparation failed.');
+  const compiler = compilerResult.value;
+  const makeHost = hostResult.value;
+  const module = moduleResult.value;
   const contexts = new Set<WebGL1PrototypeContext>();
   const factory: PreparedContextFactory = (canvas, requested = {}) => {
     const attributes = actualAttributes(requested);
     const host = makeHost(canvas, { alpha: attributes.alpha!, depth: attributes.depth! });
-    const core = new SemanticContext(canvas, host, compiler, attributes, COMPILER_LIMITS);
-    const buffers = createJsBufferCore(core, { contextId: allocateContextId(), maxBufferBytes: host.limits.maxBufferSize });
-    const context = wrapContext(canvas, host, attributes, buffers, core, buffers);
-    contexts.add(context);
-    return context;
+    const registry = createCompilerRegistry(compiler);
+    const coreOptions = {
+      contextId: allocateContextId(), maxBufferBytes: host.limits.maxBufferSize,
+      surface: canvas, attributes, profile: COMPILER_LIMITS,
+    };
+    const services = { compiler: registry, host };
+    try {
+      const core = kind === 'rust'
+        ? createRustDrawingCoreFromModule(module!, coreOptions, services)
+        : createJsDrawingCore(coreOptions, services);
+      const context = wrapContext(canvas, host, attributes, core, () => registry.dispose());
+      contexts.add(context);
+      return context;
+    } catch (error) {
+      registry.dispose();
+      void host.dispose();
+      throw error;
+    }
   };
   factory.dispose = async () => {
     await Promise.all([...contexts].map(context => getTestingHooks(context).dispose()));

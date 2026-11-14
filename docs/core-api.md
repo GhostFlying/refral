@@ -1,14 +1,14 @@
 # Shared core contract
 
-## First scope
+## Shared scope
 
-The first common feature is WebGL1 Buffer semantics. Both implementations execute synchronous creation, binding, allocation, subrange update, query, deletion, object checks, errors, and context loss. The shared WebGL facade owns JS Buffer wrappers and selects `core: 'js' | 'rust'`, with JS as the default for existing callers.
+Both implementations execute WebGL1 Buffer semantics and the default-framebuffer drawing profile introduced by task 013. `DrawingCore` extends `BufferCore` with normalized semantic dispatch and target capture. The facade selects `core: 'js' | 'rust'`, with JS as the default, and owns JS object wrappers and WebIDL conversion.
 
-The existing JS rendering implementation continues through its adapter while subsequent features acquire common contracts. Rust reports unsupported shader/draw/texture operations through an explicit profile diagnostic. Its Buffer operations execute in the Rust Wasm instance.
+The shared drawing profile includes ESSL100 shader/program lifecycle and reflection, FLOAT attributes and constants, float scalar/vector uniforms, TRIANGLES arrays and u8/u16 indices, viewport, default color/depth clear, ordered snapshots, submission and asynchronous testing capture. JS also implements its recorded texture/framebuffer and broader raster profile. Rust reports valid operations beyond its declared profile through an explicit library diagnostic.
 
 ## Handles and identity
 
-A Buffer handle is the immutable value `{ contextId, slot, generation }`, with positive u32 fields. Zero is reserved for the nullable ABI representation. Each context receives a process-local context ID from the common JS boundary, and each implementation validates context ownership, slot membership, and generation.
+A logical handle is the immutable value `{ kind, contextId, slot, generation }`, with a kind literal and positive u32 fields. Buffer, shader, program and uniform-location handles use distinct kinds. Zero is reserved for the nullable ABI representation. Each context receives a process-local context ID from the common JS boundary, and each implementation validates context ownership, slot membership, and generation.
 
 The facade maps opaque, extensible JS wrappers to handles and caches live wrappers by handle. A repeated binding or attribute query returns the existing wrapper. Deleted and foreign handles follow GL behavior. Reused slots receive a new generation and stale handles remain invalid.
 
@@ -30,6 +30,20 @@ Context loss reports CONTEXT_LOST_WEBGL once, then NO_ERROR. The internal core's
 
 ## Wasm boundary
 
-The Rust core crate owns the semantics and has native unit tests. The Wasm crate exports a private single-context ABI for one instance per facade context. The adapter passes context/slot/generation explicitly and validates ABI version/exports. Uploads use a Rust-owned input arena. The adapter refreshes memory views after allocation or growth and passes bytes synchronously. Inspection returns a copied output view.
+The Rust core crate owns the semantics and has native unit tests. The Wasm crate exports a private single-context ABI for one instance per facade context. The version 2 adapter passes kind/context/slot/generation explicitly and validates ABI version/exports. Uploads use a Rust-owned input arena. The adapter refreshes memory views after allocation or growth and passes bytes synchronously. Inspection returns a copied output view.
 
 Wasm functions validate handle and arena bounds and return explicit status or GL errors for input failures. Allocation failures become OUT_OF_MEMORY. The exact exports are documented by the Wasm adapter and checked by the integration tests. This ABI is scoped to the project adapter.
+
+## Shader and program operations
+
+The selected core owns shader source, compile results, attached shaders, link status, validation status, retained deletion references and current program. The shared compiler registry owns compiled shader and linked executable artifacts under context-local positive IDs. Its synchronous compile/link methods return diagnostics and reflection as well as the artifact ID. Each core releases replaced/finally retired artifacts. The facade disposes the per-context registry when the context is disposed.
+
+Link attempts advance program link generation and invalidate old uniform locations. A failed current-program relink makes later drawing and uniform access produce INVALID_OPERATION. Shader source edits, recompilation and attachment changes preserve the installed executable until a link attempt. A successful link resets uniform values. Shader/program query results map back to the facade's existing wrappers. Uniform-location queries create fresh wrappers and carry the program/link generation through their logical records.
+
+DOMString source is preserved as code units, including NUL and lone surrogates. Numeric input conversion preserves unrestricted GLfloat values. Null uniform locations are ignored after WebIDL argument conversion, including matrix transpose and malformed array-length GL validation. Float vector lists require complete values and their length must be a multiple of the assigned width. Stale, foreign, mismatched and wrong-current-program locations produce INVALID_OPERATION.
+
+## Execution and ownership
+
+Both cores pass shared DrawOperation, TargetSnapshot and RasterState records to SemanticHost. Drawing captures the executable, target dimensions, attributes, uniform bytes and index/vertex Buffer versions observed at the call. Host encoding retains the data needed by queued work. Automatic microtask submission and explicit flush submit encoded operations, while asynchronous testing capture also waits for GPU readback.
+
+Rust uses one context for the complete profile. ABI v2 carries cold metadata in bounded JSON, source/names as explicit little-endian UTF16, numeric payloads as binary floats, and draw results as owned versioned binary snapshots. The adapter copies output arenas before further Wasm calls. Binding-only serde dependencies stay outside the native semantic crate. ADR 005 records this boundary.

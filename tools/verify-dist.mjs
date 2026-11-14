@@ -56,7 +56,7 @@ try {
     call('rf_dispose');
     return { version, initialized, slot, generation, byteLength, error };
   });
-  assert.deepEqual(rustBuffer, { version: 1, initialized: 1, slot: 1, generation: 1, byteLength: 4, error: 0 });
+  assert.deepEqual(rustBuffer, { version: 2, initialized: 1, slot: 1, generation: 1, byteLength: 4, error: 0 });
   await page.screenshot({ path: 'artifacts/deployment/chrome.png' });
   const result = { recordedAt: new Date().toISOString(), url: page.url(), browserVersion: browser.version(), headless: process.env.REFRAL_HEADLESS === '1', viewport: page.viewportSize(), probe, demo, rustBuffer, pageErrors: errors };
   await writeFile('artifacts/deployment/result.json', JSON.stringify(result, null, 2) + '\n');

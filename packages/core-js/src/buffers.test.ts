@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { allocateContextId, GL } from "@refral/core-api";
+import type { BufferHandle } from "@refral/core-api";
 import type { Compiler } from "@refral/compiler";
 import { createJsBufferCore } from "./buffers.js";
 import { SemanticContext } from "./context.js";
@@ -23,6 +24,21 @@ function createContext(maxBufferBytes = 32) {
 }
 
 describe("JS Buffer contract over the rendering context", () => {
+  it("rejects a different handle kind with otherwise identical identity fields", () => {
+    const { buffers } = createContext();
+    const buffer = buffers.createBuffer()!;
+    const shader = { ...buffer, kind: "shader" } as unknown as BufferHandle;
+    buffers.bindBuffer(GL.ARRAY_BUFFER, shader);
+    expect(buffers.getError()).toBe(GL.INVALID_OPERATION);
+    expect(buffers.isBuffer(shader)).toBe(false);
+    expect(buffers.inspectBuffer(shader)).toBeNull();
+    expect(buffers.getError()).toBe(GL.NO_ERROR);
+    buffers.deleteBuffer(shader);
+    expect(buffers.getError()).toBe(GL.INVALID_OPERATION);
+    buffers.bindBuffer(GL.ARRAY_BUFFER, buffer);
+    expect(buffers.isBuffer(buffer)).toBe(true);
+  });
+
   it("shares bindings and attribute identity while retaining prior upload bytes", () => {
     const { core, buffers } = createContext();
     const handle = buffers.createBuffer()!;

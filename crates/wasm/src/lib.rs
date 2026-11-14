@@ -7,7 +7,9 @@ use std::cell::RefCell;
 
 use refral_core::{BufferCore, BufferHandle, BufferSnapshot, INVALID_OPERATION, OUT_OF_MEMORY};
 
-const ABI_VERSION: u32 = 1;
+mod render;
+
+const ABI_VERSION: u32 = 2;
 
 enum Upload {
     Data { target: u32, usage: u32 },
@@ -20,6 +22,7 @@ struct State {
     pending_upload: Option<Upload>,
     result_handle: Option<BufferHandle>,
     snapshot: Option<BufferSnapshot>,
+    render_transport: render::Transport,
 }
 
 thread_local! {
@@ -81,6 +84,7 @@ pub extern "C" fn rf_init(context_id: u32, max_buffer_bytes: f64) -> u32 {
             pending_upload: None,
             result_handle: None,
             snapshot: None,
+            render_transport: render::Transport::default(),
         });
     });
     1
@@ -309,6 +313,7 @@ pub extern "C" fn rf_dispose() {
         state.input = Vec::new();
         state.snapshot = None;
         state.result_handle = None;
+        state.render_transport = render::Transport::default();
     });
 }
 
@@ -329,7 +334,7 @@ mod tests {
 
     #[test]
     fn initializes_and_rejects_invalid_limits() {
-        assert_eq!(rf_abi_version(), 1);
+        assert_eq!(rf_abi_version(), 2);
         assert_eq!(rf_init(0, 1.0), 0);
         assert_eq!(rf_init(1, f64::NAN), 0);
         assert_eq!(rf_init(1, -1.0), 0);

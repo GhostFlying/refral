@@ -8,7 +8,10 @@ export default defineConfig({
   testDir: fileURLToPath(new URL('./', import.meta.url)),
   testMatch: 'readback.spec.ts',
   outputDir: fileURLToPath(new URL('../../artifacts/readback/playwright', import.meta.url)),
-  reporter: [['list'], ['json', { outputFile: 'artifacts/readback/chrome-results.json' }]],
+  reporter: [
+    ['list'],
+    ['json', { outputFile: fileURLToPath(new URL('../../artifacts/readback/chrome-results.json', import.meta.url)) }],
+  ],
   projects: [
     { name: 'readback', testMatch: 'readback.spec.ts' },
     {

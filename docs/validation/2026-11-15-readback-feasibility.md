@@ -1,6 +1,6 @@
 # Synchronous readback feasibility
 
-Recorded on 2026-11-15 from main `67c20c9` plus task025's experimental changes. Task026 supplies the pinned CTS source audit. The capture-time source inventory and per-file hashes are retained in `artifacts/readback/source.json`. Documentation was completed after that capture. Final PR and integration revisions are recorded in `artifacts/readback/delivery.json`.
+Recorded on 2026-11-15 for task025, introduced from main `67c20c9`. The accepted recapture uses main `822948b` plus the reporter-path correction. Task026 supplies the pinned CTS source audit. The capture-time source inventory and per-file hashes are retained in `artifacts/readback/source.json`. Documentation was completed after that capture. Final PR and integration revisions are recorded in `artifacts/readback/delivery.json`.
 
 ## Implemented experiment
 
@@ -32,7 +32,7 @@ These are observations of the tested Chrome arrangement. WebGPU's mapping API an
 
 ## Correctness and failure acceptance
 
-Seven experiment cases and four existing CTS/demo smoke cases passed in 13.6 seconds. Each rendering placement executes 32 regular images, covering two dimensions, default/FBO targets and eight repetitions. Images alternate left/right uniform colors and a GL-row-zero marker. All 128 regular images plus four post-error recovery images have zero mismatched channels. The retained earlier result remains unchanged after subsequent shared replies. Local synchronous getUniform/getError checks pass on both cores.
+Seven experiment cases and four existing CTS/demo smoke cases passed in 13.8 seconds. Each rendering placement executes 32 regular images, covering two dimensions, default/FBO targets and eight repetitions. Images alternate left/right uniform colors and a GL-row-zero marker. All 128 regular images plus four post-error recovery images have zero mismatched channels. The retained earlier result remains unchanged after subsequent shared replies. Local synchronous getUniform/getError checks pass on both cores.
 
 Each placement publishes the injected error at sequence 33, successfully renders sequence 34, then exceeds a 5 ms client deadline with an injected 100 ms worker stall. Timeout closes the client and terminates its GPU worker. Initialization/disposal handshakes have separate bounded deadlines. These tests exercise transport failure and timeout handling. Device loss, production resource retirement and arbitrary GL validation require subsequent acceptance.
 
@@ -48,10 +48,10 @@ Round-trip timing starts before posting queued immutable host operations and end
 
 | Caller | Core | 64×64 default | 64×64 FBO | 320×240 default | 320×240 FBO | Initialization |
 | --- | --- | --- | --- | --- | --- | --- |
-| window | js | 0.7750 | 0.5300 | 0.6350 | 0.8325 | 35.970 |
-| window | rust | 0.6800 | 0.5775 | 0.5725 | 1.0025 | 37.805 |
-| worker | js | 0.6375 | 0.5350 | 0.8525 | 0.8750 | 30.180 |
-| worker | rust | 0.7200 | 0.5300 | 0.7075 | 0.9850 | 34.780 |
+| window | js | 0.7100 | 0.6400 | 0.6125 | 0.7775 | 37.820 |
+| window | rust | 0.7050 | 0.5575 | 0.7400 | 1.0750 | 32.970 |
+| worker | js | 0.8325 | 0.5775 | 0.6325 | 0.9300 | 27.675 |
+| worker | rust | 0.8625 | 0.5825 | 0.6200 | 0.9300 | 33.780 |
 
 Initialization covers GPU worker/device setup, compiler/core construction and shader/resource preparation. It precedes capture timing and includes fetched Wasm under the run's browser cache state. The raw synchronousSequenceMs includes image assertions, queries, injected-error recovery and timeout work. It describes the observed caller-blocking sequence. The timer samples for Window progression are observational scheduling checks.
 
@@ -64,6 +64,8 @@ Raw placement/primitive records, `summary.json`, `source.json` and the Playwrigh
 The [CTS dependency audit](../references/cts-readback-dependencies.md) traces all five deferred originals. Their pixel helpers consume readPixels results immediately. Program-handling and feedback-loop are the closest candidates after production readback and an iframe context-brand adapter. The original checkCanvas path uses native instanceof checks that the structural facade fails. CubeMap, mipmaps, packed types, canvas uploads and extra renderbuffer/query/copy-error behavior gate the other files. The lock file now records those prerequisites precisely. Audited new candidates have source evidence and await execution.
 
 DOM input work follows its own shared facade ownership and conversion task. Buffer version reuse follows the observed Rust upload duplication with invalidation and queued-work tests. These remain separate implementation tasks in the roadmap.
+
+The initial reporter configuration resolved its relative JSON path under the experiment directory. A follow-up fix uses an absolute root-artifacts path. The accepted recapture verifies artifacts/readback/chrome-results.json with eleven expected cases and zero failures, skips or flakes.
 
 ## Local deterministic checks
 

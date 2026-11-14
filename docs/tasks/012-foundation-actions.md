@@ -1,6 +1,6 @@
 # Foundation Actions and PR integration
 
-Status is running.
+Status is complete for foundation Actions and repository PR constraints on 2026-11-14.
 
 ## Goal and ownership
 
@@ -27,4 +27,8 @@ Implement the approved pre-stable CI policy and deliver it through a real PR and
 
 - Implemented one affected-module required job, an optional manual/daily Wasm/compiler workflow, commit/PR conventions, a PR template, and delivery documentation. Daily verification is scheduled for 04:17 Asia/Singapore.
 - Local checks passed six CI helper regressions, TypeScript, 25 JS unit tests, 15 native Rust tests, support metadata, Markdown links, and Git whitespace validation. actionlint 1.7.12 passed both workflows. The downloaded validator and its verified checksum are under ignored artifacts/ci/actionlint.
-- Initial PR execution, live repository settings, and rebase integration are pending.
+- [PR 1](https://github.com/GhostFlying/refral/pull/1) passed the required workflow and merged by rebase as `3a6e03a86832798d23830c9f3df578cc87fc7493`. Both author and committer retain the existing GhostFlying identity.
+- The first [required PR job](https://github.com/GhostFlying/refral/actions/runs/43589172285) passed in 27 seconds, including dependency setup, type checking, JS CPU tests, and native Rust tests. The first [main push verification](https://github.com/GhostFlying/refral/actions/runs/43589356863) passed in 28 seconds. These are individual job durations excluding queue time.
+- Read back the applied repository settings. Main requires an up-to-date `ci/required` check from GitHub Actions, PR integration with zero required approvals, linear history, and administrator enforcement. Force pushes and branch deletion are disabled. Rebase is the enabled merge method and native auto-merge is enabled. Settings snapshots are under ignored artifacts/ci/repository.
+- A manual [optional all-groups run](https://github.com/GhostFlying/refral/actions/runs/43589379470) exercises the daily/manual commands on the merged revision. The actual Wasm job passed in 22 seconds. The compiler job performs the pinned Linux cold build and its result is available at the run link.
+- A follow-up documentation PR exercises the documentation-only required path and native auto-merge. Its job results and final remote verification are recorded in the integration handoff.

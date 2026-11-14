@@ -67,8 +67,7 @@
 ## Automatic delivery
 
 - The user authorizes automatic commits, pushes, and integration for completed work in this repository. Carry an accepted task through delivery without requesting confirmation again for those routine actions.
-- Until GitHub Actions acceptance gates are established, use the task's documented local acceptance checks as the integration gate. Bootstrap the empty repository with a coherent initial default-branch commit.
-- Once Actions gates are established, push a task branch, open a PR, address required-check failures, and merge using rebase merge when the required checks pass. Verify checks against the current PR head and keep the resulting history linear.
+- Push a task branch, open a PR, address required-check failures, and merge using rebase merge when the required checks pass. Verify checks against the current PR head and keep the resulting history linear.
 - Optional and daily checks are non-blocking for PR integration and auto-merge. Record their results and prioritize failures as follow-up work.
 - Use `ci/required` as the pre-stable required check and follow docs/ci.md for affected-module selection, PR conventions, and optional workflow entry points.
 - Preserve repository permissions and branch rules. Record the commit/PR and integration result in the task or handoff; report an external blocker if delivery requires access or a decision outside the authorized scope.

@@ -25,3 +25,7 @@ Main uses PR integration with zero required human approvals, an up-to-date succe
 Keep each PR scoped to a task with atomic lowercase commits. The PR template links the behavior change to task or validation evidence. The integrating agent addresses required-check failures, follows the current PR revision, and enables auto-merge. After merge, verify the main workflow and synchronize the local main branch. Optional/daily outcomes inform follow-up priorities.
 
 Task 012 records initial workflow validation, repository configuration, and the first end-to-end PR acceptance.
+
+## Initial runner observation
+
+On 2026-11-14, the first required PR job passed in 27 seconds with JS and native Rust checks selected. The first main push job passed in 28 seconds. These individual job durations include setup and execution and exclude runner queue time. The manual optional Wasm job passed in 22 seconds. Task 012 links the corresponding runs and repository settings verification.

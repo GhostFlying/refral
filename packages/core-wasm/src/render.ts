@@ -9,6 +9,9 @@ import type {
   TargetSnapshot,
   LogicalHandle,
   RasterState,
+  TextureVersion,
+  TextureBinding,
+  PixelUpload,
 } from '@refral/core-api';
 
 const DEFAULT_URL = '/artifacts/core-wasm/refral_core.wasm';
@@ -19,6 +22,7 @@ const decoder = new TextDecoder();
 interface ABI {
   memory: WebAssembly.Memory;
   rf_abi_version(): number;
+  rf_resource_protocol_version(): number;
   rf_init(context: number, limit: number): number;
   rf_create_buffer(): number;
   rf_result_generation(): number;
@@ -124,6 +128,11 @@ class Reader {
     this.offset += 4;
     return value;
   }
+  u64(): number {
+    const value = this.u32() + this.u32() * 0x1_0000_0000;
+    if (!Number.isSafeInteger(value)) throw new Error('Unsafe Rust resource version.');
+    return value;
+  }
   skip(length: number): void {
     this.check(length);
     this.offset += length;
@@ -189,6 +198,7 @@ export function createRustDrawingCoreFromModule(
   const exports = new WebAssembly.Instance(module, {}).exports;
   const required: (keyof Omit<ABI, 'memory'>)[] = [
     'rf_abi_version',
+    'rf_resource_protocol_version',
     'rf_init',
     'rf_create_buffer',
     'rf_result_generation',
@@ -227,10 +237,12 @@ export function createRustDrawingCoreFromModule(
     !(exports.memory instanceof WebAssembly.Memory) ||
     required.some((name) => typeof exports[name] !== 'function')
   ) {
-    throw new Error('Rust drawing module does not expose ABI v3.');
+    throw new Error('Rust drawing module does not expose resource ABI v3. Rebuild with pnpm rust:build.');
   }
   const abi = exports as unknown as ABI;
-  if (abi.rf_abi_version() !== 3 || abi.rf_init(contextId, maxBufferBytes) !== 1)
+  if (abi.rf_abi_version() !== 3 || abi.rf_resource_protocol_version() !== 1)
+    throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
+  if (abi.rf_init(contextId, maxBufferBytes) !== 1)
     throw new Error('Rust drawing ABI initialization failed.');
 
   function memory(pointer: number, length: number): Uint8Array {
@@ -244,7 +256,7 @@ export function createRustDrawingCoreFromModule(
     op: string,
     args: unknown[],
     extra: Record<string, unknown> = {},
-  ): { value: WireReply; binary: Uint8Array } {
+  ): { value: WireReply; binary: Uint8Array; after: Uint8Array } {
     const chunks: Uint8Array[] = [];
     let total = 0;
     function append(bytes: Uint8Array): number {
@@ -267,6 +279,14 @@ export function createRustDrawingCoreFromModule(
           view.setUint16(index * 2, arg.charCodeAt(index), true);
         return { s: [append(bytes), arg.length] };
       }
+      if (arg && typeof arg === 'object' && 'bytes' in arg && 'viewType' in arg) {
+        const upload = arg as PixelUpload;
+        const bytes =
+          upload.viewType === 'Uint8Array' || upload.viewType === 'Uint8ClampedArray'
+            ? upload.bytes
+            : new Uint8Array();
+        return { p: [append(bytes), bytes.byteLength], viewType: upload.viewType };
+      }
       if (Array.isArray(arg) || ArrayBuffer.isView(arg)) {
         const values = Array.from(arg as ArrayLike<number>);
         const bytes = new Uint8Array(values.length * 4);
@@ -282,7 +302,7 @@ export function createRustDrawingCoreFromModule(
     });
     const metadata = encoder.encode(JSON.stringify({ op, args: encoded, ...extra }));
     if (abi.rf_command_prepare(metadata.byteLength, total) !== 1)
-      return { value: { type: 'null' }, binary: new Uint8Array() };
+      return { value: { type: 'null' }, binary: new Uint8Array(), after: new Uint8Array() };
     memory(abi.rf_command_pointer(), metadata.byteLength).set(metadata);
     const input = memory(abi.rf_command_binary_pointer(), total);
     let offset = 0;
@@ -290,14 +310,26 @@ export function createRustDrawingCoreFromModule(
       input.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    if (abi.rf_command_commit() !== 1) return { value: { type: 'null' }, binary: new Uint8Array() };
+    if (abi.rf_command_commit() !== 1)
+      return { value: { type: 'null' }, binary: new Uint8Array(), after: new Uint8Array() };
     const response = JSON.parse(
       decoder.decode(memory(abi.rf_reply_pointer(), abi.rf_reply_length() >>> 0)),
-    ) as { value: WireReply; releases: number[] };
+    ) as { value: WireReply; releases: number[]; beforeBytes: number; mainBytes: number; afterBytes: number };
     const binary = memory(abi.rf_reply_binary_pointer(), abi.rf_reply_binary_length() >>> 0).slice();
     services.compiler.release(response.releases.filter((id) => id !== 0));
     if (response.value.type === 'protocol-error') throw new Error('Invalid Rust drawing command.');
-    return { value: response.value, binary };
+    const { beforeBytes, mainBytes, afterBytes } = response;
+    if (
+      ![beforeBytes, mainBytes, afterBytes].every((length) => Number.isSafeInteger(length) && length >= 0) ||
+      beforeBytes + mainBytes + afterBytes !== binary.byteLength
+    )
+      throw new Error('Invalid Rust resource frame lengths.');
+    applyOperations(binary.subarray(0, beforeBytes));
+    return {
+      value: response.value,
+      binary: binary.subarray(beforeBytes, beforeBytes + mainBytes),
+      after: binary.subarray(beforeBytes + mainBytes),
+    };
   }
 
   let scheduled = false;
@@ -311,6 +343,72 @@ export function createRustDrawingCoreFromModule(
   }
   function target(width = surface.width, height = surface.height): TargetSnapshot {
     return { color: null, depth: null, depthGeneration: 0, width, height, isDefault: true };
+  }
+  function textureVersion(reader: Reader): TextureVersion {
+    const texture = {
+      kind: 'texture' as const,
+      contextId: reader.u32(),
+      slot: reader.u32(),
+      generation: reader.u32(),
+    };
+    return { texture, storageGeneration: reader.u64(), contentVersion: reader.u64() };
+  }
+  function applyOperations(bytes: Uint8Array): void {
+    if (!bytes.byteLength) return;
+    const reader = new Reader(bytes);
+    const count = reader.u32();
+    const pixels = () => memory(reader.u32(), reader.u32()).slice();
+    for (let index = 0; index < count; index++) {
+      const kind = reader.u32();
+      if (kind === 5) {
+        const renderbuffer = {
+          kind: 'renderbuffer' as const,
+          contextId: reader.u32(),
+          slot: reader.u32(),
+          generation: reader.u32(),
+        };
+        services.resources.apply({ kind: 'retire-depth', renderbuffer, storageGeneration: reader.u64() });
+        continue;
+      }
+      const version = textureVersion(reader);
+      if (kind === 1) {
+        const width = reader.u32();
+        const height = reader.u32();
+        services.resources.apply({ kind: 'define-texture', version, width, height, data: pixels() });
+      } else if (kind === 2) {
+        const previous = textureVersion(reader);
+        const x = reader.u32();
+        const y = reader.u32();
+        const width = reader.u32();
+        const height = reader.u32();
+        services.resources.apply({
+          kind: 'update-texture',
+          version,
+          previous,
+          x,
+          y,
+          width,
+          height,
+          data: pixels(),
+        });
+      } else if (kind === 3) {
+        services.resources.apply({ kind: 'write-texture', version, previous: textureVersion(reader) });
+      } else if (kind === 4) {
+        services.resources.apply({ kind: 'retire-texture', version });
+      } else throw new Error('Invalid Rust resource operation.');
+    }
+    reader.finish();
+    if (count) schedule();
+  }
+  function textureBinding(reader: Reader): TextureBinding {
+    const version = reader.u32() ? textureVersion(reader) : null;
+    const parameters = {
+      minFilter: reader.u32(),
+      magFilter: reader.u32(),
+      wrapS: reader.u32(),
+      wrapT: reader.u32(),
+    };
+    return { storage: version ? services.resources.texture(version) : null, parameters };
   }
   function executeDraw(bytes: Uint8Array): void {
     const reader = new Reader(bytes);
@@ -339,6 +437,9 @@ export function createRustDrawingCoreFromModule(
     const indices = reader.u32() ? { type: reader.u32(), offset: reader.u32(), data: reader.buffer() } : null;
     const vertexUniforms = reader.bytes();
     const fragmentUniforms = reader.bytes();
+    const textureCount = reader.u32();
+    const textures: TextureBinding[] = [];
+    for (let index = 0; index < textureCount; index++) textures.push(textureBinding(reader));
     reader.finish();
     services.host.draw({
       program,
@@ -351,7 +452,7 @@ export function createRustDrawingCoreFromModule(
       indices,
       vertexUniforms,
       fragmentUniforms,
-      textures: [],
+      textures,
     });
     schedule();
   }
@@ -594,7 +695,12 @@ export function createRustDrawingCoreFromModule(
       if (operation === 'drawArrays' || operation === 'drawElements' || operation === 'clear')
         command('setSurfaceSize', [surface.width, surface.height]);
       const result = command(operation, args);
-      const value = decode(result.value, result.binary);
+      let value: unknown;
+      try {
+        value = decode(result.value, result.binary);
+      } finally {
+        applyOperations(result.after);
+      }
       if (operation === 'getParameter' && args[0] === GL.VIEWPORT && value instanceof Float32Array)
         return new Int32Array(value);
       return value === null && !operation.startsWith('get') && !operation.startsWith('create')

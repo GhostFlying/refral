@@ -21,6 +21,7 @@ export class BufferObject extends LogicalObject {
 
 export class TextureObject extends LogicalObject {
   handle: TextureHandle | null = null;
+  initialized = false;
   retired = false;
   storage: TextureStorage | null = null;
   generation = 0;
@@ -76,7 +77,11 @@ export function isTextureComplete(texture: TextureObject): boolean {
   const storage = texture.storage;
   if (!storage || !storage.width || !storage.height) return false;
   const params = texture.parameters;
-  if (params.minFilter !== GL.NEAREST && params.minFilter !== GL.LINEAR) return false;
+  if (params.minFilter !== GL.NEAREST && params.minFilter !== GL.LINEAR) {
+    if (![GL.NEAREST_MIPMAP_NEAREST, GL.LINEAR_MIPMAP_NEAREST,
+      GL.NEAREST_MIPMAP_LINEAR, GL.LINEAR_MIPMAP_LINEAR].includes(params.minFilter as 0x2700)) return false;
+    if (storage.width !== 1 || storage.height !== 1) return false;
+  }
   if (!isPowerOfTwo(storage.width) || !isPowerOfTwo(storage.height)) {
     return params.wrapS === GL.CLAMP_TO_EDGE && params.wrapT === GL.CLAMP_TO_EDGE;
   }

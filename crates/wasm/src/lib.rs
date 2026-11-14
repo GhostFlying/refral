@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use refral_core::{BufferCore, BufferHandle, BufferSnapshot, INVALID_OPERATION, OUT_OF_MEMORY};
 
 mod render;
+mod resources;
 
 const ABI_VERSION: u32 = 3;
 
@@ -235,8 +236,9 @@ pub extern "C" fn rf_get_error() -> u32 {
 pub extern "C" fn rf_mark_lost() -> u32 {
     with_state(0, |state| {
         state.pending_upload = None;
-        state.input.clear();
+        state.input = Vec::new();
         state.snapshot = None;
+        state.render_transport = render::Transport::default();
         u32::from(state.core.mark_lost())
     })
 }

@@ -9,6 +9,7 @@ import type {
   LinkedProgram,
   LogicalHandle,
   SemanticHost,
+  ResourceOperation,
 } from '@refral/core-api';
 import { createRustDrawingCoreFromModule } from '../src/render';
 import { runBufferCoreContract } from '../../../tests/core/buffer-contract';
@@ -102,6 +103,13 @@ function setup(contextId = 1, maxBufferBytes = 1024 * 1024) {
     retireStorage: vi.fn(),
     retireDepth: vi.fn(),
   };
+  const resources = new ExecutionResources(contextId, host);
+  const operations: ResourceOperation[] = [];
+  const apply = resources.apply.bind(resources);
+  vi.spyOn(resources, 'apply').mockImplementation((operation) => {
+    operations.push(operation);
+    apply(operation);
+  });
   const core = createRustDrawingCoreFromModule(
     module,
     {
@@ -119,12 +127,14 @@ function setup(contextId = 1, maxBufferBytes = 1024 * 1024) {
         combinedTextureUnits: 8,
       },
     },
-    { compiler, host, resources: new ExecutionResources(contextId, host) },
+    { compiler, host, resources },
   );
   return {
     core,
     host,
     draws,
+    resources,
+    operations,
     compile,
     setLayout(value: Partial<LinkedProgram>) {
       layout = value;
@@ -451,6 +461,188 @@ describe('typed uniform and raster ABI v3', () => {
         expect.anything(),
         expect.anything(),
       );
+    } finally {
+      core.dispose();
+    }
+  });
+});
+
+describe('owned texture resource protocol', () => {
+  const upload = (bytes: Uint8Array, viewType = 'Uint8Array') => ({ bytes, viewType });
+  function define(
+    core: DrawingCore,
+    width: number,
+    height: number,
+    format: number,
+    data: ReturnType<typeof upload> | null,
+  ) {
+    core.invoke('texImage2D', [GL.TEXTURE_2D, 0, format, width, height, 0, format, GL.UNSIGNED_BYTE, data]);
+  }
+  function texture(core: DrawingCore) {
+    const value = core.invoke('createTexture', []);
+    expect(core.invoke('isTexture', [value])).toBe(false);
+    core.invoke('bindTexture', [GL.TEXTURE_2D, value]);
+    expect(core.invoke('isTexture', [value])).toBe(true);
+    return value;
+  }
+  function sampled(state: ReturnType<typeof setup>) {
+    state.setLayout({
+      samplers: [{ name: 'u_texture', type: GL.SAMPLER_2D, size: 1, samplerBinding: 0, textureBinding: 1 }],
+    });
+    return scene(state.core);
+  }
+  it('copies five formats, null definitions, view offsets, alignment, flip and premultiply', () => {
+    const state = setup();
+    const { core } = state;
+    try {
+      texture(core);
+      for (const [format, input, expected] of [
+        [GL.RGBA, [10, 20, 30, 40], [10, 20, 30, 40]],
+        [GL.RGB, [10, 20, 30], [10, 20, 30, 255]],
+        [GL.ALPHA, [40], [0, 0, 0, 40]],
+        [GL.LUMINANCE, [10], [10, 10, 10, 255]],
+        [GL.LUMINANCE_ALPHA, [10, 40], [10, 10, 10, 40]],
+      ] as const) {
+        const bytes = new Uint8Array([99, ...input, 88]);
+        define(core, 1, 1, format, upload(bytes.subarray(1, 1 + input.length)));
+        bytes.fill(0);
+        const operation = state.operations.at(-1)!;
+        expect(operation.kind).toBe('define-texture');
+        if (operation.kind === 'define-texture') expect(Array.from(operation.data)).toEqual(expected);
+        define(core, 1, 1, format, null);
+        const zero = state.operations.at(-1)!;
+        if (zero.kind === 'define-texture')
+          expect(Array.from(zero.data)).toEqual([
+            0,
+            0,
+            0,
+            format === GL.RGB || format === GL.LUMINANCE ? 255 : 0,
+          ]);
+      }
+      core.invoke('pixelStorei', [GL.UNPACK_FLIP_Y_WEBGL, 1]);
+      core.invoke('pixelStorei', [GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1]);
+      define(
+        core,
+        1,
+        2,
+        GL.RGBA,
+        upload(new Uint8Array([100, 50, 0, 255, 200, 100, 50, 128]), 'Uint8ClampedArray'),
+      );
+      const flipped = state.operations.at(-1)!;
+      if (flipped.kind === 'define-texture')
+        expect(Array.from(flipped.data)).toEqual([100, 50, 25, 128, 100, 50, 0, 255]);
+      core.invoke('pixelStorei', [GL.UNPACK_FLIP_Y_WEBGL, 0]);
+      core.invoke('pixelStorei', [GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0]);
+      define(core, 2, 2, GL.RGB, upload(new Uint8Array([1, 2, 3, 4, 5, 6, 99, 99, 7, 8, 9, 10, 11, 12])));
+      const aligned = state.operations.at(-1)!;
+      if (aligned.kind === 'define-texture')
+        expect(Array.from(aligned.data)).toEqual([1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255]);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally {
+      core.dispose();
+    }
+  });
+  it('samples stable versions across units, updates, reallocations and deletion', () => {
+    const state = setup();
+    const { core } = state;
+    try {
+      const { program } = sampled(state);
+      const first = texture(core);
+      define(core, 1, 1, GL.RGBA, upload(new Uint8Array([255, 0, 0, 255])));
+      core.invoke('activeTexture', [GL.TEXTURE0 + 1]);
+      const second = texture(core);
+      define(core, 1, 1, GL.RGBA, upload(new Uint8Array([0, 0, 255, 255])));
+      const sampler = core.invoke('getUniformLocation', [program, 'u_texture']);
+      core.invoke('uniform1i', [sampler, 1]);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      const original = state.draws[0].textures[0].storage!;
+      expect(Array.from(original.data!)).toEqual([0, 0, 255, 255]);
+      const source = new Uint8Array([0, 255, 0, 255]);
+      core.invoke('texSubImage2D', [GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, upload(source)]);
+      source.fill(0);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      const updated = state.draws[1].textures[0].storage!;
+      expect(Array.from(updated.update!.data)).toEqual([0, 255, 0, 255]);
+      expect(updated.parent).toBe(original);
+      expect(Array.from(original.data!)).toEqual([0, 0, 255, 255]);
+      define(core, 1, 1, GL.RGBA, upload(new Uint8Array([1, 2, 3, 255])));
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      const reallocated = state.draws[2].textures[0].storage!;
+      expect(reallocated.reference!.storageGeneration).toBe(2);
+      core.invoke('deleteTexture', [second]);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      expect(state.draws[3].textures[0].storage).toBeNull();
+      expect(Array.from(reallocated.data!)).toEqual([1, 2, 3, 255]);
+      core.invoke('activeTexture', [GL.TEXTURE0]);
+      expect(core.invoke('getParameter', [GL.TEXTURE_BINDING_2D])).toEqual(first);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally {
+      core.dispose();
+    }
+  });
+  it('validates upload types/null and NPOT completeness without resource version changes on failures', () => {
+    const state = setup();
+    const { core } = state;
+    try {
+      sampled(state);
+      texture(core);
+      define(core, 3, 2, GL.LUMINANCE, null);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      expect(state.draws[0].textures[0].storage).toBeNull();
+      for (const [parameter, value] of [
+        [GL.TEXTURE_MIN_FILTER, GL.LINEAR],
+        [GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE],
+        [GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE],
+      ])
+        core.invoke('texParameteri', [GL.TEXTURE_2D, parameter, value]);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      const storage = state.draws[1].textures[0].storage!;
+      expect(storage.width).toBe(3);
+      expect(storage.height).toBe(2);
+      const count = state.operations.length;
+      core.invoke('texSubImage2D', [GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.LUMINANCE, GL.UNSIGNED_BYTE, null]);
+      expect(core.getError()).toBe(GL.INVALID_VALUE);
+      define(core, 1, 1, GL.RGBA, upload(new Uint8Array(4), 'Float32Array'));
+      expect(core.getError()).toBe(GL.INVALID_OPERATION);
+      expect(state.operations).toHaveLength(count);
+      core.invoke('texSubImage2D', [
+        GL.TEXTURE_2D,
+        0,
+        0,
+        0,
+        0,
+        1,
+        GL.LUMINANCE,
+        GL.UNSIGNED_BYTE,
+        upload(new Uint8Array()),
+      ]);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      expect(state.operations).toHaveLength(count);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      expect(state.draws[2].textures[0].storage).toBe(storage);
+    } finally {
+      core.dispose();
+    }
+  });
+  it('copies large output arenas before later memory growth and command reuse', () => {
+    const state = setup();
+    const { core } = state;
+    try {
+      sampled(state);
+      texture(core);
+      core.invoke('texParameteri', [GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST]);
+      const source = new Uint8Array(512 * 512 * 4).fill(0x55);
+      define(core, 512, 512, GL.RGBA, upload(source));
+      source.fill(0);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      const original = state.draws[0].textures[0].storage!;
+      expect(original.data).toHaveLength(512 * 512 * 4);
+      expect(original.data![0]).toBe(0x55);
+      expect(original.data!.at(-1)).toBe(0x55);
+      define(core, 512, 512, GL.RGBA, upload(new Uint8Array(512 * 512 * 4).fill(0x77)));
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      expect(state.draws[1].textures[0].storage!.data![0]).toBe(0x77);
+      expect(original.data!.at(-1)).toBe(0x55);
     } finally {
       core.dispose();
     }

@@ -1,0 +1,97 @@
+name: Optional verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Verification group
+        type: choice
+        options: [wasm, compiler, all]
+        default: wasm
+  schedule:
+    - cron: '17 20 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: optional-${{ github.event_name }}-${{ github.ref }}-${{ inputs.suite || 'all' }}
+  cancel-in-progress: true
+
+jobs:
+  wasm:
+    name: optional/wasm
+    if: github.event_name == 'schedule' || inputs.suite == 'wasm' || inputs.suite == 'all'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          run_install: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Record revision and toolchain
+        id: scope
+        run: |
+          git rev-parse HEAD
+          node tools/ci.mjs scope
+      - name: Prepare Wasm toolchain
+        env:
+          RUST_VERSION: ${{ steps.scope.outputs.rust_version }}
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --no-self-update
+          rustup target add wasm32-unknown-unknown --toolchain "$RUST_VERSION"
+      - name: Run actual Wasm tests
+        run: |
+          mkdir -p artifacts/ci
+          pnpm install --frozen-lockfile --prefer-offline
+          pnpm rust:build 2>&1 | tee artifacts/ci/wasm-build.log
+          pnpm rust:test:wasm 2>&1 | tee artifacts/ci/wasm-tests.log
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: wasm-${{ github.sha }}
+          path: |
+            artifacts/ci/
+            artifacts/core-wasm/build.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  compiler:
+    name: optional/compiler
+    if: github.event_name == 'schedule' || inputs.suite == 'compiler' || inputs.suite == 'all'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          run_install: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: artifacts/compiler
+          key: compiler-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/compiler/dependencies.json', 'packages/compiler/native/**', 'packages/compiler/patches/**', 'packages/compiler/profile-limits.json', 'tools/compiler-build.mjs', 'tools/deps-compiler.mjs') }}
+      - name: Build compiler and run corpus
+        run: |
+          mkdir -p artifacts/ci
+          git rev-parse HEAD
+          pnpm install --frozen-lockfile --prefer-offline
+          node tools/deps-compiler.mjs 2>&1 | tee artifacts/ci/compiler-deps.log
+          pnpm compiler:build 2>&1 | tee artifacts/ci/compiler-build.log
+          pnpm compiler:test 2>&1 | tee artifacts/ci/compiler-tests.log
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: compiler-${{ github.sha }}
+          path: |
+            artifacts/ci/
+            artifacts/compiler/corpus.json
+          if-no-files-found: ignore
+          retention-days: 7

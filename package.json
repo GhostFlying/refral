@@ -21,6 +21,7 @@
     "dev": "vite --host 127.0.0.1 --port 4173 --strictPort",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "ci:check": "node --test tools/ci.test.mjs && node tools/ci.mjs verify && node tools/check-support.mjs",
     "test:unit": "vitest run",
     "test:chrome": "playwright test",
     "test:probe": "playwright test probe.spec.ts",

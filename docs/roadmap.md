@@ -48,7 +48,7 @@ Inspect the actual existing command buffer, GL provider, upload path, threads, a
 
 ### Delivery and CI
 
-Task 010 establishes automatic commit/push/integration after documented task acceptance. Task 011 records the user's pre-stable priority of short iteration cycles and a small required CI set. The initial repository baseline is published on the default branch. Workflow implementation is the next delivery-infrastructure task.
+Task 010 establishes automatic commit/push/integration after documented task acceptance. Task 011 records the user's pre-stable priority of short iteration cycles and a small required CI set. Task 012 implements the foundation workflows and PR constraints described in [Actions and PR delivery](ci.md).
 
 Before stable, start with the following checks and select them according to affected modules. Documentation-only changes use documentation and metadata validation. Rust-native checks apply to Rust-affecting changes. Record actual runner startup, queue, and execution times before expanding the required set.
 

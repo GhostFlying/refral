@@ -42,6 +42,7 @@ The build produces a standalone `dist` tree containing the browser bundles, comp
 | `pnpm rust:test:wasm` | Actual compiled Wasm adapter, memory growth, and shared contract tests |
 | `pnpm rust:build` | Formal Rust Buffer core Wasm module |
 | `pnpm check` | Strict TypeScript, deterministic unit/native Rust checks, and support validation |
+| `pnpm ci:check` | Lightweight CI selection, commit policy, documentation, and support checks |
 | `pnpm test:probe` | Actual Chrome WebGPU/native WebGL environment probe |
 | `pnpm test:chrome` | Chrome compiler, core selection, semantics, CTS, and baseline collection |
 | `pnpm test:cts` | Original-assertion pinned Khronos cases through the recorded test adapter |
@@ -52,6 +53,8 @@ The build produces a standalone `dist` tree containing the browser bundles, comp
 | `pnpm snapshot` | Source-tree hash and per-file provenance for saved evidence |
 
 Playwright uses the installed `chrome` channel, headed mode, an isolated profile, and one worker. Set `REFRAL_HEADLESS=1` for explicitly recorded headless checks. The primary acceptance path uses headed Chrome. Browser plugin availability for this implementation was absent, so verification uses the approved regular Playwright path.
+
+GitHub Actions uses affected-module checks in `ci/required`. Actual Wasm and compiler verification run through optional manual/daily workflows. See [Actions and PR delivery](docs/ci.md) for commands and integration constraints.
 
 ## Public interface
 

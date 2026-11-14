@@ -209,3 +209,28 @@ fn texture_completeness_and_units_use_current_versions_without_pixel_reuploads()
     core.render_invoke("activeTexture", &[number(0x84c8)]);
     assert_eq!(core.get_error(), INVALID_ENUM);
 }
+
+#[test]
+fn impossible_texture_byte_sizes_report_oom_and_preserve_storage_versions() {
+    let (mut core, texture) = bound();
+    image(&mut core, 1, 1, 0x1908, Argument::Null);
+    let (old, _, _, _) = definition(&mut core);
+    core.configure_texture_dimension(u32::MAX);
+    image(
+        &mut core,
+        i32::MAX as u32,
+        i32::MAX as u32,
+        0x1908,
+        Argument::Null,
+    );
+    assert_eq!(core.get_error(), OUT_OF_MEMORY);
+    assert!(core.take_resource_operations().0.is_empty());
+    let index = slot_index(
+        &core.render.textures.slots,
+        texture,
+        ObjectKind::Texture,
+        core.context_id,
+    )
+    .unwrap();
+    assert_eq!(core.texture_version(index), old);
+}

@@ -61,3 +61,13 @@ PR #8 rebase-merged the uniform/raster boundary at 60a1783. Texture implementati
 The targeted original CTS, profile-selection and fourteen shared uniform/texture/raster scenes pass sixteen Chrome tests. All eleven original CTS files retain 243 assertions per backend. The complete in-scope functional browser regression passes 77 tests in 39.6 seconds, including the existing JS RTT demo. The independent benchmark replacement and Rust FBO/demo activation belong to the following boundaries. Logs are `artifacts/rtt-pr3-{unit,wasm,chrome,regression,type,ci}.log` and `artifacts/rtt/rust-pr3-native.log`.
 
 The accepted Wasm has ABI3/resource protocol1, 261,640 bytes and SHA-256 834c7ce70eb3a42f6475d38fc13fd7dc53e8df44d730bab5f57d1147382b6130. Resource operations carry bounded headers and Rust-owned output pixels copied before arena reuse. PR3 records the resource protocol marker so an older ABI3 build receives explicit rebuild guidance before initialization.
+
+### PR4 acceptance
+
+PR #9 rebase-merged texture support at 16d6724. Rust now owns renderbuffer/FBO state, attachment graphs, completeness, feedback checks, current-target queries, capture and post-write texture versions. Resource protocol capability2 extends ABI3 packets with typed offscreen targets. JS receives matching completeness/component-bit corrections and retained-deletion regressions.
+
+The complete suites pass 107 deterministic CPU tests, 44 native Rust tests and twenty actual-Wasm tests. All twenty shared RTT scenes and the three-path demo pass 23 targeted Chrome tests. Sequential demo times0/1000/2000 produce nine pairwise comparisons with zero observed differing pixels or channel bytes across native/JS/Rust. The full browser suite, including the retained legacy benchmark, passes 85 tests in50.5 seconds.
+
+The built deployment passes real probe drawing/readback, three-path RTT/triangle pixels, packaged ABI3/resource-protocol2 and page-error checks. Native reports ANGLE Metal Renderer Apple M4 Max. Both WebGPU paths report apple/metal-3 and isFallbackAdapter=false. Logs are `artifacts/rtt-pr4-{targeted,regression,unit,wasm,build,dist,type}.log`, with images/configuration under `artifacts/demo/`, `artifacts/rtt/` and `artifacts/deployment/`.
+
+The accepted Rust candidate is282,639 bytes with SHA-256 e407526a05e998a987c90de691d5f679494df7b3ec27b1501693f27815d982ea. The independent five-workload baseline and final support/report updates remain the fifth PR.

@@ -240,7 +240,7 @@ export function createRustDrawingCoreFromModule(
     throw new Error('Rust drawing module does not expose resource ABI v3. Rebuild with pnpm rust:build.');
   }
   const abi = exports as unknown as ABI;
-  if (abi.rf_abi_version() !== 3 || abi.rf_resource_protocol_version() !== 1)
+  if (abi.rf_abi_version() !== 3 || abi.rf_resource_protocol_version() !== 2)
     throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_init(contextId, maxBufferBytes) !== 1)
     throw new Error('Rust drawing ABI initialization failed.');
@@ -341,9 +341,6 @@ export function createRustDrawingCoreFromModule(
       if (!abi.rf_is_context_lost()) services.host.flush();
     });
   }
-  function target(width = surface.width, height = surface.height): TargetSnapshot {
-    return { color: null, depth: null, depthGeneration: 0, width, height, isDefault: true };
-  }
   function textureVersion(reader: Reader): TextureVersion {
     const texture = {
       kind: 'texture' as const,
@@ -410,15 +407,33 @@ export function createRustDrawingCoreFromModule(
     };
     return { storage: version ? services.resources.texture(version) : null, parameters };
   }
+  function readTarget(reader: Reader): TargetSnapshot {
+    const width = reader.u32();
+    const height = reader.u32();
+    const isDefault = reader.u32() !== 0;
+    const color = reader.u32() ? services.resources.texture(textureVersion(reader)) : null;
+    let depth: TargetSnapshot['depth'] = null;
+    let depthGeneration = 0;
+    if (reader.u32()) {
+      const handle = {
+        kind: 'renderbuffer' as const,
+        contextId: reader.u32(),
+        slot: reader.u32(),
+        generation: reader.u32(),
+      };
+      depthGeneration = reader.u64();
+      depth = services.resources.depth(handle, depthGeneration);
+    }
+    return { color, depth, depthGeneration, width, height, isDefault };
+  }
   function executeDraw(bytes: Uint8Array): void {
     const reader = new Reader(bytes);
     if (reader.u32() !== 0x33444652 || reader.u32() !== 3)
       throw new Error('Invalid Rust draw snapshot version.');
     const program = services.compiler.executable(reader.u32());
     reader.skip(12 + 8);
-    const width = reader.u32();
-    const height = reader.u32();
-    const state = readRaster(reader, width, height);
+    const drawTarget = readTarget(reader);
+    const state = readRaster(reader, drawTarget.width, drawTarget.height);
     const vertexCount = reader.u32();
     const first = reader.u32();
     const count = reader.u32();
@@ -443,7 +458,7 @@ export function createRustDrawingCoreFromModule(
     reader.finish();
     services.host.draw({
       program,
-      target: target(width, height),
+      target: drawTarget,
       state,
       attributes: vertexAttributes,
       vertexCount,
@@ -490,16 +505,21 @@ export function createRustDrawingCoreFromModule(
       case 'draw':
         executeDraw(binary);
         return undefined;
+      case 'target': {
+        const reader = new Reader(binary);
+        const result = readTarget(reader);
+        reader.finish();
+        return result;
+      }
       case 'clear': {
         const reader = new Reader(binary);
-        const width = reader.u32();
-        const height = reader.u32();
-        const state = readRaster(reader, width, height);
+        const clearTarget = readTarget(reader);
+        const state = readRaster(reader, clearTarget.width, clearTarget.height);
         const mask = reader.u32();
         const color = [reader.f32(), reader.f32(), reader.f32(), reader.f32()];
         const depth = reader.f32();
         reader.finish();
-        services.host.clear(target(width, height), state, mask, color, depth);
+        services.host.clear(clearTarget, state, mask, color, depth);
         schedule();
         return undefined;
       }
@@ -547,6 +567,8 @@ export function createRustDrawingCoreFromModule(
     profile.vertexAttributes,
     profile.combinedTextureUnits,
     services.host.limits.maxTextureDimension2D,
+    attributes.alpha ?? true,
+    attributes.depth ?? true,
   ]);
   return Object.freeze({
     kind: 'rust' as const,
@@ -610,13 +632,25 @@ export function createRustDrawingCoreFromModule(
       services.compiler.dispose();
       services.resources.dispose();
     },
-    captureTarget: () => target(),
+    captureTarget() {
+      if (abi.rf_is_context_lost()) throw new Error('Cannot capture a lost context.');
+      command('setSurfaceSize', [surface.width, surface.height]);
+      const result = command('captureTarget', []);
+      return decode(result.value, result.binary) as TargetSnapshot;
+    },
     invoke(operation: string, args: unknown[]): unknown {
       if (operation === 'flush') {
-        services.host.flush();
+        if (!abi.rf_is_context_lost()) services.host.flush();
         return undefined;
       }
-      if (operation === 'getParameter' && !abi.rf_is_context_lost()) {
+      if (abi.rf_is_context_lost()) {
+        const result = command(operation, []);
+        const value = decode(result.value, result.binary);
+        return value === null && !operation.startsWith('get') && !operation.startsWith('create')
+          ? undefined
+          : value;
+      }
+      if (operation === 'getParameter') {
         const capabilities: Record<number, unknown> = {
           [GL.MAX_VERTEX_ATTRIBS]: profile.vertexAttributes,
           [GL.MAX_VERTEX_UNIFORM_VECTORS]: profile.vertexUniformVectors,
@@ -635,12 +669,6 @@ export function createRustDrawingCoreFromModule(
           [GL.SHADING_LANGUAGE_VERSION]: 'WebGL GLSL ES 1.0 (ANGLE)',
           [GL.VENDOR]: 'Refral',
           [GL.RENDERER]: 'WebGPU',
-          [GL.RED_BITS]: 8,
-          [GL.GREEN_BITS]: 8,
-          [GL.BLUE_BITS]: 8,
-          [GL.ALPHA_BITS]: attributes.alpha ? 8 : 0,
-          [GL.DEPTH_BITS]: attributes.depth ? 24 : 0,
-          [GL.STENCIL_BITS]: 0,
           [GL.SAMPLES]: 0,
           [GL.SAMPLE_BUFFERS]: 0,
         };

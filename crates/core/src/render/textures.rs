@@ -108,6 +108,26 @@ impl Default for TextureState {
 }
 
 impl ContextCore {
+    pub fn rollback_resource_writes(&mut self, operations: &[ResourceOperation]) {
+        for operation in operations.iter().rev() {
+            if let ResourceOperation::WriteTexture { version, previous } = operation {
+                if let Some(index) = slot_index(
+                    &self.render.textures.slots,
+                    version.texture,
+                    ObjectKind::Texture,
+                    self.context_id,
+                ) {
+                    if self.texture_version(index) == *version {
+                        self.render.textures.slots[index]
+                            .value
+                            .as_mut()
+                            .unwrap()
+                            .content_version = previous.content_version;
+                    }
+                }
+            }
+        }
+    }
     pub fn take_resource_operations(&mut self) -> (Vec<ResourceOperation>, Vec<ResourceOperation>) {
         (
             std::mem::take(&mut self.render.textures.before),
@@ -335,6 +355,7 @@ impl ContextCore {
                         *unit = None;
                     }
                 }
+                self.detach_bound_texture(handle);
                 self.release_texture(index);
             }
             "texParameteri" | "texParameterf" | "getTexParameter" => {
@@ -439,18 +460,25 @@ impl ContextCore {
             LUMINANCE_ALPHA => 2,
             _ => 1,
         };
-        let row = (width as usize).checked_mul(channels)?;
         let alignment = self.render.textures.unpack_alignment;
-        let stride = row
-            .checked_add(alignment - 1)?
-            .checked_div(alignment)?
-            .checked_mul(alignment)?;
-        let required = if width == 0 || height == 0 {
-            0
-        } else {
-            (height as usize - 1)
-                .checked_mul(stride)?
-                .checked_add(row)?
+        let layout = (|| {
+            let row = (width as usize).checked_mul(channels)?;
+            let stride = row
+                .checked_add(alignment - 1)?
+                .checked_div(alignment)?
+                .checked_mul(alignment)?;
+            let required = if width == 0 || height == 0 {
+                0
+            } else {
+                (height as usize - 1)
+                    .checked_mul(stride)?
+                    .checked_add(row)?
+            };
+            Some((stride, required))
+        })();
+        let Some((stride, required)) = layout else {
+            self.record_error(OUT_OF_MEMORY);
+            return None;
         };
         let source = match source {
             Argument::Null if allow_null => None,

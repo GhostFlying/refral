@@ -10,7 +10,7 @@ const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
 
 #[no_mangle]
 pub extern "C" fn rf_resource_protocol_version() -> u32 {
-    1
+    2
 }
 
 #[derive(Default)]
@@ -250,6 +250,9 @@ fn initialize_drawing(core: &mut BufferCore, args: &[Argument]) {
     if let Some(Argument::Number(limit)) = args.get(4) {
         core.configure_texture_dimension(*limit as u32);
     }
+    if let [.., Argument::Boolean(alpha), Argument::Boolean(depth)] = args {
+        core.configure_context_attributes(*alpha, *depth);
+    }
 }
 
 #[no_mangle]
@@ -326,9 +329,11 @@ pub extern "C" fn rf_command_commit() -> u32 {
             transport.resource_before=before;transport.resource_after=after;
             let before_length=crate::resources::capacity(&transport.resource_before)?;
             let after_length=crate::resources::capacity(&transport.resource_after)?;
-            let main_length=reply_capacity(&value)?;
-            let capacity=before_length.checked_add(main_length)?.checked_add(after_length)?;
+            let capacity=reply_capacity(&value).and_then(|main|before_length.checked_add(main)).and_then(|value|value.checked_add(after_length));
+            let Some(capacity)=capacity else{state.core.rollback_resource_writes(&transport.resource_after);transport.resource_after.clear();state.core.record_error(OUT_OF_MEMORY);return Some(json!({"type":"null"}));};
             if capacity>u32::MAX as usize || transport.binary.try_reserve_exact(capacity).is_err() {
+                state.core.rollback_resource_writes(&transport.resource_after);
+                transport.resource_after.clear();
                 state.core.record_error(OUT_OF_MEMORY);
                 return Some(json!({"type":"null"}));
             }
@@ -428,9 +433,11 @@ fn reply_capacity(value: &Reply) -> Option<usize> {
         Reply::Floats(values) => values.len().checked_mul(4),
         Reply::Ints(values) => values.len().checked_mul(4),
         Reply::Compile(request) => request.source.len().checked_mul(2),
-        Reply::Clear(_) => Some(148),
+        Reply::Target(target) => Some(crate::resources::target_capacity(target)),
+        Reply::Clear(snapshot) => Some(140 + crate::resources::target_capacity(&snapshot.target)),
         Reply::Draw(snapshot) => {
-            let mut total = 188_usize
+            let mut total = 180_usize
+                .checked_add(crate::resources::target_capacity(&snapshot.target))?
                 .checked_add(snapshot.vertex_uniforms.len())?
                 .checked_add(snapshot.fragment_uniforms.len())?;
             for attribute in &snapshot.attributes {
@@ -500,10 +507,12 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             json!({"type":"link","requestId":request.request_id,"program":handle_json(request.program),"vertexArtifact":request.vertex_artifact,"fragmentArtifact":request.fragment_artifact,"bindings":request.bindings})
         }
         Reply::Unsupported(operation) => json!({"type":"unsupported","operation":operation}),
+        Reply::Target(target) => {
+            crate::resources::target(output, target);
+            json!({"type":"target"})
+        }
         Reply::Clear(snapshot) => {
-            for value in snapshot.surface {
-                u32_value(output, value);
-            }
+            crate::resources::target(output, snapshot.target);
             raster(output, snapshot.state);
             u32_value(output, snapshot.mask);
             for value in snapshot.color {
@@ -524,9 +533,7 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
                 u32_value(output, value);
             }
             output.extend_from_slice(&snapshot.link_generation.to_le_bytes());
-            for value in snapshot.surface {
-                u32_value(output, value);
-            }
+            crate::resources::target(output, snapshot.target);
             raster(output, snapshot.state);
             for value in [
                 snapshot.vertex_count,
@@ -600,7 +607,7 @@ mod tests {
 
     #[test]
     fn command_transport_preserves_utf16_and_owns_output() {
-        assert_eq!(rf_resource_protocol_version(), 1);
+        assert_eq!(rf_resource_protocol_version(), 2);
         assert_eq!(rf_init(7, 4096.0), 1);
         let stage = (refral_core::VERTEX_SHADER as f64).to_le_bytes();
         let created = command("createShader", json!([{"n":0}]), &stage);

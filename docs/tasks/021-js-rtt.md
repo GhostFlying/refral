@@ -1,6 +1,6 @@
 # JS render-to-texture semantics and resource handles
 
-Status is running.
+Status is implemented, with task 020 owning integration and three-path acceptance.
 
 ## Goal and ownership
 
@@ -59,3 +59,21 @@ Null subimages now return INVALID_VALUE after normal argument validation. Negati
 Texture object checks track the first successful binding. A 1x1 image is complete with a mipmap filter because it requires only level zero. Larger images retain the declared level-zero completeness limits.
 
 Thirteen texture cases cover all five normalized formats and null initialization, source subviews/row padding, flip/premultiply, input failure atomicity, valid empty updates, NPOT parameters, 1x1 completeness, first binding, and simulated allocation failure. `pnpm exec vitest run --exclude packages/core-js/src/framebuffers.test.ts` passed 15 files and 99 tests. The excluded file contains future phase-4 assertions and is outside this PR boundary. `pnpm typecheck` passed. FBO corrections remain held for the next integration snapshot.
+
+## PR4 framebuffer plan
+
+GLES object creation and framebuffer rules require first successful binding, initialized attachment objects, distinct missing/undefined/dimension statuses, and query validation by attachment type. The native probe in `artifacts/rtt/native-attachment-queries.json` confirms INVALID_ENUM for non-type queries on empty attachments and texture-specific queries on renderbuffers. Preserve bound/unbound references across deletion and repeated deletion. Initialize renderbuffer query state to RGBA4 and zero bits before allocation, and distinguish invalid storage enums from valid unsupported formats. Add focused state/lifetime regressions within the declared RGBA color and optional depth target profile.
+
+## PR4 implementation and final handoff
+
+Framebuffer and renderbuffer object checks now track the first successful binding. Never-bound texture/renderbuffer names cannot become attachments. An attached RGBA texture without an image reports FRAMEBUFFER_INCOMPLETE_ATTACHMENT, separately from a missing attachment and mismatched depth dimensions.
+
+Attachment query validation follows the attached object type and the native probe. Empty attachments expose NONE for OBJECT_TYPE and reject other queries. Renderbuffer attachments reject texture-specific queries. Texture attachment-name results retain their original logical identity while unbound framebuffers hold a deleted texture.
+
+Repeated renderbuffer deletion now returns before attachment cleanup. This fixes the case where an initial deletion detaches the bound framebuffer, then a repeated deletion after binding another retaining framebuffer incorrectly removed that second reference. Shared unbound references keep texture/depth storage alive until the final attachment is released, then retirement occurs once.
+
+Renderbuffer query defaults now report RGBA4 and zero depth bits before storage allocation. Invalid storage format enums report INVALID_ENUM. Valid color/stencil storage formats continue through the declared unsupported-profile diagnostic. The implemented depth backing reports 24 bits for DEPTH_COMPONENT16 storage, satisfying its minimum precision with the shared depth24plus host allocation.
+
+Seven framebuffer cases cover first binding, never-bound attachment rejection, default query state and invalid/unsupported storage atomicity, attachment completeness, native-confirmed query errors, and multi-framebuffer deletion/lifetime. The final `pnpm test:unit` passed 16 files and 106 tests. `pnpm typecheck` passed. Existing direct SemanticContext construction and all earlier deterministic regressions remain covered. The integrating agent owns actual Chrome/CTS/demo/performance/deployment acceptance for the final task.
+
+During integration, JS completeness was aligned with Rust's declared RGBA execution profile. Depth-only and RGB color targets return FRAMEBUFFER_UNSUPPORTED after image and dimension validation. Truly empty targets retain MISSING_ATTACHMENT. Component-bit queries now follow the currently bound framebuffer, including alpha on an opaque default context and depth removal. An eighth framebuffer CPU case covers these queries, bringing the deterministic suite to 107 tests. The shared depth-render/sample scene also checks alpha bits, minimum depth precision and depth deletion.

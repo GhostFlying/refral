@@ -12,4 +12,6 @@ The bridge retains the latest logical version for each live texture. Earlier dra
 
 Rust ABI v3 adds i32 argument/result payloads, typed new-resource handles, ordered resource operations, full raster snapshots and offscreen targets. Uniform packing follows compiler reflection including array and matrix strides. Rust source/names retain UTF16 and floats retain unrestricted binary values. Metadata and binary ranges remain bounded and validated before use.
 
+The adapter checks a separate resource protocol capability before context initialization. Capability v1 carries texture operations, and v2 extends packets with typed offscreen targets. Stale artifacts receive rebuild guidance. Definitions and updates retain owned output pixels in Rust until the next command. The adapter validates pointer ranges and copies those bytes synchronously before arena reuse. Reserving bounded operation headers before semantic execution avoids a second large output allocation after committing texture storage.
+
 The selected core executes every supported semantic operation. BrowserHost and the bridge remain shared across the two cores. The final task report distinguishes mock/native/Wasm/GPU/differential/original-CTS/performance evidence.

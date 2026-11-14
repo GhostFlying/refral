@@ -1,9 +1,11 @@
 use super::*;
 
+mod framebuffers;
 mod raster;
 #[cfg(test)]
 mod texture_tests;
 mod textures;
+pub use framebuffers::{DepthAttachment, TargetSnapshot};
 mod uniforms;
 pub use raster::RasterState;
 pub use textures::{ResourceOperation, TextureBinding, TextureParameters, TextureVersion};
@@ -156,7 +158,7 @@ pub struct DrawSnapshot {
     pub program: ObjectHandle,
     pub link_generation: u64,
     pub state: RasterState,
-    pub surface: [u32; 2],
+    pub target: TargetSnapshot,
     pub attributes: Vec<AttributeDraw>,
     pub vertex_count: u32,
     pub first: u32,
@@ -168,7 +170,7 @@ pub struct DrawSnapshot {
 }
 pub struct ClearSnapshot {
     pub state: RasterState,
-    pub surface: [u32; 2],
+    pub target: TargetSnapshot,
     pub mask: u32,
     pub color: [f32; 4],
     pub depth: f32,
@@ -189,6 +191,7 @@ pub enum Reply {
     Draw(DrawSnapshot),
     Clear(ClearSnapshot),
     Precision(bool),
+    Target(TargetSnapshot),
     Unsupported(&'static str),
 }
 
@@ -264,6 +267,9 @@ pub(crate) struct RenderState {
     texture_unit_limit: usize,
     texture_dimension_limit: u32,
     textures: textures::TextureState,
+    framebuffers: framebuffers::FramebufferState,
+    context_alpha: bool,
+    context_depth: bool,
     clear_color: [f32; 4],
     clear_depth: f32,
     next_request: u32,
@@ -284,6 +290,9 @@ impl Default for RenderState {
             texture_unit_limit: 8,
             texture_dimension_limit: 4096,
             textures: textures::TextureState::default(),
+            framebuffers: framebuffers::FramebufferState::default(),
+            context_alpha: true,
+            context_depth: true,
             clear_color: [0.0; 4],
             clear_depth: 1.0,
             next_request: 0,
@@ -378,6 +387,10 @@ impl ContextCore {
             width.min(i32::MAX as u32) as i32,
             height.min(i32::MAX as u32) as i32,
         ];
+    }
+    pub fn configure_context_attributes(&mut self, alpha: bool, depth: bool) {
+        self.render.context_alpha = alpha;
+        self.render.context_depth = depth;
     }
     pub fn configure_texture_units(&mut self, limit: usize) {
         self.render.texture_unit_limit = limit;
@@ -731,7 +744,10 @@ impl ContextCore {
         let arg = |index: usize| args.get(index).unwrap_or(&Argument::Null);
         if self.lost {
             return match operation {
-                "isShader" | "isProgram" => Reply::Boolean(false),
+                "isShader" | "isProgram" | "isTexture" | "isFramebuffer" | "isRenderbuffer" => {
+                    Reply::Boolean(false)
+                }
+                "checkFramebufferStatus" => Reply::Number(0x8cdd as f64),
                 "getAttribLocation" => Reply::Number(-1.0),
                 "getVertexAttribOffset" => Reply::Number(0.0),
                 _ => Reply::Null,
@@ -741,6 +757,9 @@ impl ContextCore {
             return reply;
         }
         if let Some(reply) = self.texture_invoke(operation, args) {
+            return reply;
+        }
+        if let Some(reply) = self.framebuffer_invoke(operation, args) {
             return reply;
         }
         match operation {
@@ -1056,6 +1075,9 @@ impl ContextCore {
                 if let Some(reply) = self.texture_query(arg(0).number() as u32) {
                     return reply;
                 }
+                if let Some(reply) = self.framebuffer_query(arg(0).number() as u32) {
+                    return reply;
+                }
                 return match arg(0).number() as u32 {
                     0x8b8d => self.render.current.map_or(Reply::Null, Reply::Handle),
                     0x0ba2 => Reply::Floats(
@@ -1089,15 +1111,28 @@ impl ContextCore {
                 let mask = arg(0).number() as u32;
                 if mask & !(0x4000 | 0x100 | 0x400) != 0 {
                     self.record_error(INVALID_VALUE);
-                } else if mask != 0 && self.render.surface[0] != 0 && self.render.surface[1] != 0 {
-                    return Reply::Clear(ClearSnapshot {
-                        state: self.render.raster,
-                        surface: self.render.surface,
-                        mask,
-                        color: self.render.clear_color,
-                        depth: self.render.clear_depth,
-                    });
+                    return Reply::Null;
                 }
+                let Some(target) = self.target_snapshot(true) else {
+                    return Reply::Null;
+                };
+                if mask == 0 || target.width == 0 || target.height == 0 {
+                    return Reply::Null;
+                }
+                if mask & 0x4000 != 0 && !self.prepare_color_write(&target) {
+                    return Reply::Null;
+                }
+                let snapshot = ClearSnapshot {
+                    state: self.render.raster,
+                    target,
+                    mask,
+                    color: self.render.clear_color,
+                    depth: self.render.clear_depth,
+                };
+                if mask & 0x4000 != 0 {
+                    self.finish_color_write(&target);
+                }
+                return Reply::Clear(snapshot);
             }
             "drawArrays" | "drawElements" => return self.draw_snapshot(operation, args),
             "flush" => {}
@@ -1450,6 +1485,9 @@ impl ContextCore {
             self.record_error(INVALID_OPERATION);
             return Reply::Null;
         }
+        let Some(target) = self.target_snapshot(true) else {
+            return Reply::Null;
+        };
         let mut indices = None;
         let mut vertex_count = first as usize + count as usize;
         if indexed {
@@ -1497,6 +1535,22 @@ impl ContextCore {
         }
         let program = self.render.programs[program_index].value.as_ref().unwrap();
         let executable = program.executable.as_ref().unwrap();
+        if let Some(color) = self.framebuffer_color_texture() {
+            if executable
+                .layout
+                .samplers
+                .iter()
+                .enumerate()
+                .any(|(index, _)| {
+                    let unit =
+                        executable.values[executable.layout.uniforms.len() + index][0] as usize;
+                    self.render.textures.units.get(unit).copied().flatten() == Some(color)
+                })
+            {
+                self.record_error(INVALID_OPERATION);
+                return Reply::Null;
+            }
+        }
         let Some(textures) = self.sampled_textures(executable) else {
             self.record_error(OUT_OF_MEMORY);
             return Reply::Null;
@@ -1564,7 +1618,8 @@ impl ContextCore {
             });
         }
         if count == 0.0
-            || self.render.surface.contains(&0)
+            || target.width == 0
+            || target.height == 0
             || self.render.raster.cull && self.render.raster.cull_face == 0x408
         {
             return Reply::Null;
@@ -1577,12 +1632,12 @@ impl ContextCore {
             self.record_error(OUT_OF_MEMORY);
             return Reply::Null;
         };
-        Reply::Draw(DrawSnapshot {
+        let snapshot = DrawSnapshot {
             artifact_id: executable.id,
             program: self.render.current.unwrap(),
             link_generation: program.link_generation,
             state: self.render.raster,
-            surface: self.render.surface,
+            target,
             attributes,
             vertex_count: vertex_count as u32,
             first: first as u32,
@@ -1591,7 +1646,12 @@ impl ContextCore {
             vertex_uniforms,
             fragment_uniforms,
             textures,
-        })
+        };
+        if !self.prepare_color_write(&target) {
+            return Reply::Null;
+        }
+        self.finish_color_write(&target);
+        Reply::Draw(snapshot)
     }
 }
 

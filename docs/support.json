@@ -1185,34 +1185,60 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Render to an RGBA8 texture followed by sampling in a later pass matches native WebGL.",
+          "coverage": "RGBA level-zero texture color targets, attachment wrapper identity, completeness/error queries, replacement and GPU write-to-sample ordering pass shared three-path scenes.",
           "tests": [
-            "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture"
+            "tests/chrome/rtt.spec.ts::RTT fbo-depth-render-sample",
+            "tests/chrome/rtt.spec.ts::RTT fbo-attachment-resize",
+            "tests/chrome/rtt.spec.ts::RTT fbo-feedback-loop"
           ],
           "evidence": [
             {
-              "path": "artifacts/differential/render-to-texture/result.json",
-              "passed": true,
-              "maxDifference": 0,
-              "mismatchedChannels": 0
+              "path": "artifacts/rtt/fbo-depth-render-sample/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/fbo-attachment-resize/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/fbo-feedback-loop/result.json",
+              "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
-          "formats": [
-            "Texture2D RGBA/UNSIGNED_BYTE level0 color attachment"
-          ],
           "limits": [
-            "One color attachment",
-            "Texture feedback loops report INVALID_OPERATION",
-            "Other color attachment formats are outside the verified initial profile"
-          ]
+            "RGBA color with optional DEPTH_COMPONENT16 is the declared execution profile. Depth-only and RGB targets return FRAMEBUFFER_UNSUPPORTED. Broader attachment formats remain future coverage."
+          ],
+          "unsupportedBehavior": "Invalid supported calls produce GL errors. Missing, undefined and dimension-mismatched attachments have distinct completeness statuses. Unsupported legal target combinations return FRAMEBUFFER_UNSUPPORTED."
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the declared Rust profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "RGBA level-zero texture color targets, attachment wrapper identity, completeness/error queries, replacement and GPU write-to-sample ordering pass shared three-path scenes.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT fbo-depth-render-sample",
+            "tests/chrome/rtt.spec.ts::RTT fbo-attachment-resize",
+            "tests/chrome/rtt.spec.ts::RTT fbo-feedback-loop"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/rtt/fbo-depth-render-sample/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/fbo-attachment-resize/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/fbo-feedback-loop/result.json",
+              "passed": true
+            }
+          ],
+          "limits": [
+            "RGBA color with optional DEPTH_COMPONENT16 is the declared execution profile. Depth-only and RGB targets return FRAMEBUFFER_UNSUPPORTED. Broader attachment formats remain future coverage."
+          ],
+          "unsupportedBehavior": "Invalid supported calls produce GL errors. Missing, undefined and dimension-mismatched attachments have distinct completeness statuses. Unsupported legal target combinations return FRAMEBUFFER_UNSUPPORTED."
         }
       }
     },
@@ -1225,31 +1251,60 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Depth renderbuffer allocation and generation retirement, framebuffer dimension checks, and resized color/depth attachments are implemented.",
+          "coverage": "Optional DEPTH_COMPONENT16 renderbuffer attachments use depth24plus backing. Current-target bit queries, depth tests, resize generations, incomplete targets and bound/unbound retained deletion are verified.",
           "tests": [
-            "tests/chrome/differential.spec.ts::WebGL1 differential resize-framebuffer"
+            "tests/chrome/rtt.spec.ts::RTT fbo-depth-render-sample",
+            "tests/chrome/rtt.spec.ts::RTT fbo-attachment-resize",
+            "tests/chrome/rtt.spec.ts::RTT fbo-deletion-bound-unbound"
           ],
           "evidence": [
             {
-              "path": "artifacts/differential/resize-framebuffer/result.json",
-              "passed": true,
-              "maxDifference": 0,
-              "mismatchedChannels": 0
+              "path": "artifacts/rtt/fbo-depth-render-sample/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/fbo-attachment-resize/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/fbo-deletion-bound-unbound/result.json",
+              "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "limits": [
-            "DEPTH_COMPONENT16 API storage uses depth24plus internally",
-            "Non-depth renderbuffer storage raises NotSupportedError",
-            "Stencil attachments are outside the initial profile"
-          ]
+            "RGBA color with optional DEPTH_COMPONENT16 is the declared execution profile. Depth-only and RGB targets return FRAMEBUFFER_UNSUPPORTED. Broader attachment formats remain future coverage."
+          ],
+          "unsupportedBehavior": "Invalid supported calls produce GL errors. Missing, undefined and dimension-mismatched attachments have distinct completeness statuses. Unsupported legal target combinations return FRAMEBUFFER_UNSUPPORTED."
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the declared Rust profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Optional DEPTH_COMPONENT16 renderbuffer attachments use depth24plus backing. Current-target bit queries, depth tests, resize generations, incomplete targets and bound/unbound retained deletion are verified.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT fbo-depth-render-sample",
+            "tests/chrome/rtt.spec.ts::RTT fbo-attachment-resize",
+            "tests/chrome/rtt.spec.ts::RTT fbo-deletion-bound-unbound"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/rtt/fbo-depth-render-sample/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/fbo-attachment-resize/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/fbo-deletion-bound-unbound/result.json",
+              "passed": true
+            }
+          ],
+          "limits": [
+            "RGBA color with optional DEPTH_COMPONENT16 is the declared execution profile. Depth-only and RGB targets return FRAMEBUFFER_UNSUPPORTED. Broader attachment formats remain future coverage."
+          ],
+          "unsupportedBehavior": "Invalid supported calls produce GL errors. Missing, undefined and dimension-mismatched attachments have distinct completeness statuses. Unsupported legal target combinations return FRAMEBUFFER_UNSUPPORTED."
         }
       }
     },
@@ -1262,10 +1317,13 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Deletion after encoded draws, buffer unbinding and cross-context buffer rejection are pixel/state verified. Other object classes have implemented reference and retirement handling.",
+          "coverage": "Typed context-owned generational buffers, shaders, programs, textures, renderbuffers and framebuffers preserve wrapper identity, retained deletion and queued execution versions. Cross-context resources and stale handles are rejected. Attachment replacement, repeated deletion, resize and final GPU retirement pass the shared profile.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential resource-ownership",
-            "tests/chrome/dual-core-drawing.spec.ts"
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/rtt.spec.ts::RTT fbo-deletion-bound-unbound",
+            "tests/chrome/rtt.spec.ts::RTT resources-multiple-contexts",
+            "tests/chrome/rtt.spec.ts::RTT canvas-resize-present"
           ],
           "evidence": [
             {
@@ -1273,12 +1331,23 @@
               "passed": true,
               "maxDifference": 0,
               "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/rtt/fbo-deletion-bound-unbound/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/resources-multiple-contexts/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/canvas-resize-present/result.json",
+              "passed": true
             }
           ],
           "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "limits": [
-            "Direct differential evidence currently covers buffers and foreign-buffer ownership",
-            "Program/shader deferred deletion and texture attachment retention have pending dedicated CTS coverage"
+            "Additional formats and context restoration require subsequent acceptance."
           ],
           "overloadStates": {
             "deleteBuffer": "differential-verified",
@@ -1291,11 +1360,14 @@
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "Typed context/kind/generation validation, Buffer replacement/deletion, shader/program retained deletion and final retirement, program link generations and old locations. Texture/FBO lifetime remains subsequent Rust parity work.",
+          "coverage": "Typed context-owned generational buffers, shaders, programs, textures, renderbuffers and framebuffers preserve wrapper identity, retained deletion and queued execution versions. Cross-context resources and stale handles are rejected. Attachment replacement, repeated deletion, resize and final GPU retirement pass the shared profile.",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
-            "packages/core-wasm/tests/render.integration.ts"
+            "packages/core-wasm/tests/render.integration.ts",
+            "tests/chrome/rtt.spec.ts::RTT fbo-deletion-bound-unbound",
+            "tests/chrome/rtt.spec.ts::RTT resources-multiple-contexts",
+            "tests/chrome/rtt.spec.ts::RTT canvas-resize-present"
           ],
           "evidence": [
             {
@@ -1305,11 +1377,23 @@
             {
               "path": "artifacts/dual-core-drawing-full-chrome.log",
               "passed": true
+            },
+            {
+              "path": "artifacts/rtt/fbo-deletion-bound-unbound/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/resources-multiple-contexts/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/canvas-resize-present/result.json",
+              "passed": true
             }
           ],
           "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
           "limits": [
-            "See buffer-lifecycle-contract for the independently verified common Buffer scope."
+            "Additional formats and context restoration require subsequent acceptance."
           ]
         }
       }
@@ -1870,17 +1954,29 @@
   },
   "rttStage": {
     "status": "running",
-    "acceptedSlice": "textures-unpack-sampling",
+    "acceptedSlice": "framebuffer-three-path-demo",
     "abi": 3,
-    "unitTests": 99,
-    "nativeRustTests": 33,
-    "actualWasmTests": 16,
+    "unitTests": 107,
+    "nativeRustTests": 44,
+    "actualWasmTests": 20,
     "originalCtsFiles": 11,
     "assertionsPerBackend": 243,
     "compilerCorpus": 24,
     "realPipelines": 4,
     "task": "docs/tasks/020-render-to-texture.md",
-    "sharedScenes": 14,
-    "resourceProtocol": 1
+    "sharedScenes": 20,
+    "resourceProtocol": 2,
+    "demo": {
+      "times": [
+        0,
+        1000,
+        2000
+      ],
+      "width": 320,
+      "height": 240,
+      "comparisons": 9,
+      "maximumObservedDifference": 0,
+      "evidence": "artifacts/demo/result.json"
+    }
   }
 }

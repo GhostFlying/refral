@@ -1,53 +1,20 @@
 import {
-  GL, LogicalObject, BufferObject, TextureObject, RenderbufferObject, FramebufferObject,
-  ErrorState, createRasterState, snapshotRaster, componentCount, isTextureComplete,
+  GL, createRasterState, snapshotRaster, componentCount,
+} from "@refral/core-api";
+import type {
+  AttributeSnapshot, RasterState, TargetSnapshot,
+  Compiler, CompiledShader, LinkedProgram, ProgramUniform, DrawingSurface,
+  ContextAttributes, RuntimeProfile, SemanticHost,
+} from "@refral/core-api";
+import {
+  LogicalObject, BufferObject, TextureObject, RenderbufferObject, FramebufferObject,
+  ErrorState, isTextureComplete,
 } from "./resources.js";
-import type { AttributeSnapshot, RasterState, TargetSnapshot, VertexAttribute, TextureStorage, TextureParameters } from "./resources.js";
-import type { Compiler, CompiledShader, LinkedProgram, ProgramUniform } from "@refral/compiler";
+import type { VertexAttribute } from "./resources.js";
 
-export interface DrawingSurface { readonly width: number; readonly height: number }
-export interface ContextAttributes {
-  alpha?: boolean;
-  depth?: boolean;
-  stencil?: boolean;
-  antialias?: boolean;
-  premultipliedAlpha?: boolean;
-  preserveDrawingBuffer?: boolean;
-  powerPreference?: string;
-  failIfMajorPerformanceCaveat?: boolean;
-  desynchronized?: boolean;
-}
-export interface RuntimeProfile {
-  vertexAttributes: number;
-  vertexUniformVectors: number;
-  fragmentUniformVectors: number;
-  varyingVectors: number;
-  vertexTextureUnits: number;
-  fragmentTextureUnits: number;
-  combinedTextureUnits: number;
-}
-export interface CoreDrawOperation {
-  program: LinkedProgram;
-  target: TargetSnapshot;
-  state: RasterState;
-  attributes: AttributeSnapshot[];
-  vertexCount: number;
-  count: number;
-  first: number;
-  indices: { data: Uint8Array; type: number; offset: number } | null;
-  vertexUniforms: Uint8Array;
-  fragmentUniforms: Uint8Array;
-  textures: { storage: TextureStorage | null; parameters: TextureParameters }[];
-}
-export interface SemanticHost {
-  readonly limits: { readonly maxTextureDimension2D: number; readonly maxBufferSize?: number };
-  draw(operation: CoreDrawOperation): void;
-  clear(target: TargetSnapshot, state: RasterState, mask: number, color: readonly number[], depth: number): void;
-  flush(): void;
-  replaceStorage(previous: TextureStorage | null, next: TextureStorage): void;
-  retireStorage(storage: TextureStorage): void;
-  retireDepth(id: number, generation: number): void;
-}
+export type {
+  DrawingSurface, ContextAttributes, RuntimeProfile, SemanticHost, DrawOperation as CoreDrawOperation,
+} from "@refral/core-api";
 
 function unsupported(operation: string): never {
   const error = new Error(`${operation} is outside the implemented WebGL1 profile`);

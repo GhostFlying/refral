@@ -35,14 +35,15 @@ importers:
 
   packages/browser-host:
     dependencies:
-      '@refral/compiler':
+      '@refral/core-api':
         specifier: workspace:*
-        version: link:../compiler
-      '@refral/core-js':
-        specifier: workspace:*
-        version: link:../core-js
+        version: link:../core-api
 
-  packages/compiler: {}
+  packages/compiler:
+    dependencies:
+      '@refral/core-api':
+        specifier: workspace:*
+        version: link:../core-api
 
   packages/core-api: {}
 

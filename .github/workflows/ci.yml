@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  required:
+    name: ci/required
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+      - name: Select affected checks
+        id: scope
+        run: node tools/ci.mjs scope
+      - name: Validate policy, documentation, and support
+        run: |
+          node --test tools/ci.test.mjs
+          node tools/ci.mjs verify
+          node tools/check-support.mjs
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        if: steps.scope.outputs.js == 'true'
+        with:
+          run_install: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        if: steps.scope.outputs.js == 'true'
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Check JS types and CPU semantics
+        if: steps.scope.outputs.js == 'true'
+        run: |
+          pnpm install --frozen-lockfile --prefer-offline
+          pnpm typecheck
+          pnpm test:unit
+      - name: Prepare native Rust
+        if: steps.scope.outputs.rust == 'true'
+        env:
+          RUST_VERSION: ${{ steps.scope.outputs.rust_version }}
+        run: rustup toolchain install "$RUST_VERSION" --profile minimal --no-self-update
+      - name: Check native Rust semantics
+        if: steps.scope.outputs.rust == 'true'
+        run: node tools/rust.mjs test

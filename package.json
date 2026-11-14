@@ -28,6 +28,7 @@
     "test:cts": "playwright test cts.spec.ts",
     "test:buffers": "playwright test buffers.spec.ts",
     "test:drawing": "playwright test dual-core-drawing.spec.ts",
+    "test:readback": "playwright test -c experiments/readback/playwright.config.ts",
     "test:dist": "node tools/verify-dist.mjs",
     "snapshot": "node tools/snapshot.mjs",
     "bench:chrome": "playwright test -c benchmarks/playwright.config.ts rtt-benchmark.spec.ts",

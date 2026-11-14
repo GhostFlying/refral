@@ -50,6 +50,7 @@ The build produces a standalone `dist` tree containing the browser bundles, comp
 | `pnpm test:cts` | Original-assertion pinned Khronos cases through the recorded test adapter |
 | `pnpm test:buffers` | Shared native/JS/Rust public Buffer, handle, ownership, and loss fixtures |
 | `pnpm test:drawing` | Shared native/JS/Rust drawing, state/error, pixel and minimal-example checks |
+| `pnpm test:readback` | Experimental synchronous readback placements, shared-memory conditions and existing CTS/demo smoke |
 | `pnpm bench:rtt` | Five native/JS/Rust drawing workloads, three rotated rounds and raw CPU samples |
 | `pnpm bench:chrome` | Alias for the independent RTT baseline entry |
 | `pnpm build` | Browser deployment tree |
@@ -85,6 +86,8 @@ The [dual-core drawing milestone](docs/validation/2026-11-14-dual-core-drawing.m
 The [three-path RTT milestone](docs/validation/2026-11-15-three-path-rtt.md) passes 84 Chrome correctness tests, 107 CPU tests, 44 native Rust tests and twenty actual-Wasm tests. Eleven original CTS files pass 243 assertions per backend. Twenty shared RTT scenes and sequential demo times 0/1000/2000 pass, with zero observed pixel differences across the demo's nine comparisons. Built deployment exercises RTT, triangles, the GPU probe and ABI3/resource-protocol2.
 
 `pnpm bench:rtt` independently measures five native/JS/Rust drawing workloads in three rotated rounds. The 45 accepted runs retain 5400 CPU samples in ms/logical-frame. Its dedicated server enables COOP/COEP for finer timer resolution. The report records timing boundaries, initial/first-image costs, counters, capacities, hardware, launch flags and build/source hashes. The current Rust path has higher CPU costs than JS in these workloads, with profiling and optimization scheduled as separate work. GPU durations remain unmeasured in this CPU baseline.
+
+The [synchronous readback experiment](docs/validation/2026-11-15-readback-feasibility.md) exercises both semantic cores with an independent GPU worker. An isolated page returns completed pixels through shared memory, using Window polling or a waiting worker client. The proposed ADR records deployment, thread and public API integration work. The production context's readPixels entry remains unimplemented in the support matrix.
 
 Raw outputs are under ignored `artifacts/`. They include environment reports, compiler build/corpus results, JS/Rust samples, differential images, CTS assertions, screenshots, and paired performance samples. Validation summaries describe their environment and measurement limits. GPU timestamp results and internal Dawn integration require their own actual implementation and verification.
 

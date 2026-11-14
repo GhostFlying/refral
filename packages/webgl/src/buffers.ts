@@ -5,6 +5,32 @@ class RefralBuffer {}
 
 const handles = new WeakMap<object, BufferHandle>();
 const byteLength = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength')!.get!;
+const resizable = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'resizable')?.get;
+const sharedByteLength = typeof SharedArrayBuffer === 'undefined' ? undefined
+  : Object.getOwnPropertyDescriptor(SharedArrayBuffer.prototype, 'byteLength')!.get!;
+const growable = typeof SharedArrayBuffer === 'undefined' ? undefined
+  : Object.getOwnPropertyDescriptor(SharedArrayBuffer.prototype, 'growable')?.get;
+const typedArray = Object.getPrototypeOf(Uint8Array.prototype);
+const typedBuffer = Object.getOwnPropertyDescriptor(typedArray, 'buffer')!.get!;
+const typedOffset = Object.getOwnPropertyDescriptor(typedArray, 'byteOffset')!.get!;
+const typedLength = Object.getOwnPropertyDescriptor(typedArray, 'byteLength')!.get!;
+const viewBuffer = Object.getOwnPropertyDescriptor(DataView.prototype, 'buffer')!.get!;
+const viewOffset = Object.getOwnPropertyDescriptor(DataView.prototype, 'byteOffset')!.get!;
+const viewLength = Object.getOwnPropertyDescriptor(DataView.prototype, 'byteLength')!.get!;
+
+function storage(value: unknown): { value: ArrayBufferLike; length: number; variable: boolean } | null {
+  try {
+    const length = byteLength.call(value) as number;
+    return { value: value as ArrayBuffer, length, variable: resizable?.call(value) ?? false };
+  } catch { /* Try the other AllowSharedBufferSource storage type. */ }
+  if (sharedByteLength) {
+    try {
+      const length = sharedByteLength.call(value) as number;
+      return { value: value as SharedArrayBuffer, length, variable: growable?.call(value) ?? false };
+    } catch { /* The value uses the numeric bufferData overload. */ }
+  }
+  return null;
+}
 
 export function requireArguments(name: string, args: readonly unknown[], minimum: number): void {
   if (args.length < minimum) throw new TypeError(`${name} requires at least ${minimum} arguments.`);
@@ -23,17 +49,30 @@ function toSize(value: unknown): number {
 
 function bytes(value: unknown): Uint8Array {
   if (ArrayBuffer.isView(value)) {
-    // WebGL BufferDataSource uses ordinary ArrayBuffer storage.
-    byteLength.call(value.buffer);
-    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    let buffer: ArrayBufferLike;
+    let offset: number;
+    let length: number;
+    try {
+      buffer = typedBuffer.call(value);
+      offset = typedOffset.call(value);
+      length = typedLength.call(value);
+    } catch {
+      buffer = viewBuffer.call(value);
+      offset = viewOffset.call(value);
+      length = viewLength.call(value);
+    }
+    const backing = storage(buffer)!;
+    if (backing.variable) throw new TypeError('WebGL buffer sources require fixed-length storage.');
+    return new Uint8Array(buffer, offset, length);
   }
-  const length = byteLength.call(value) as number;
-  return new Uint8Array(value as ArrayBuffer, 0, length);
+  const backing = storage(value);
+  if (!backing || backing.variable) throw new TypeError('Expected a fixed-length AllowSharedBufferSource.');
+  return new Uint8Array(backing.value, 0, backing.length);
 }
 
 function bufferDataSource(value: unknown): number | Uint8Array | null {
   if (value === null || value === undefined) return null;
-  if (typeof value === 'object' || typeof value === 'function') return bytes(value);
+  if (ArrayBuffer.isView(value) || storage(value)) return bytes(value);
   return toSize(value);
 }
 

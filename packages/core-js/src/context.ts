@@ -66,6 +66,7 @@ class ProgramObject extends LogicalObject {
   attributeLocations: Record<string, number> = {};
   executable: LinkedProgram | null = null;
   linkStatus = false;
+  validateStatus = false;
   log = "";
   generation = 0;
   vertexUniforms = new Uint8Array(16);
@@ -341,6 +342,7 @@ export class SemanticContext {
   linkProgram(program: ProgramObject): void {
     if (!this.valid(program, ProgramObject)) return;
     program.generation++;
+    program.validateStatus = false;
     const vertex = program.shaders.find(shader => shader.type === GL.VERTEX_SHADER)?.result;
     const fragment = program.shaders.find(shader => shader.type === GL.FRAGMENT_SHADER)?.result;
     if (!vertex || !fragment) {
@@ -370,7 +372,8 @@ export class SemanticContext {
   }
   getProgramParameter(program: ProgramObject, parameter: number): unknown {
     if (!this.valid(program, ProgramObject, true)) return null;
-    if (parameter === GL.LINK_STATUS || parameter === GL.VALIDATE_STATUS) return program.linkStatus;
+    if (parameter === GL.LINK_STATUS) return program.linkStatus;
+    if (parameter === GL.VALIDATE_STATUS) return program.validateStatus;
     if (parameter === GL.DELETE_STATUS) return program.deleted;
     if (parameter === GL.ATTACHED_SHADERS) return program.shaders.length;
     if (parameter === GL.ACTIVE_ATTRIBUTES) return program.executable?.attributes.length ?? 0;
@@ -380,7 +383,11 @@ export class SemanticContext {
   getProgramInfoLog(program: ProgramObject): string | null {
     return this.valid(program, ProgramObject, true) ? program.log : null;
   }
-  validateProgram(program: ProgramObject): void { if (!this.valid(program, ProgramObject)) return; }
+  validateProgram(program: ProgramObject): void {
+    if (!this.valid(program, ProgramObject)) return;
+    // The supported sampler profile has no cross-type or array binding conflicts.
+    program.validateStatus = program.linkStatus;
+  }
   getAttribLocation(program: ProgramObject, name: string): number {
     if (!this.valid(program, ProgramObject)) return -1;
     if (!program.linkStatus) { this.error(GL.INVALID_OPERATION); return -1; }
@@ -435,9 +442,11 @@ export class SemanticContext {
     if (this.lost) return;
     if (location === null) return;
     if (!(location instanceof UniformLocation) || location.owner !== this.owner ||
-        location.program !== this.program || location.generation !== location.program.generation) {
+        location.program !== this.program || !location.program.linkStatus ||
+        location.generation !== location.program.generation) {
       return this.error(GL.INVALID_OPERATION);
     }
+    if (values.length < components || values.length % components !== 0) return this.error(GL.INVALID_VALUE);
     const program = location.program;
     if (program.samplerUnits.has(location.name)) {
       if (!integer || components !== 1 || values.length !== 1) return this.error(GL.INVALID_OPERATION);
@@ -452,7 +461,7 @@ export class SemanticContext {
     const expectedMatrix = uniform.type === GL.FLOAT_MAT2 ? 2 : uniform.type === GL.FLOAT_MAT3 ? 3 :
       uniform.type === GL.FLOAT_MAT4 ? 4 : 0;
     if ((!isBoolean && integer !== isInteger) || expectedMatrix !== matrix || componentCount(uniform.type) !== components ||
-        values.length % components !== 0 || values.length / components > uniform.size - location.index) {
+        values.length / components > uniform.size - location.index) {
       return this.error(GL.INVALID_OPERATION);
     }
     const stored = program.values.get(location.name)!;
@@ -501,16 +510,19 @@ export class SemanticContext {
   uniform3iv(location: UniformLocation | null, values: ArrayLike<number>): void { this.uniform(location, values, true, 3); }
   uniform4iv(location: UniformLocation | null, values: ArrayLike<number>): void { this.uniform(location, values, true, 4); }
   uniformMatrix2fv(location: UniformLocation | null, transpose: boolean, values: ArrayLike<number>): void {
+    if (this.lost || location === null) return;
     if (transpose) return this.error(GL.INVALID_VALUE); this.uniform(location, values, false, 4, 2);
   }
   uniformMatrix3fv(location: UniformLocation | null, transpose: boolean, values: ArrayLike<number>): void {
+    if (this.lost || location === null) return;
     if (transpose) return this.error(GL.INVALID_VALUE); this.uniform(location, values, false, 9, 3);
   }
   uniformMatrix4fv(location: UniformLocation | null, transpose: boolean, values: ArrayLike<number>): void {
+    if (this.lost || location === null) return;
     if (transpose) return this.error(GL.INVALID_VALUE); this.uniform(location, values, false, 16, 4);
   }
   getUniform(program: ProgramObject, location: UniformLocation): unknown {
-    if (!this.valid(program, ProgramObject) || !(location instanceof UniformLocation) ||
+    if (!this.valid(program, ProgramObject) || !program.linkStatus || !(location instanceof UniformLocation) ||
         location.program !== program || location.owner !== this.owner || location.generation !== program.generation) {
       this.error(GL.INVALID_OPERATION); return null;
     }
@@ -588,7 +600,7 @@ export class SemanticContext {
     if (mode < GL.POINTS || mode > GL.TRIANGLE_FAN) return this.error(GL.INVALID_ENUM);
     if (mode !== GL.TRIANGLES) return unsupported("non-triangle draw");
     if (first < 0 || count < 0 || !Number.isInteger(first) || !Number.isInteger(count)) return this.error(GL.INVALID_VALUE);
-    if (!this.program?.executable) return this.error(GL.INVALID_OPERATION);
+    if (!this.program?.linkStatus || !this.program.executable) return this.error(GL.INVALID_OPERATION);
     const target = this.target(); if (!target) return;
     let vertices = first + count;
     if (indices) {

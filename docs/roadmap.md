@@ -44,12 +44,14 @@ Grow a pinned suite by semantic dependency. Retain test identities, assertions, 
 
 After the RTT milestone, organize the next bounded tasks around the recorded upstream prerequisites.
 
-1. Add DOM image-source uploads and their conversion/ownership rules through the shared facade and fixtures.
-2. Expand mip levels, mipmap generation, CubeMap, packed pixel types and framebuffer formats with per-core support entries.
-3. Resolve synchronous readback and related context behavior through a dedicated design/feasibility task, then activate original cases that depend on those APIs.
+1. Task 025 establishes synchronous readback feasibility using actual JS/Rust cores and an independent GPU worker. Review the proposed worker-host contract and deployment/API placement in ADR 007, then implement public readPixels validation, destination ownership, ordering, presentation and loss handling. Accept the original program-handling and feedback-loop cases after their recorded iframe context-brand dependency is resolved.
+2. Add DOM image-source uploads and their conversion/ownership rules through the shared facade and fixtures. Task 026 records ImageData, canvas and image source slices and their upstream dependencies.
+3. Expand mip levels, mipmap generation, CubeMap, packed pixel types and framebuffer formats with per-core support entries. Use the pinned dependency audit to activate complete original scripts as their prerequisites become available.
 4. Extend context restoration, extensions and remaining state according to the fixed CTS dependency graph.
 
 Use the repeated drawing baseline to choose separate optimization tasks for the measured CPU, bridge, allocation and host costs. Preserve workload sizes, raw samples and image assertions when comparing changes.
+
+The first Buffer optimization candidate is per-submission reuse of immutable bytes by logical Buffer version. The Rust draw decoder currently creates fresh byte-array identities that miss the shared host's vertex cache. Reuse must include context, object identity, storage generation and content version, with updates, deletion and queued work covered by the shared fixtures. The readback experiment leaves this optimization as a subsequent bounded task.
 
 ## P4 Internal host
 

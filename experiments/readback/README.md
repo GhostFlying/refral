@@ -1,0 +1,11 @@
+# Synchronous readback experiment
+
+Run `pnpm test:readback` after the normal compiler/Rust setup. It launches installed headed Chrome with DPR1 and one test worker. Owned servers use port 4175 for ordinary responses and port 4176 with COOP/COEP. The existing development page uses its own server.
+
+The experiment runs the actual JS or Rust DrawingCore and ANGLE compiler on the caller's thread. A private SemanticHost adapter snapshots ordered operations and sends them to a dedicated worker running the existing BrowserHost on an independent OffscreenCanvas. Window callers poll a shared result. Worker callers use Atomics.wait while a second worker completes GPU execution and mapAsync. Each caller takes an independent pixel copy before reusing the shared output.
+
+Seven experiment cases check ordinary/isolated Window primitives, a waiting worker that owns its own GPU mapping, and both cores on both caller placements. Each rendering case alternates colored halves and a GL-row-zero marker, exercises 64×64/320×240 default and RGBA FBO targets with eight repetitions each, retains earlier output ownership, checks local synchronous state queries, injects a recoverable transport error and terminates a timed-out client. Four existing CTS/demo smoke cases run on the owned ordinary server. Source/build/browser/adapter/command-line metadata and raw timing samples are saved under `artifacts/readback/`.
+
+`roundTripMs` starts before posting queued host work and ends after GPU execution/readback and the client-owned copy. `clientEncodingMs` covers semantic GL calls and local snapshot preparation before that capture. The samples supply feasibility observations for this small trace. The RTT performance baseline uses its separately documented CPU-only timing boundary.
+
+The experiment demonstrates the transport/thread arrangement. Production readPixels validation, arbitrary regions/PACK_ALIGNMENT, presentation of a user canvas, public wrapper integration, loss propagation and original CTS acceptance belong to subsequent implementation tasks. [ADR 007](../../docs/adr/007-synchronous-readback.md) records the proposed production direction and remaining decisions. The [validation report](../../docs/validation/2026-11-15-readback-feasibility.md) records the observed environment, timings and acceptance.

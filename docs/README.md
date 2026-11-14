@@ -11,12 +11,14 @@ Current direction is parallel JS/TypeScript and Rust/Wasm semantic cores sharing
 | [Actions and PR delivery](ci.md) | Required checks, optional runs, and repository integration constraints |
 | [Shared core contract](core-api.md) | Object handles, shader/program state, draw snapshots, validation, and lifecycle |
 | [Specification map](spec-map.md) | Pinned WebGL/IDL/GLES sources, semantic assertions, and original CTS identities |
-| [Architecture decisions](adr/) | Accepted decisions and their rationale |
+| [Architecture decisions](adr/) | Decisions, proposals and their recorded status |
 | [Agent tasks](tasks/) | Bounded implementation plans, dependencies, acceptance, and results |
 | [Initial Chrome validation](validation.md) | Dated prototype verification and measurements |
 | [Dual-core Buffer validation](validation/2026-11-13-dual-core-buffers.md) | Current shared Buffer acceptance, JS regression, and remaining Rust parity |
 | [Dual-core drawing validation](validation/2026-11-14-dual-core-drawing.md) | Unified cores, original CTS, three-path pixels, built examples, and remaining Rust scope |
 | [Three-path RTT validation](validation/2026-11-15-three-path-rtt.md) | Current shared texture/FBO profile, sequential demo, eleven original CTS files, deployment and repeated performance |
+| [Synchronous readback feasibility](validation/2026-11-15-readback-feasibility.md) | Experimental caller/GPU-worker placements, shared-memory conditions, synchronous image checks and integration work |
+| [CTS readback dependencies](references/cts-readback-dependencies.md) | Pinned original pixel helper, context-brand, texture/input and state/query prerequisites |
 
 ADR 003 records the current [parallel-core direction](adr/003-parallel-cores.md). ADR 001 records the earlier [small-core experiment and initial JS implementation choice](adr/001-runtime-core.md). ADR 002 documents the [ANGLE Wasm compiler](adr/002-compiler.md).
 
@@ -27,3 +29,5 @@ Dated reports live under `docs/validation/`. The initial JS report remains `docs
 ADR 005 records the [unified drawing core and compiler-artifact boundary](adr/005-drawing-core-boundary.md) introduced by task 013.
 
 ADR 006 records [resource versions and shared execution](adr/006-resource-execution.md), including typed targets and the ABI3/resource-protocol2 boundary.
+
+ADR 007 proposes the [synchronous readback integration](adr/007-synchronous-readback.md) after task025's bounded experiment. Its status remains proposed while production placement, presentation and public readPixels acceptance are pending.

@@ -41,6 +41,7 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
   const matrixProgram = compiler.link(matrixAttribute, plainFragment, { transform: 2 });
   const matrixOverlap = compiler.link(matrixAttribute, plainFragment, { transform: 2, position: 4 });
   const matrixLimit = compiler.link(matrixAttribute, plainFragment, { transform: COMPILER_LIMITS.vertexAttributes - 2 });
+  const minimumInteger = compiler.compile('precision highp float; precision highp int; uniform int value; void main(){gl_FragColor=vec4(value == (-2147483647 - 1) ? 1.0 : 0.0);}', 'fragment');
   return [
     { name: "essl100-vertex", passed: vertex.success, log: vertex.log },
     { name: "essl100-fragment", passed: fragment.success, log: fragment.log },
@@ -65,5 +66,8 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
     { name: "matrix-attribute-column-locations", passed: matrixProgram.success && [2,3,4].every((location) => matrixProgram.vertexWGSL.includes(`@location(${location})`)) && !matrixProgram.vertexWGSL.includes("@@@@@@"), log: matrixProgram.log },
     { name: "matrix-attribute-overlap", passed: !matrixOverlap.success, log: matrixOverlap.log },
     { name: "matrix-attribute-limit", passed: !matrixLimit.success, log: matrixLimit.log },
+    { name: 'integer-minimum-literal', passed: minimumInteger.success
+      && minimumInteger.wgsl.includes('(-2147483647i - 1i)')
+      && !minimumInteger.wgsl.includes('-2147483648i'), log: minimumInteger.log },
   ];
 }

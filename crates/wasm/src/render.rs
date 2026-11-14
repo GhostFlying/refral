@@ -144,6 +144,14 @@ fn argument(value: &Value, bytes: &[u8]) -> Option<Argument> {
                 .collect(),
         ));
     }
+    if value.get("i").is_some() {
+        return Some(Argument::Ints(
+            range(value, "i", bytes, 4)?
+                .chunks_exact(4)
+                .map(|bytes| i32::from_le_bytes(bytes.try_into().unwrap()))
+                .collect(),
+        ));
+    }
     parse_handle(value).map(Argument::Handle)
 }
 fn active(value: &Value) -> Option<ActiveInfo> {
@@ -200,6 +208,19 @@ fn layout(value: &Value) -> Option<ProgramLayout> {
     })
 }
 
+fn initialize_drawing(core: &mut BufferCore, args: &[Argument]) {
+    if let [Argument::Number(width), Argument::Number(height), Argument::Number(limit), ..] = args {
+        core.configure_surface(*width as u32, *height as u32);
+        core.configure_attribute_limit(*limit as usize);
+    }
+    if let Some(Argument::Number(units)) = args.get(3) {
+        core.configure_texture_units(*units as usize);
+    }
+    if let Some(Argument::Number(limit)) = args.get(4) {
+        core.configure_texture_dimension(*limit as u32);
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn rf_command_commit() -> u32 {
     with_state(0, |state| {
@@ -212,19 +233,63 @@ pub extern "C" fn rf_command_commit() -> u32 {
         transport.prepared = false;
         let response = (|| {
             let command: Command = serde_json::from_slice(&transport.metadata).ok()?;
-            let args = command.args.iter().map(|value| argument(value, &transport.input)).collect::<Option<Vec<_>>>()?;
+            let args = command
+                .args
+                .iter()
+                .map(|value| argument(value, &transport.input))
+                .collect::<Option<Vec<_>>>()?;
             let value = match command.op.as_str() {
-                "initializeDrawing" => { if let [Argument::Number(width), Argument::Number(height), Argument::Number(limit)] = args.as_slice() { state.core.configure_surface(*width as u32,*height as u32); state.core.configure_attribute_limit(*limit as usize); } Reply::Null }
-                "prepareCompileShader" => state.core.prepare_compile(args.first().and_then(|arg| if let Argument::Handle(handle)=arg {Some(*handle)}else{None})),
-                "prepareLinkProgram" => state.core.prepare_link(args.first().and_then(|arg| if let Argument::Handle(handle)=arg {Some(*handle)}else{None})),
+                "initializeDrawing" => {
+                    initialize_drawing(&mut state.core, &args);
+                    Reply::Null
+                }
+                "prepareCompileShader" => {
+                    state.core.prepare_compile(args.first().and_then(|arg| {
+                        if let Argument::Handle(handle) = arg {
+                            Some(*handle)
+                        } else {
+                            None
+                        }
+                    }))
+                }
+                "prepareLinkProgram" => state.core.prepare_link(args.first().and_then(|arg| {
+                    if let Argument::Handle(handle) = arg {
+                        Some(*handle)
+                    } else {
+                        None
+                    }
+                })),
                 "commitCompileShader" => {
-                    let handle = parse_handle(command.args.first()?)?; let result = &command.result;
-                    Reply::Boolean(state.core.commit_compile(handle, command.request_id, CompileOutcome { artifact_id: u32::try_from(result.get("artifactId")?.as_u64()?).ok()?, success: result.get("success")?.as_bool()?, log: result.get("log")?.as_str()?.to_owned() }))
+                    let handle = parse_handle(command.args.first()?)?;
+                    let result = &command.result;
+                    Reply::Boolean(state.core.commit_compile(
+                        handle,
+                        command.request_id,
+                        CompileOutcome {
+                            artifact_id: u32::try_from(result.get("artifactId")?.as_u64()?).ok()?,
+                            success: result.get("success")?.as_bool()?,
+                            log: result.get("log")?.as_str()?.to_owned(),
+                        },
+                    ))
                 }
                 "commitLinkProgram" => {
-                    let handle = parse_handle(command.args.first()?)?; let result = &command.result;
+                    let handle = parse_handle(command.args.first()?)?;
+                    let result = &command.result;
                     let success = result.get("success")?.as_bool()?;
-                    Reply::Boolean(state.core.commit_link(handle, command.request_id, LinkOutcome { artifact_id: u32::try_from(result.get("artifactId")?.as_u64()?).ok()?, success, log: result.get("log")?.as_str()?.to_owned(), layout: if success { layout(result)? } else { ProgramLayout::default() } }))
+                    Reply::Boolean(state.core.commit_link(
+                        handle,
+                        command.request_id,
+                        LinkOutcome {
+                            artifact_id: u32::try_from(result.get("artifactId")?.as_u64()?).ok()?,
+                            success,
+                            log: result.get("log")?.as_str()?.to_owned(),
+                            layout: if success {
+                                layout(result)?
+                            } else {
+                                ProgramLayout::default()
+                            },
+                        },
+                    ))
                 }
                 _ => state.core.render_invoke(&command.op, &args),
             };
@@ -234,7 +299,8 @@ pub extern "C" fn rf_command_commit() -> u32 {
                 return Some(json!({"type":"null"}));
             }
             Some(reply(value, &mut transport.binary))
-        })().unwrap_or_else(|| json!({"type":"protocol-error"}));
+        })()
+        .unwrap_or_else(|| json!({"type":"protocol-error"}));
         let releases = state.core.take_artifact_releases();
         let response = json!({"value":response,"releases":releases});
         match serde_json::to_vec(&response) {
@@ -260,6 +326,46 @@ fn u32_value(output: &mut Vec<u8>, value: u32) {
 fn f32_value(output: &mut Vec<u8>, value: f32) {
     output.extend_from_slice(&value.to_le_bytes());
 }
+fn raster(output: &mut Vec<u8>, state: refral_core::RasterState) {
+    for value in state.viewport {
+        u32_value(output, value as u32);
+    }
+    for value in state.scissor {
+        u32_value(output, value as u32);
+    }
+    u32_value(output, u32::from(state.scissor_test));
+    u32_value(
+        output,
+        state
+            .color_mask
+            .iter()
+            .enumerate()
+            .fold(0, |mask, (index, value)| mask | u32::from(*value) << index),
+    );
+    u32_value(output, u32::from(state.depth_test));
+    u32_value(output, u32::from(state.depth_mask));
+    u32_value(output, state.depth_func);
+    for value in state.depth_range {
+        f32_value(output, value);
+    }
+    u32_value(output, u32::from(state.blend));
+    for value in state.blend_color {
+        f32_value(output, value);
+    }
+    for value in [
+        state.blend_src_rgb,
+        state.blend_dst_rgb,
+        state.blend_src_alpha,
+        state.blend_dst_alpha,
+        state.blend_equation_rgb,
+        state.blend_equation_alpha,
+    ] {
+        u32_value(output, value);
+    }
+    u32_value(output, u32::from(state.cull));
+    u32_value(output, state.cull_face);
+    u32_value(output, state.front_face);
+}
 fn buffer(output: &mut Vec<u8>, snapshot: &BufferSnapshot) {
     for value in [
         snapshot.metadata.handle.context_id,
@@ -277,10 +383,11 @@ fn reply_capacity(value: &Reply) -> Option<usize> {
         Reply::Number(_) => Some(8),
         Reply::Text(units) => units.len().checked_mul(2),
         Reply::Floats(values) => values.len().checked_mul(4),
+        Reply::Ints(values) => values.len().checked_mul(4),
         Reply::Compile(request) => request.source.len().checked_mul(2),
-        Reply::Clear(_) => Some(48),
+        Reply::Clear(_) => Some(148),
         Reply::Draw(snapshot) => {
-            let mut total = 84_usize
+            let mut total = 184_usize
                 .checked_add(snapshot.vertex_uniforms.len())?
                 .checked_add(snapshot.fragment_uniforms.len())?;
             for attribute in &snapshot.attributes {
@@ -321,6 +428,13 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             }
             json!({"type":"floats"})
         }
+        Reply::Ints(values) => {
+            for value in values {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            json!({"type":"ints"})
+        }
+        Reply::Booleans(values) => json!({"type":"booleans","value":values}),
         Reply::Active(active) => {
             json!({"type":"active","value":{"name":active.name,"type":active.ty,"size":active.size}})
         }
@@ -341,9 +455,7 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             for value in snapshot.surface {
                 u32_value(output, value);
             }
-            for value in snapshot.viewport {
-                u32_value(output, value as u32);
-            }
+            raster(output, snapshot.state);
             u32_value(output, snapshot.mask);
             for value in snapshot.color {
                 f32_value(output, value);
@@ -352,8 +464,8 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             json!({"type":"clear"})
         }
         Reply::Draw(snapshot) => {
-            u32_value(output, 0x32444652);
-            u32_value(output, 2);
+            u32_value(output, 0x33444652);
+            u32_value(output, 3);
             u32_value(output, snapshot.artifact_id);
             for value in [
                 snapshot.program.context_id,
@@ -366,9 +478,7 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             for value in snapshot.surface {
                 u32_value(output, value);
             }
-            for value in snapshot.viewport {
-                u32_value(output, value as u32);
-            }
+            raster(output, snapshot.state);
             for value in [
                 snapshot.vertex_count,
                 snapshot.first,

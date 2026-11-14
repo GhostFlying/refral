@@ -32,4 +32,18 @@ The new PixelUpload record carries the facade's normalized byte view and intrins
 
 `pnpm test:unit` passed 12 files and 75 tests at PR1 handoff. Four new resource tests cover typed binding/attachment identity, owned define/update/reallocation payloads, GPU-write alias transitions followed by subimage update, and retained deletion/final retirement/slot reuse. The host and compiler are mocks with the real shared ExecutionResources and compiler registry implementations.
 
-The initial TypeScript run reported only the Rust integration test's in-progress missing required resources service. The integrating agent and Rust worker own that update and final repository verification. Further JS semantic edits wait until integration snapshots the PR1 files.
+The initial TypeScript run reported only the Rust integration test's in-progress missing required resources service. TypeScript subsequently passed. Integration committed the PR1 boundary before the later semantic edits.
+
+## PR2 uniform and raster plan
+
+GLES 2.0.25 section 2.10.4 ignores excess complete uniform array elements and rejects multiple values for a non-array uniform. Array stride distinguishes reflected arrays of length one. Boolean conversion compares the numeric input to zero. Section 2.12.1 clamps viewport dimensions to their advertised maximums, and table 4.2 excludes SRC_ALPHA_SATURATE from destination blend factors. Implement these corrections and verify array/matrix packing, exact i32 values, boolean/non-current queries, sampler units, viewport/scissor state, and blend error atomicity. [OpenGL ES 2.0.25](https://registry.khronos.org/OpenGL/specs/es/2.0/es_full_spec_2.0.pdf)
+
+The pinned WebGL constant-color rule limits the constant color/alpha conflict check to the RGB source/destination pair. Preserve that behavior while correcting destination-factor validation. [Pinned WebGL constant-color rule](https://raw.githubusercontent.com/KhronosGroup/WebGL/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#CONSTANT_COLOR_BLEND)
+
+## PR2 implementation and handoff
+
+Uniform updates now consume only the remaining active array elements while accepting complete excess input. Reflected array stride preserves array-of-length-one behavior and `[0]` active names. Boolean float updates use numeric zero comparison, including NaN as nonzero. Existing exact i32 storage, scalar sampler range/type validation, non-current uniform queries, and matrix column/array-stride packing pass focused regressions.
+
+Viewport dimensions clamp to the advertised limit. Destination RGB/alpha saturation factors report INVALID_ENUM before changing blend state. Source saturation and the RGB-only constant-color conflict rule retain their specified behavior. Clear snapshots preserve the raster values observed at the call.
+
+Seven uniform and four raster tests were added. `pnpm test:unit` passed 14 files and 86 tests. The latest TypeScript invocation reported only the integrating agent's in-progress Rust example backend union in `examples/main.ts`. This task's files had no type errors. Texture/FBO semantic changes remain for the following boundary.

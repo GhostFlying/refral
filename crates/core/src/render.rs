@@ -1,5 +1,9 @@
 use super::*;
 
+mod raster;
+mod uniforms;
+pub use raster::RasterState;
+
 pub const VERTEX_SHADER: u32 = 0x8b31;
 pub const FRAGMENT_SHADER: u32 = 0x8b30;
 pub const FLOAT: u32 = 0x1406;
@@ -43,6 +47,7 @@ pub enum Argument {
     Handle(ObjectHandle),
     Text(Vec<u16>),
     Floats(Vec<f32>),
+    Ints(Vec<i32>),
 }
 impl Argument {
     fn number(&self) -> f64 {
@@ -142,7 +147,7 @@ pub struct DrawSnapshot {
     pub artifact_id: u32,
     pub program: ObjectHandle,
     pub link_generation: u64,
-    pub viewport: [i32; 4],
+    pub state: RasterState,
     pub surface: [u32; 2],
     pub attributes: Vec<AttributeDraw>,
     pub vertex_count: u32,
@@ -153,7 +158,7 @@ pub struct DrawSnapshot {
     pub fragment_uniforms: Vec<u8>,
 }
 pub struct ClearSnapshot {
-    pub viewport: [i32; 4],
+    pub state: RasterState,
     pub surface: [u32; 2],
     pub mask: u32,
     pub color: [f32; 4],
@@ -167,6 +172,8 @@ pub enum Reply {
     Handles(Vec<ObjectHandle>),
     Text(Vec<u16>),
     Floats(Vec<f32>),
+    Ints(Vec<i32>),
+    Booleans(Vec<bool>),
     Active(ActiveInfo),
     Compile(CompileRequest),
     Link(LinkRequest),
@@ -192,7 +199,7 @@ struct Shader {
 struct Executable {
     id: u32,
     layout: ProgramLayout,
-    values: Vec<Vec<f32>>,
+    values: Vec<Vec<u32>>,
     vertex: Vec<u8>,
     fragment: Vec<u8>,
 }
@@ -243,7 +250,10 @@ pub(crate) struct RenderState {
     current: Option<ObjectHandle>,
     pub(crate) attributes: [VertexAttribute; 16],
     surface: [u32; 2],
-    viewport: [i32; 4],
+    raster: RasterState,
+    dither: bool,
+    texture_unit_limit: usize,
+    texture_dimension_limit: u32,
     clear_color: [f32; 4],
     clear_depth: f32,
     next_request: u32,
@@ -259,7 +269,10 @@ impl Default for RenderState {
             current: None,
             attributes: [VertexAttribute::default(); 16],
             surface: [0, 0],
-            viewport: [0; 4],
+            raster: RasterState::default(),
+            dither: true,
+            texture_unit_limit: 8,
+            texture_dimension_limit: 4096,
             clear_color: [0.0; 4],
             clear_depth: 1.0,
             next_request: 0,
@@ -342,12 +355,24 @@ fn base_name(name: &str) -> &str {
 impl ContextCore {
     pub fn configure_surface(&mut self, width: u32, height: u32) {
         self.render.surface = [width, height];
-        self.render.viewport = [
+        self.render.raster.scissor = [
             0,
             0,
             width.min(i32::MAX as u32) as i32,
             height.min(i32::MAX as u32) as i32,
         ];
+        self.render.raster.viewport = [
+            0,
+            0,
+            width.min(i32::MAX as u32) as i32,
+            height.min(i32::MAX as u32) as i32,
+        ];
+    }
+    pub fn configure_texture_units(&mut self, limit: usize) {
+        self.render.texture_unit_limit = limit;
+    }
+    pub fn configure_texture_dimension(&mut self, limit: u32) {
+        self.render.texture_dimension_limit = limit;
     }
     pub fn configure_attribute_limit(&mut self, limit: usize) {
         self.render.attribute_limit = limit.min(16);
@@ -633,29 +658,16 @@ impl ContextCore {
         }
         for uniform in &layout.uniforms {
             let count = components(uniform.active.ty).checked_mul(uniform.active.size as usize)?;
-            for (offset, length) in [
-                (uniform.vertex_offset, layout.vertex_bytes),
-                (uniform.fragment_offset, layout.fragment_bytes),
-            ] {
-                if let Some(offset) = offset {
-                    let stride = uniform.array_stride.max(components(uniform.active.ty) * 4);
-                    let end = offset
-                        .checked_add(
-                            stride.checked_mul(uniform.active.size.saturating_sub(1) as usize)?,
-                        )?
-                        .checked_add(components(uniform.active.ty) * 4)?;
-                    if end > length {
-                        self.record_error(INVALID_OPERATION);
-                        return None;
-                    }
-                }
+            if !uniforms::validate_layout(uniform, layout.vertex_bytes, layout.fragment_bytes) {
+                self.record_error(INVALID_OPERATION);
+                return None;
             }
             let mut data = Vec::new();
             if data.try_reserve_exact(count).is_err() {
                 self.record_error(OUT_OF_MEMORY);
                 return None;
             }
-            data.resize(count, 0.0);
+            data.resize(count, 0);
             values.push(data);
         }
         for sampler in &layout.samplers {
@@ -664,7 +676,7 @@ impl ContextCore {
                 self.record_error(OUT_OF_MEMORY);
                 return None;
             }
-            data.resize(sampler.size as usize, 0.0);
+            data.resize(sampler.size as usize, 0);
             values.push(data);
         }
         let Some(vertex) = zeroed(layout.vertex_bytes.max(16)) else {
@@ -713,6 +725,9 @@ impl ContextCore {
                 "getVertexAttribOffset" => Reply::Number(0.0),
                 _ => Reply::Null,
             };
+        }
+        if let Some(reply) = self.raster_invoke(operation, args) {
+            return reply;
         }
         match operation {
             "setSurfaceSize" => {
@@ -1021,18 +1036,25 @@ impl ContextCore {
                 };
             }
             "getParameter" => {
+                if let Some(reply) = self.raster_query(arg(0).number() as u32) {
+                    return reply;
+                }
                 return match arg(0).number() as u32 {
                     0x8b8d => self.render.current.map_or(Reply::Null, Reply::Handle),
-                    0x0ba2 => {
-                        Reply::Floats(self.render.viewport.map(|value| value as f32).to_vec())
-                    }
+                    0x0ba2 => Reply::Floats(
+                        self.render
+                            .raster
+                            .viewport
+                            .map(|value| value as f32)
+                            .to_vec(),
+                    ),
                     0x0c22 => Reply::Floats(self.render.clear_color.to_vec()),
                     0x0b73 => Reply::Number(self.render.clear_depth as f64),
                     _ => {
                         self.record_error(INVALID_ENUM);
                         Reply::Null
                     }
-                }
+                };
             }
             "enableVertexAttribArray" | "disableVertexAttribArray" => {
                 if (arg(0).number() as usize) < self.render.attribute_limit {
@@ -1046,32 +1068,13 @@ impl ContextCore {
             "getVertexAttrib" | "getVertexAttribOffset" => {
                 return self.get_attribute(operation, args)
             }
-            "viewport" => {
-                if arg(2).number() < 0.0 || arg(3).number() < 0.0 {
-                    self.record_error(INVALID_VALUE);
-                } else {
-                    self.render.viewport = [
-                        arg(0).number() as i32,
-                        arg(1).number() as i32,
-                        arg(2).number() as i32,
-                        arg(3).number() as i32,
-                    ];
-                }
-            }
-            "clearColor" => {
-                self.render.clear_color =
-                    std::array::from_fn(|index| (arg(index).number() as f32).clamp(0.0, 1.0));
-            }
-            "clearDepth" => {
-                self.render.clear_depth = (arg(0).number() as f32).clamp(0.0, 1.0);
-            }
             "clear" => {
                 let mask = arg(0).number() as u32;
                 if mask & !(0x4000 | 0x100 | 0x400) != 0 {
                     self.record_error(INVALID_VALUE);
                 } else if mask != 0 && self.render.surface[0] != 0 && self.render.surface[1] != 0 {
                     return Reply::Clear(ClearSnapshot {
-                        viewport: self.render.viewport,
+                        state: self.render.raster,
                         surface: self.render.surface,
                         mask,
                         color: self.render.clear_color,
@@ -1173,7 +1176,14 @@ impl ContextCore {
                 };
                 if let Some(active) = active {
                     let mut active = active.clone();
-                    if active.size > 1 {
+                    if active.size > 1
+                        || operation == "getActiveUniform"
+                            && executable
+                                .layout
+                                .uniforms
+                                .get(index)
+                                .is_some_and(|uniform| uniform.array_stride > 0)
+                    {
                         active.name = format!("{}[0]", base_name(&active.name));
                     }
                     Reply::Active(active)
@@ -1288,106 +1298,6 @@ impl ContextCore {
             return None;
         }
         Some((program_index, location.uniform, location.element))
-    }
-    fn get_uniform(
-        &mut self,
-        program: Option<ObjectHandle>,
-        location: Option<ObjectHandle>,
-    ) -> Reply {
-        if self.program_index(program).is_none() {
-            return Reply::Null;
-        }
-        let Some((index, uniform, element)) = self.location(location, program) else {
-            return Reply::Null;
-        };
-        let executable = self.render.programs[index]
-            .value
-            .as_ref()
-            .unwrap()
-            .executable
-            .as_ref()
-            .unwrap();
-        let width = executable
-            .layout
-            .uniforms
-            .get(uniform)
-            .map_or(1, |uniform| components(uniform.active.ty));
-        let values = &executable.values[uniform][element * width..(element + 1) * width];
-        if width == 1 {
-            Reply::Number(values[0] as f64)
-        } else {
-            Reply::Floats(copy(values).unwrap_or_default())
-        }
-    }
-    fn set_uniform(&mut self, operation: &str, args: &[Argument]) -> Reply {
-        let handle = args.first().and_then(Argument::handle);
-        if handle.is_none() {
-            return Reply::Null;
-        }
-        let Some((index, uniform_index, element)) = self.location(handle, self.render.current)
-        else {
-            return Reply::Null;
-        };
-        let Some(width) = operation
-            .strip_prefix("uniform")
-            .and_then(|suffix| suffix.chars().next())
-            .and_then(|value| value.to_digit(10))
-        else {
-            return Reply::Unsupported("matrix uniforms");
-        };
-        if !(1..=4).contains(&width) || !operation.ends_with('f') && !operation.ends_with("fv") {
-            return Reply::Unsupported("non-float uniforms");
-        }
-        let width = width as usize;
-        let mut scalar = [0.0; 4];
-        let values = if operation.ends_with("fv") {
-            args.get(1).map_or(&[] as &[f32], Argument::floats)
-        } else {
-            for (index, value) in scalar.iter_mut().enumerate().take(width) {
-                *value = args.get(index + 1).map_or(0.0, Argument::number) as f32;
-            }
-            &scalar[..width]
-        };
-        if values.len() < width || values.len() % width != 0 {
-            self.record_error(INVALID_VALUE);
-            return Reply::Null;
-        }
-        let executable = self.render.programs[index]
-            .value
-            .as_mut()
-            .unwrap()
-            .executable
-            .as_mut()
-            .unwrap();
-        let Some(uniform) = executable.layout.uniforms.get(uniform_index) else {
-            self.record_error(INVALID_OPERATION);
-            return Reply::Null;
-        };
-        if !matches!(
-            uniform.active.ty,
-            FLOAT | FLOAT_VEC2 | FLOAT_VEC3 | FLOAT_VEC4
-        ) || components(uniform.active.ty) != width
-            || values.len() / width > uniform.active.size as usize - element
-        {
-            self.record_error(INVALID_OPERATION);
-            return Reply::Null;
-        }
-        executable.values[uniform_index][element * width..element * width + values.len()]
-            .copy_from_slice(values);
-        for (bytes, start) in [
-            (&mut executable.vertex, uniform.vertex_offset),
-            (&mut executable.fragment, uniform.fragment_offset),
-        ] {
-            if let Some(start) = start {
-                for (index, value) in values.iter().enumerate() {
-                    let offset = start
-                        + (element + index / width) * uniform.array_stride.max(width * 4)
-                        + index % width * 4;
-                    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-                }
-            }
-        }
-        Reply::Null
     }
     fn vertex_pointer(&mut self, args: &[Argument]) -> Reply {
         let number = |index: usize| args.get(index).map_or(0.0, Argument::number);
@@ -1635,7 +1545,10 @@ impl ContextCore {
                 constant: attribute.constant,
             });
         }
-        if count == 0.0 || self.render.surface.contains(&0) {
+        if count == 0.0
+            || self.render.surface.contains(&0)
+            || self.render.raster.cull && self.render.raster.cull_face == 0x408
+        {
             return Reply::Null;
         }
         let Some(vertex_uniforms) = copy_bytes(&executable.vertex) else {
@@ -1650,7 +1563,7 @@ impl ContextCore {
             artifact_id: executable.id,
             program: self.render.current.unwrap(),
             link_generation: program.link_generation,
-            viewport: self.render.viewport,
+            state: self.render.raster,
             surface: self.render.surface,
             attributes,
             vertex_count: vertex_count as u32,

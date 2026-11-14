@@ -7,6 +7,8 @@ const vertex = 'attribute vec2 a_position; void main() { gl_Position = vec4(a_po
 const fragment = 'precision mediump float; uniform vec4 u_color; void main() { gl_FragColor = u_color; }';
 const texturedVertex = 'attribute vec2 a_position; varying vec2 v_uv; void main() { gl_Position=vec4(a_position,0.0,1.0); v_uv=a_position*0.5+0.5; }';
 const texturedFragment = 'precision mediump float; varying vec2 v_uv; uniform sampler2D u_texture; void main() { gl_FragColor=texture2D(u_texture,v_uv); }';
+const mismatchedFragment = 'precision mediump float; varying vec4 v_missing; void main() { gl_FragColor = v_missing; }';
+const invalidFragment = 'precision mediump float; void main() { gl_FragColor = missing; }';
 const quad = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
 
 export function makeProgram(gl: WebGLRenderingContext, vsSource = vertex, fsSource = fragment) {
@@ -64,6 +66,7 @@ async function context(backend: Backend, width = 64, height = 64) {
 export async function runCase(name: CaseName, backend: Backend) {
   const { gl, canvas, hooks } = await context(backend);
   const observed: Record<string, unknown> = {};
+  const shaderSources: Record<string, string> = { vertex, fragment };
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.clearColor(0, 0, 0, 1);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -124,6 +127,108 @@ export async function runCase(name: CaseName, backend: Backend) {
       gl.compileShader(bad);
       observed.invalidShaderCompiled = gl.getShaderParameter(bad, gl.COMPILE_STATUS);
       observed.invalidShaderLogPresent = (gl.getShaderInfoLog(bad) ?? '').length > 0;
+      break;
+    }
+    case 'failed-current-program-relink': {
+      // Derived from pinned CTS program-handling.html::testProgramInvalidation.
+      // Project capture replaces its synchronous checkCanvas/readPixels calls.
+      draw(1, 127 / 255, 0);
+      const shader = gl.getAttachedShaders(program)!.find(shader =>
+        gl.getShaderParameter(shader, gl.SHADER_TYPE) === gl.FRAGMENT_SHADER)!;
+      gl.shaderSource(shader, mismatchedFragment);
+      shaderSources.replacementFragment = mismatchedFragment;
+      gl.compileShader(shader);
+      observed.replacementCompiled = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+      gl.linkProgram(program);
+      observed.linked = gl.getProgramParameter(program, gl.LINK_STATUS);
+      observed.currentProgramRetained = gl.getParameter(gl.CURRENT_PROGRAM) === program;
+      observed.linkError = gl.getError();
+      gl.uniform4f(color, 0, 1, 0, 1);
+      observed.oldLocationError = gl.getError();
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      observed.drawError = gl.getError();
+      break;
+    }
+    case 'successful-relink-reset': {
+      gl.viewport(0, 0, 16, 64);
+      draw(1, 0, 0);
+      const previousLocation = color;
+      gl.linkProgram(program);
+      observed.linked = gl.getProgramParameter(program, gl.LINK_STATUS);
+      observed.currentProgramRetained = gl.getParameter(gl.CURRENT_PROGRAM) === program;
+      observed.linkError = gl.getError();
+      color = gl.getUniformLocation(program, 'u_color');
+      observed.freshLocation = color !== previousLocation;
+      observed.locationPresent = color !== null;
+      observed.resetUniform = Array.from(gl.getUniform(program, color!) as Float32Array);
+      gl.uniform4f(previousLocation, 0, 0, 1, 1);
+      observed.oldLocationError = gl.getError();
+      gl.viewport(16, 0, 16, 64);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      observed.resetDrawError = gl.getError();
+      gl.viewport(32, 0, 32, 64);
+      draw(0, 1, 0);
+      break;
+    }
+    case 'shader-source-compile-executable': {
+      // The installed executable remains usable until linkProgram is called.
+      const shader = gl.getAttachedShaders(program)!.find(shader =>
+        gl.getShaderParameter(shader, gl.SHADER_TYPE) === gl.FRAGMENT_SHADER)!;
+      gl.viewport(0, 0, 16, 64);
+      draw(1, 0, 0);
+      gl.shaderSource(shader, mismatchedFragment);
+      shaderSources.replacementFragment = mismatchedFragment;
+      observed.sourceUpdated = gl.getShaderSource(shader) === mismatchedFragment;
+      observed.linkedAfterSource = gl.getProgramParameter(program, gl.LINK_STATUS);
+      gl.viewport(16, 0, 16, 64);
+      draw(0, 1, 0);
+      observed.sourceDrawError = gl.getError();
+      gl.compileShader(shader);
+      observed.replacementCompiled = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+      observed.linkedAfterCompile = gl.getProgramParameter(program, gl.LINK_STATUS);
+      gl.viewport(32, 0, 16, 64);
+      draw(0, 0, 1);
+      observed.compileDrawError = gl.getError();
+      gl.shaderSource(shader, invalidFragment);
+      shaderSources.invalidFragment = invalidFragment;
+      gl.compileShader(shader);
+      observed.invalidShaderCompiled = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+      observed.linkedAfterFailedCompile = gl.getProgramParameter(program, gl.LINK_STATUS);
+      gl.viewport(48, 0, 16, 64);
+      draw(1, 1, 1);
+      observed.failedCompileDrawError = gl.getError();
+      observed.currentProgramRetained = gl.getParameter(gl.CURRENT_PROGRAM) === program;
+      break;
+    }
+    case 'detached-deleted-shader-executable': {
+      // Derived from pinned CTS program-handling.html::testProgramShaderRemoval.
+      gl.viewport(0, 0, 32, 64);
+      draw(1, 0, 0);
+      const attached = gl.getAttachedShaders(program)!;
+      for (const shader of attached) {
+        gl.detachShader(program, shader);
+        gl.deleteShader(shader);
+      }
+      observed.attachedCount = gl.getProgramParameter(program, gl.ATTACHED_SHADERS);
+      observed.shadersDeleted = attached.every(shader => !gl.isShader(shader));
+      observed.linked = gl.getProgramParameter(program, gl.LINK_STATUS);
+      observed.currentProgramRetained = gl.getParameter(gl.CURRENT_PROGRAM) === program;
+      observed.removalError = gl.getError();
+      gl.viewport(32, 0, 32, 64);
+      draw(0, 0, 1);
+      observed.drawError = gl.getError();
+      break;
+    }
+    case 'shader-source-code-units': {
+      const source = '// \ud800 \u0000 \udc00 \ud83d\ude80\r\n' + vertex;
+      const shader = gl.createShader(gl.VERTEX_SHADER)!;
+      gl.shaderSource(shader, source);
+      const returned = gl.getShaderSource(shader)!;
+      shaderSources.codeUnits = source;
+      observed.sourcePreserved = returned === source;
+      observed.codeUnits = Array.from({ length: returned.length }, (_, index) => returned.charCodeAt(index));
+      observed.sourceError = gl.getError();
+      gl.deleteShader(shader);
       break;
     }
     case 'masked-clear':
@@ -310,8 +415,13 @@ export async function runCase(name: CaseName, backend: Backend) {
   }
   const stats = hooks ? { ...hooks.stats } : null;
   const validationErrors = hooks ? [...hooks.errors] : [];
+  const environment = { ...(hooks?.environment ?? { userAgent: navigator.userAgent,
+    version: gl.getParameter(gl.VERSION), renderer: gl.getParameter(gl.RENDERER) }),
+    core: hooks?.core ?? 'native', attributes: gl.getContextAttributes(),
+    width: canvas.width, height: canvas.height, devicePixelRatio: window.devicePixelRatio };
   await hooks?.dispose();
   if (!hooks) gl.getExtension('WEBGL_lose_context')?.loseContext();
   canvas.remove();
-  return { name, backend, observed, width: image.width, height: image.height, pixels: Array.from(image.data), stats, validationErrors };
+  return { name, backend, observed, width: image.width, height: image.height, pixels: Array.from(image.data), stats,
+    validationErrors, shaderSources, environment };
 }

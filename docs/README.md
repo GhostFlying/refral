@@ -10,6 +10,7 @@ Current direction is parallel JS/TypeScript and Rust/Wasm semantic cores sharing
 | [Support matrix](support.json) | Actual implementation scope and evidence |
 | [Actions and PR delivery](ci.md) | Required checks, optional runs, and repository integration constraints |
 | [Shared core contract](core-api.md) | Buffer handles, validation, input ownership, and lifecycle |
+| [Specification map](spec-map.md) | Pinned WebGL/IDL/GLES sources, semantic assertions, and original CTS identities |
 | [Architecture decisions](adr/) | Accepted decisions and their rationale |
 | [Agent tasks](tasks/) | Bounded implementation plans, dependencies, acceptance, and results |
 | [Initial Chrome validation](validation.md) | Dated prototype verification and measurements |

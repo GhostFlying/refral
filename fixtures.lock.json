@@ -8,7 +8,24 @@
       "sdk/tests/conformance/glsl/misc/shader-without-precision.frag.html",
       "sdk/tests/conformance/glsl/misc/shaders-with-mis-matching-varyings.html",
       "sdk/tests/conformance/uniforms/null-uniform-location.html",
-      "sdk/tests/conformance/programs/gl-get-active-attribute.html"
+      "sdk/tests/conformance/programs/gl-get-active-attribute.html",
+      "sdk/tests/conformance/buffers/buffer-bind-test.html",
+      "sdk/tests/conformance/programs/gl-getshadersource.html"
+    ],
+    "specifications": [
+      "specs/latest/1.0/index.html",
+      "specs/latest/1.0/webgl.idl"
+    ],
+    "deferredTests": [
+      {
+        "path": "sdk/tests/conformance/programs/program-handling.html",
+        "prerequisites": ["synchronous WebGL readPixels"],
+        "derivedCases": [
+          "failed-current-program-relink",
+          "shader-source-compile-executable",
+          "detached-deleted-shader-executable"
+        ]
+      }
     ]
   },
   "demo": {

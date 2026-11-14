@@ -25,7 +25,9 @@
         "sdk/tests/conformance/glsl/misc/shader-without-precision.frag.html",
         "sdk/tests/conformance/glsl/misc/shaders-with-mis-matching-varyings.html",
         "sdk/tests/conformance/uniforms/null-uniform-location.html",
-        "sdk/tests/conformance/programs/gl-get-active-attribute.html"
+        "sdk/tests/conformance/programs/gl-get-active-attribute.html",
+        "sdk/tests/conformance/buffers/buffer-bind-test.html",
+        "sdk/tests/conformance/programs/gl-getshadersource.html"
       ]
     },
     "demo": {
@@ -200,7 +202,11 @@
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
         }
-      }
+      },
+      "specRefs": [
+        "shader-objects",
+        "CHARACTERS_OUTSIDE_VALID_SET"
+      ]
     },
     {
       "id": "program-link-and-reflection",
@@ -211,12 +217,14 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Valid ESSL100 programs render. Relink resets the executable generation and stale uniform locations produce INVALID_OPERATION. Compiler corpus validates attribute binding, stage varying mismatch and reflected layouts. Matrix attributes retain their GL type, base location, and consecutive-column link assignment.",
+          "coverage": "Valid ESSL100 programs render. Relink resets the executable generation and stale uniform locations produce INVALID_OPERATION. Compiler corpus validates attribute binding, stage varying mismatch and reflected layouts. Matrix attributes retain their GL type, base location, and consecutive-column link assignment. Failed current-program relink rejects subsequent draw and uniform access; successful relink resets uniforms and invalidates locations. Executables retain shader-source/attachment independence until link.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential relink-and-errors",
             "tools/compiler-test.mjs",
             "tests/chrome/cts.spec.ts::sdk/tests/conformance/glsl/misc/shaders-with-mis-matching-varyings.html",
-            "tests/chrome/cts.spec.ts::sdk/tests/conformance/programs/gl-get-active-attribute.html"
+            "tests/chrome/cts.spec.ts::sdk/tests/conformance/programs/gl-get-active-attribute.html",
+            "tests/chrome/program-spec.spec.ts",
+            "packages/core-js/src/programs.test.ts"
           ],
           "evidence": [
             {
@@ -269,7 +277,11 @@
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
         }
-      }
+      },
+      "specRefs": [
+        "shader-objects",
+        "CURRENT_PROGRAM_INVALIDATED"
+      ]
     },
     {
       "id": "buffer-storage-and-snapshots",
@@ -323,7 +335,11 @@
             "See buffer-lifecycle-contract for the independently verified common Buffer scope."
           ]
         }
-      }
+      },
+      "specRefs": [
+        "buffer-objects",
+        "BUFFER_OBJECT_BINDING"
+      ]
     },
     {
       "id": "vertex-input",
@@ -374,7 +390,11 @@
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
         }
-      }
+      },
+      "specRefs": [
+        "vertex-attributes",
+        "ATTRIBS_AND_RANGE_CHECKING"
+      ]
     },
     {
       "id": "triangle-drawing",
@@ -429,7 +449,11 @@
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
         }
-      }
+      },
+      "specRefs": [
+        "draw-operations",
+        "CURRENT_PROGRAM_INVALIDATED"
+      ]
     },
     {
       "id": "uniform-scalars-vectors-and-samplers",
@@ -502,7 +526,11 @@
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
         }
-      }
+      },
+      "specRefs": [
+        "uniforms",
+        "GLES 2.10.4"
+      ]
     },
     {
       "id": "uniform-matrices-arrays",
@@ -1250,12 +1278,13 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Creation and extensible wrapper identity, bindings, allocation/subrange updates, queries, deletion, WebIDL normalization, validation order, error-state preservation, context ownership, caller-input snapshots, and context loss passed the shared Chrome fixtures. Logical slot/generation reuse and versions passed the same core contract.",
+          "coverage": "Creation and extensible wrapper identity, bindings, allocation/subrange updates, queries, deletion, WebIDL normalization, validation order, error-state preservation, context ownership, caller-input snapshots, and context loss passed the shared Chrome fixtures. Logical slot/generation reuse and versions passed the same core contract. Fixed SharedArrayBuffer uploads, numeric object overloads, internal view slots, and resizable/growable rejection follow the pinned IDL.",
           "tests": [
             "tests/chrome/buffers.spec.ts::shared native, JS and Rust public Buffer fixtures",
             "tests/chrome/buffers.spec.ts::foreign buffers are rejected across JS and Rust cores",
             "tests/chrome/buffers.spec.ts::js shared logical Buffer contract",
-            "tests/chrome/buffers.spec.ts::js Buffer context loss"
+            "tests/chrome/buffers.spec.ts::js Buffer context loss",
+            "tests/chrome/buffer-sources.spec.ts"
           ],
           "evidence": [
             {
@@ -1296,12 +1325,13 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Creation and extensible wrapper identity, bindings, allocation/subrange updates, queries, deletion, WebIDL normalization, validation order, error-state preservation, context ownership, caller-input snapshots, and context loss passed the shared Chrome fixtures. Logical slot/generation reuse and versions passed the same core contract.",
+          "coverage": "Creation and extensible wrapper identity, bindings, allocation/subrange updates, queries, deletion, WebIDL normalization, validation order, error-state preservation, context ownership, caller-input snapshots, and context loss passed the shared Chrome fixtures. Logical slot/generation reuse and versions passed the same core contract. Fixed SharedArrayBuffer uploads, numeric object overloads, internal view slots, and resizable/growable rejection follow the pinned IDL.",
           "tests": [
             "tests/chrome/buffers.spec.ts::shared native, JS and Rust public Buffer fixtures",
             "tests/chrome/buffers.spec.ts::foreign buffers are rejected across JS and Rust cores",
             "tests/chrome/buffers.spec.ts::rust shared logical Buffer contract",
-            "tests/chrome/buffers.spec.ts::rust Buffer context loss"
+            "tests/chrome/buffers.spec.ts::rust Buffer context loss",
+            "tests/chrome/buffer-sources.spec.ts"
           ],
           "evidence": [
             {
@@ -1337,7 +1367,11 @@
           ],
           "unsupportedBehavior": "Invalid supported inputs produce GL errors; invalid JS overloads produce TypeError in the shared facade. Errors preserve existing valid state."
         }
-      }
+      },
+      "specRefs": [
+        "buffer-objects",
+        "WebIDL AllowSharedBufferSource and overload resolution"
+      ]
     }
   ],
   "observability": {
@@ -1463,9 +1497,9 @@
     "js": {
       "profile": "webgl1-rendering",
       "bufferSuite": "passed",
-      "renderingDifferentialFixtures": 18,
-      "ctsFiles": 5,
-      "ctsAssertions": 89,
+      "renderingDifferentialFixtures": 23,
+      "ctsFiles": 7,
+      "ctsAssertions": 100,
       "remainingParity": "Expand original CTS coverage and define further shared contracts."
     },
     "rust": {
@@ -1487,5 +1521,23 @@
       "evidence": "artifacts/deployment/result.json",
       "scope": "Built JS rendering demo and packaged Rust Buffer ABI smoke."
     }
+  },
+  "specifications": {
+    "webgl": {
+      "repository": "https://github.com/KhronosGroup/WebGL",
+      "revision": "39443210f7f81db4773eb104facadfb85d05dfa4",
+      "html": "specs/latest/1.0/index.html",
+      "idl": "specs/latest/1.0/webgl.idl"
+    },
+    "gles": "2.0.25",
+    "essl": "1.00",
+    "mapping": "docs/spec-map.md"
+  },
+  "specVerification": {
+    "report": "docs/tasks/015-drawing-verification.md",
+    "ctsEvidence": "artifacts/cts/results.json",
+    "programEvidence": "artifacts/program-spec/",
+    "bufferSourceEvidence": "artifacts/buffers/sources.json",
+    "scope": "Native and JS pass seven original CTS files and five derived program scenes. Buffer input conversion is also verified with Rust. Rust shader/program acceptance follows the shared-contract stage."
   }
 }

@@ -31,3 +31,9 @@ The proposed [ADR](../adr/007-synchronous-readback.md) records the cross-origin-
 The experiment and root TypeScript project are checked together. New experiment TypeScript was formatted with Prettier 3.7.4. Acceptance commands are `pnpm check`, `pnpm ci:check` and `pnpm test:readback`. Logs are retained in artifacts/readback-check.log, artifacts/readback-ci-check.log and artifacts/readback-spike.log. The delivery record links the final PR/current-head required check and integrated revision.
 
 Public readPixels, production host transport/presentation, loss handling, DOM uploads and Buffer cache optimization require their bounded follow-up tasks. The production support status remains tied to the existing public context.
+
+## Report-path correction
+
+After PR 12 merged, delivery verification found Playwright resolving its JSON reporter path relative to experiments/readback. The report was generated under experiments/readback/artifacts/readback. Correct the reporter's output to an absolute root-artifacts path, rerun the eleven Chrome cases, and verify the JSON totals and capture-source inventory before the follow-up fix PR. The integrating agent owns the configuration, this record and the refreshed validation report. Acceptance uses the same readback, type and policy commands, plus an explicit report-path/statistics check.
+
+The corrected command passes eleven cases in 13.8 seconds and writes the JSON report at the documented root path. Its parsed totals are eleven expected, zero unexpected, zero skipped and zero flaky cases. The report's timing table and raw summary reflect this recapture. Final delivery records retain both the experiment PR and reporter correction.

@@ -1,5 +1,6 @@
 import { GL } from "./gl.js";
 import type { LinkedProgram } from "./compiler.js";
+import type { TextureVersion } from './resources.js';
 
 export interface DrawingSurface { readonly width: number; readonly height: number }
 export interface ContextAttributes {
@@ -23,6 +24,7 @@ export interface RuntimeProfile {
   combinedTextureUnits: number;
 }
 export interface TextureStorage {
+  readonly reference?: TextureVersion;
   width: number;
   height: number;
   generation: number;

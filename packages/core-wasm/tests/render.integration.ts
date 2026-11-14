@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { GL } from '@refral/core-api';
+import { GL, ExecutionResources } from '@refral/core-api';
 import type {
   CompiledShader,
   CompilerRegistry,
@@ -112,7 +112,7 @@ function setup(contextId = 1, maxBufferBytes = 1024 * 1024) {
         combinedTextureUnits: 8,
       },
     },
-    { compiler, host },
+    { compiler, host, resources: new ExecutionResources(contextId, host) },
   );
   return {
     core,

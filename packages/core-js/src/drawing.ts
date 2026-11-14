@@ -2,7 +2,7 @@ import { GL } from "@refral/core-api";
 import type {
   CompiledShader, Compiler, CompilerRegistry, DrawingCore, DrawingCoreOptions,
   DrawingCoreServices, LinkedProgram, LogicalHandle, ProgramHandle, ShaderHandle,
-  TargetSnapshot, UniformLocationHandle,
+  TargetSnapshot, UniformLocationHandle, TextureHandle, RenderbufferHandle, FramebufferHandle,
 } from "@refral/core-api";
 import { JsBufferCore } from "./buffers.js";
 import { SemanticContext } from "./context.js";
@@ -10,8 +10,12 @@ import { SemanticContext } from "./context.js";
 type ShaderObject = NonNullable<ReturnType<SemanticContext["createShader"]>>;
 type ProgramObject = NonNullable<ReturnType<SemanticContext["createProgram"]>>;
 type LocationObject = NonNullable<ReturnType<SemanticContext["getUniformLocation"]>>;
-type DrawingHandle = ShaderHandle | ProgramHandle | UniformLocationHandle;
+type TextureObject = NonNullable<ReturnType<SemanticContext["createTexture"]>>;
+type RenderbufferObject = NonNullable<ReturnType<SemanticContext["createRenderbuffer"]>>;
+type FramebufferObject = NonNullable<ReturnType<SemanticContext["createFramebuffer"]>>;
+type DrawingHandle = ShaderHandle | ProgramHandle | UniformLocationHandle | TextureHandle | RenderbufferHandle | FramebufferHandle;
 type ObjectKind = DrawingHandle["kind"];
+type ResourceKind = "texture" | "renderbuffer" | "framebuffer";
 
 interface ObjectSlot {
   kind: ObjectKind;
@@ -31,6 +35,18 @@ const programOperations = new Set([
   "bindAttribLocation", "getProgramParameter", "getProgramInfoLog", "validateProgram",
   "getAttribLocation", "getActiveAttrib", "getActiveUniform",
 ]);
+const resourceCreates: Record<string, ResourceKind> = {
+  createTexture: "texture", createRenderbuffer: "renderbuffer", createFramebuffer: "framebuffer",
+};
+const resourceBinds: Record<string, ResourceKind> = {
+  bindTexture: "texture", bindRenderbuffer: "renderbuffer", bindFramebuffer: "framebuffer",
+};
+const resourceDeletes: Record<string, ResourceKind> = {
+  deleteTexture: "texture", deleteRenderbuffer: "renderbuffer", deleteFramebuffer: "framebuffer",
+};
+const resourceChecks: Record<string, ResourceKind> = {
+  isTexture: "texture", isRenderbuffer: "renderbuffer", isFramebuffer: "framebuffer",
+};
 
 function isPositiveU32(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0 && value <= MAX_U32;
@@ -101,7 +117,7 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
 
   constructor(options: DrawingCoreOptions, services: DrawingCoreServices) {
     const compiler = new RegistryCompiler(services.compiler);
-    const context = new SemanticContext(options.surface, services.host, compiler, options.attributes, options.profile);
+    const context = new SemanticContext(options.surface, services.host, compiler, options.attributes, options.profile, services.resources);
     super(context, options);
     this.context = context;
     this.registryCompiler = compiler;
@@ -125,12 +141,12 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
     if (reportError) {
       const retired = found && (found.handle.generation < found.slot.generation ||
         (found.slot.kind === kind && found.handle.generation === found.slot.generation && found.slot.value === null));
-      this.context.recordError(retired && kind !== "uniform-location" ? retiredError : GL.INVALID_OPERATION);
+      this.context.recordError(retired && (kind === "shader" || kind === "program") ? retiredError : GL.INVALID_OPERATION);
     }
     return null;
   }
 
-  private resolveDeletion(value: unknown, kind: "shader" | "program"): object | null {
+  private resolveDeletion(value: unknown, kind: Exclude<ObjectKind, "uniform-location">): object | null {
     if (value === null) return null;
     const found = this.findObjectSlot(value, kind);
     if (!found || found.handle.generation > found.slot.generation) {
@@ -153,6 +169,9 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
     if (number > MAX_U32) {
       if (kind === "shader") this.context.deleteShader(value as ShaderObject);
       else if (kind === "program") this.context.deleteProgram(value as ProgramObject);
+      else if (kind === "texture") this.context.deleteTexture(value as TextureObject);
+      else if (kind === "renderbuffer") this.context.deleteRenderbuffer(value as RenderbufferObject);
+      else if (kind === "framebuffer") this.context.deleteFramebuffer(value as FramebufferObject);
       this.context.recordError(GL.OUT_OF_MEMORY);
       return null;
     }
@@ -160,6 +179,8 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
     const handle = Object.freeze({ kind, contextId: this.contextId, slot: number, generation }) as DrawingHandle;
     this.objectSlots.set(number, { kind, generation, value });
     this.objectHandles.set(value, handle);
+    if (kind === "texture") (value as TextureObject).handle = handle as TextureHandle;
+    else if (kind === "renderbuffer") (value as RenderbufferObject).handle = handle as RenderbufferHandle;
     if (kind === "uniform-location") {
       const program = (value as LocationObject).program;
       let locations = this.locations.get(program);
@@ -199,6 +220,10 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
     for (const shader of shaders) this.retireShader(shader);
   }
 
+  private retireAttachment(value: TextureObject | RenderbufferObject | null): void {
+    if (value?.retired) this.retire(value);
+  }
+
   private invalidResult(operation: string): unknown {
     if (operation === "getAttribLocation") return -1;
     if (operation.startsWith("get")) return null;
@@ -214,6 +239,43 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
       return method.apply(this, args);
     }
     if (this.isContextLost()) return this.context.invoke(operation, args);
+    if (Object.hasOwn(resourceCreates, operation)) {
+      return this.wrap(this.context.invoke(operation, args) as object | null, resourceCreates[operation]);
+    }
+    if (Object.hasOwn(resourceChecks, operation)) {
+      const value = this.resolveObject(args[0], resourceChecks[operation], false);
+      return value !== null && this.context.invoke(operation, [value]);
+    }
+    if (Object.hasOwn(resourceBinds, operation)) {
+      const value = args[1] === null ? null : this.resolveObject(args[1], resourceBinds[operation]);
+      if (args[1] !== null && !value) return;
+      return this.context.invoke(operation, [args[0], value]);
+    }
+    if (Object.hasOwn(resourceDeletes, operation)) {
+      const kind = resourceDeletes[operation];
+      const value = this.resolveDeletion(args[0], kind);
+      if (!value) return;
+      const framebuffer = kind === "framebuffer" ? value as FramebufferObject : null;
+      const color = framebuffer?.color ?? null;
+      const depth = framebuffer?.depth ?? null;
+      this.context.invoke(operation, [value]);
+      if (framebuffer) {
+        this.retire(framebuffer);
+        this.retireAttachment(color);
+        this.retireAttachment(depth);
+      } else this.retireAttachment(value as TextureObject | RenderbufferObject);
+      return;
+    }
+    if (operation === "framebufferTexture2D" || operation === "framebufferRenderbuffer") {
+      const texture = operation === "framebufferTexture2D";
+      const value = args[3] === null ? null : this.resolveObject(args[3], texture ? "texture" : "renderbuffer");
+      if (args[3] !== null && !value) return;
+      const framebuffer = this.context.getParameter(GL.FRAMEBUFFER_BINDING) as FramebufferObject | null;
+      const previous = texture ? framebuffer?.color ?? null : framebuffer?.depth ?? null;
+      const result = this.context.invoke(operation, [args[0], args[1], args[2], value, ...args.slice(4)]);
+      this.retireAttachment(previous);
+      return result;
+    }
     if (operation === "createShader" || operation === "createProgram") {
       return this.wrap(this.context.invoke(operation, args) as object | null,
         operation === "createShader" ? "shader" : "program");
@@ -280,6 +342,12 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
     if (operation === "getParameter") {
       if (args[0] === GL.CURRENT_PROGRAM) return this.wrap(result as object | null, "program");
       if (args[0] === GL.ARRAY_BUFFER_BINDING || args[0] === GL.ELEMENT_ARRAY_BUFFER_BINDING) return this.toHandle(result);
+      if (args[0] === GL.TEXTURE_BINDING_2D) return this.wrap(result as object | null, "texture");
+      if (args[0] === GL.RENDERBUFFER_BINDING) return this.wrap(result as object | null, "renderbuffer");
+      if (args[0] === GL.FRAMEBUFFER_BINDING) return this.wrap(result as object | null, "framebuffer");
+    }
+    if (operation === "getFramebufferAttachmentParameter" && args[2] === GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME) {
+      return this.wrap(result as object | null, args[1] === GL.COLOR_ATTACHMENT0 ? "texture" : "renderbuffer");
     }
     if (operation === "getVertexAttrib" && args[1] === GL.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) return this.toHandle(result);
     return result;

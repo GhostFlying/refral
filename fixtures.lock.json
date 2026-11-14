@@ -16,6 +16,12 @@
       "specs/latest/1.0/index.html",
       "specs/latest/1.0/webgl.idl"
     ],
+    "preparedTests": [
+      "sdk/tests/conformance/uniforms/gl-uniformmatrix4fv.html",
+      "sdk/tests/conformance/uniforms/gl-uniform-arrays.html",
+      "sdk/tests/conformance/uniforms/gl-uniform-bool.html",
+      "sdk/tests/conformance/uniforms/gl-get-uniform-non-current-program.html"
+    ],
     "deferredTests": [
       {
         "path": "sdk/tests/conformance/programs/program-handling.html",

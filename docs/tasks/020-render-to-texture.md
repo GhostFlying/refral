@@ -1,6 +1,6 @@
 # Three-path render-to-texture
 
-Status is running from main 75705f9.
+Local stage acceptance is complete on 2026-11-15 from baseline main 75705f9. Automatic PR integration and exact delivered heads are recorded in `artifacts/rtt/delivery.json`.
 
 ## Goal and defaults
 
@@ -66,8 +66,18 @@ The accepted Wasm has ABI3/resource protocol1, 261,640 bytes and SHA-256 834c7ce
 
 PR #9 rebase-merged texture support at 16d6724. Rust now owns renderbuffer/FBO state, attachment graphs, completeness, feedback checks, current-target queries, capture and post-write texture versions. Resource protocol capability2 extends ABI3 packets with typed offscreen targets. JS receives matching completeness/component-bit corrections and retained-deletion regressions.
 
-The complete suites pass 107 deterministic CPU tests, 44 native Rust tests and twenty actual-Wasm tests. All twenty shared RTT scenes and the three-path demo pass 23 targeted Chrome tests. Sequential demo times0/1000/2000 produce nine pairwise comparisons with zero observed differing pixels or channel bytes across native/JS/Rust. The full browser suite, including the retained legacy benchmark, passes 85 tests in50.5 seconds.
+The complete suites pass 107 deterministic CPU tests, 44 native Rust tests and twenty actual-Wasm tests. All twenty shared RTT scenes and the three-path demo pass 23 targeted Chrome tests. Sequential demo times0/1000/2000 produce nine pairwise comparisons with zero observed differing pixels or channel bytes across native/JS/Rust. The full browser suite, including the retained legacy benchmark, passes 85 tests in 50.5 seconds.
 
 The built deployment passes real probe drawing/readback, three-path RTT/triangle pixels, packaged ABI3/resource-protocol2 and page-error checks. Native reports ANGLE Metal Renderer Apple M4 Max. Both WebGPU paths report apple/metal-3 and isFallbackAdapter=false. Logs are `artifacts/rtt-pr4-{targeted,regression,unit,wasm,build,dist,type}.log`, with images/configuration under `artifacts/demo/`, `artifacts/rtt/` and `artifacts/deployment/`.
 
-The accepted Rust candidate is282,639 bytes with SHA-256 e407526a05e998a987c90de691d5f679494df7b3ec27b1501693f27815d982ea. The independent five-workload baseline and final support/report updates remain the fifth PR.
+The accepted Rust candidate is 282,639 bytes with SHA-256 e407526a05e998a987c90de691d5f679494df7b3ec27b1501693f27815d982ea. The independent five-workload baseline and final support/report updates remain the fifth PR.
+
+### PR5 acceptance
+
+PR #10 rebase-merged framebuffer rendering at 798d74d after its current-head required check passed. The independent benchmark expands the retained legacy workloads through native/JS/Rust, dynamic texture updates and original RTT replay. It uses 30 warmup samples, 120 formal samples, eight logical frames per sample and three rotated rounds. All 45 runs pass with 5400 measured CPU samples and zero final-image differences across the 45 backend comparisons.
+
+An initial complete run exposed 0.1 ms timer quantization in native medians. Its raw records remain under `artifacts/benchmarks/rtt-coarse-timer/`. The accepted run uses benchmark-only COOP/COEP and records approximately 0.005 ms resolution on every backend. The benchmark's own server records timer isolation, browser command line, hardware, source/build hashes, all raw samples, setup/first-frame/first-image timing, counters and capacities. GPU timestamp capability is recorded as available on the adapter and disabled on the benchmark device. GPU duration fields remain empty with an explicit reason.
+
+Pooled CPU p50 values in ms/logical-frame are native/JS/Rust 0.0062/0.2919/1.0713 for uniform/draw, 0.0100/0.3144/1.4544 for state changes, 0.0144/0.3850/1.0888 for dynamic Buffer, 0.0194/1.0100/2.3475 for dynamic texture, and 0.0025/0.0531/0.1688 for RTT. The report retains p95, each round, timing boundaries and capacity limits. Optimization follows separately.
+
+Final deterministic acceptance passes 107 CPU and 44 native Rust tests, formatting/clippy, TypeScript and support validation. Twenty actual-Wasm tests and the 24-case compiler corpus pass. The normal Chrome entry passes 84 correctness tests after moving the legacy benchmark into its independent entry. Built deployment checks the three RTT/triangle paths, probe and packaged ABI3/resource-protocol2. The dated report is `docs/validation/2026-11-15-three-path-rtt.md`. Source inventory and raw samples are under `artifacts/benchmarks/rtt/`, and the generated delivery handoff identifies integrated commits and CI runs.

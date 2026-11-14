@@ -23,7 +23,7 @@ pnpm build
 pnpm dev
 ```
 
-Open [the Chrome validation page](http://127.0.0.1:4173/examples/index.html). The probe checks actual WebGPU adapter/device creation, drawing, pixel readback, presentation, and the native WebGL environment. The demo selects native WebGL or Refral and runs the pinned WebGL Fundamentals render-to-texture scene.
+Open [the Chrome validation page](http://127.0.0.1:4173/examples/index.html). The probe checks actual WebGPU adapter/device creation, drawing, pixel readback, presentation, and the native WebGL environment. The demo selects native WebGL, Refral JS or Refral Rust and runs the pinned WebGL Fundamentals render-to-texture scene.
 
 Open [the Rust triangle](http://127.0.0.1:4173/examples/triangle/index.html?core=rust) for the shared drawing profile. Set core=js or core=native in the URL to run the same scene through either reference path.
 
@@ -46,11 +46,12 @@ The build produces a standalone `dist` tree containing the browser bundles, comp
 | `pnpm check` | Strict TypeScript, deterministic unit/native Rust checks, and support validation |
 | `pnpm ci:check` | Lightweight CI selection, commit policy, documentation, and support checks |
 | `pnpm test:probe` | Actual Chrome WebGPU/native WebGL environment probe |
-| `pnpm test:chrome` | Chrome compiler, core selection, semantics, CTS, and baseline collection |
+| `pnpm test:chrome` | Chrome compiler, core selection, semantics, CTS, and three-path demo correctness |
 | `pnpm test:cts` | Original-assertion pinned Khronos cases through the recorded test adapter |
 | `pnpm test:buffers` | Shared native/JS/Rust public Buffer, handle, ownership, and loss fixtures |
 | `pnpm test:drawing` | Shared native/JS/Rust drawing, state/error, pixel and minimal-example checks |
-| `pnpm bench:chrome` | Paired native WebGL / Refral CPU samples |
+| `pnpm bench:rtt` | Five native/JS/Rust drawing workloads, three rotated rounds and raw CPU samples |
+| `pnpm bench:chrome` | Alias for the independent RTT baseline entry |
 | `pnpm build` | Browser deployment tree |
 | `pnpm test:dist` | Built deployment probe and demo in actual Chrome |
 | `pnpm snapshot` | Source-tree hash and per-file provenance for saved evidence |
@@ -65,21 +66,25 @@ GitHub Actions uses affected-module checks in `ci/required`. Actual Wasm and com
 import { createWebGLOnWebGPU } from '@refral/webgl';
 
 const gl = await createWebGLOnWebGPU(canvas, { version: 1 });
-// Select the Rust drawing profile explicitly:
+// Select the Rust semantic core explicitly:
 const rustGl = await createWebGLOnWebGPU(otherCanvas, { version: 1, core: 'rust' });
 ```
 
-The asynchronous factory prepares GPU and compiler dependencies and the selected core. JS is the default and implements the current rendering profile. Rust implements Buffer, shader/program, float uniform/vertex and default-framebuffer triangle drawing semantics in one Wasm instance. Its remaining texture/FBO and broader raster operations report `NotSupportedError`. Supported calls are synchronous. See `docs/core-api.md` for the shared contract and `docs/support.json` for per-core scope and evidence. The test adapter exposes asynchronous pixel capture separately from the public GL interface.
+The asynchronous factory prepares GPU and compiler dependencies and the selected core. JS is the default. Both semantic cores execute the shared Buffer, shader/program, typed uniform/matrix, Texture2D, RGBA/depth framebuffer and raster profile. Supported calls are synchronous. Each core reports valid operations beyond its declared scope through `NotSupportedError`. See `docs/core-api.md` for the shared contract and `docs/support.json` for per-core scope and evidence. The test adapter exposes asynchronous pixel capture separately from the public GL interface.
 
 ## Development and evidence
 
 Start with `AGENTS.md`, the documentation map in `docs/README.md`, and the relevant file under `docs/tasks`. Architecture and current decisions live under `docs/architecture.md` and `docs/adr`.
 
-The JS prototype's first Chrome verification passed 26 browser tests, 18 unit tests, and the built deployment check. `docs/validation.md` records that dated evidence and initial performance observations. Formal dual-core development starts with the common Buffer contract and shared fixtures. ADR 003 records the parallel-core direction. Current native-comparison microbenchmarks show higher CPU costs for the prototype, and allocation/binding optimization is queued in P3.
+The JS prototype's first Chrome verification passed 26 browser tests, 18 unit tests, and the built deployment check. `docs/validation.md` records that dated evidence and initial performance observations. Formal dual-core development starts with the common Buffer contract and shared fixtures. ADR 003 records the parallel-core direction.
 
 The [dual-core Buffer milestone](docs/validation/2026-11-13-dual-core-buffers.md) passed 34 Chrome tests, 25 JS unit tests, 15 native Rust tests, and four actual-Wasm adapter tests. Both cores pass the shared Buffer fixtures. The built deployment also passes JS demo rendering and packaged Rust Wasm verification. Rust rendering parity advances through subsequent contracts.
 
-The [dual-core drawing milestone](docs/validation/2026-11-14-dual-core-drawing.md) passes 64 Chrome tests, 62 JS unit tests, 27 Rust native tests and nine actual-Wasm tests. Sixteen shared scenes pass native/JS/Rust state, error and pixel checks. Seven original CTS files pass 100 assertions per path. The standalone build includes a native/JS/Rust triangle example and the JS render-to-texture demo. Rust's next parity work covers matrix/integer updates, texture/FBO and broader raster state.
+The [dual-core drawing milestone](docs/validation/2026-11-14-dual-core-drawing.md) passed 64 Chrome tests, 62 JS unit tests, 27 Rust native tests and nine actual-Wasm tests. Sixteen shared scenes passed native/JS/Rust state, error and pixel checks. Seven original CTS files passed 100 assertions per path. This dated milestone established the common default-framebuffer profile. Task 020 extends it through three-path render-to-texture and repeated drawing performance measurements.
+
+The [three-path RTT milestone](docs/validation/2026-11-15-three-path-rtt.md) passes 84 Chrome correctness tests, 107 CPU tests, 44 native Rust tests and twenty actual-Wasm tests. Eleven original CTS files pass 243 assertions per backend. Twenty shared RTT scenes and sequential demo times 0/1000/2000 pass, with zero observed pixel differences across the demo's nine comparisons. Built deployment exercises RTT, triangles, the GPU probe and ABI3/resource-protocol2.
+
+`pnpm bench:rtt` independently measures five native/JS/Rust drawing workloads in three rotated rounds. The 45 accepted runs retain 5400 CPU samples in ms/logical-frame. Its dedicated server enables COOP/COEP for finer timer resolution. The report records timing boundaries, initial/first-image costs, counters, capacities, hardware, launch flags and build/source hashes. The current Rust path has higher CPU costs than JS in these workloads, with profiling and optimization scheduled as separate work. GPU durations remain unmeasured in this CPU baseline.
 
 Raw outputs are under ignored `artifacts/`. They include environment reports, compiler build/corpus results, JS/Rust samples, differential images, CTS assertions, screenshots, and paired performance samples. Validation summaries describe their environment and measurement limits. GPU timestamp results and internal Dawn integration require their own actual implementation and verification.
 

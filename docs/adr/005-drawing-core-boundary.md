@@ -25,3 +25,7 @@ Draw replies use versioned, length-checked binary packets with owned Buffer and 
 Task 013 records CPU/native, actual-Wasm, real-GPU, differential and original-CTS evidence separately. The pinned specification map defines semantics and upstream test identities. The original program-handling CTS case retains its synchronous readPixels prerequisite, and project-derived cases use asynchronous capture with explicit assertions.
 
 Required Actions remain the existing affected-module CPU checks. Full compiler, actual Wasm, GPU and deployment acceptance run through local or optional entry points. Performance selection awaits controlled measurement of this complete path.
+
+## Resource extension
+
+Task 020 and ADR 006 extend this boundary with texture/renderbuffer/framebuffer handles, typed uniform/matrix data, full raster snapshots and offscreen targets. The current private ABI is v3 with resource protocol capability v2. The common resource registry resolves ordered texture versions and preserves GPU-produced framebuffer content through later sampling. Historical ABI v2 evidence remains scoped to task 013.

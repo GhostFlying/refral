@@ -34,7 +34,7 @@ The WebGL lifecycle and source clauses above are defined alongside shader/progra
 
 ## Original CTS and derived regressions
 
-The executable original CTS set contains seven files. The harness prepares the JS compiler/device asynchronously, injects the context factory inside an iframe, and executes original scripts and assertions unchanged. Results retain each upstream path, assertion, backend, and fixed revision in `artifacts/cts/results.json`.
+The executable original CTS set contains eleven files. The harness prepares the compiler/device asynchronously, injects the selected context factory inside an iframe, and executes original scripts and assertions unchanged. Results retain each upstream path, assertion, backend, and fixed revision in `artifacts/cts/results.json`.
 
 - `glsl/misc/shader-with-invalid-identifier.frag.html`
 - `glsl/misc/shader-without-precision.frag.html`
@@ -43,6 +43,10 @@ The executable original CTS set contains seven files. The harness prepares the J
 - `programs/gl-get-active-attribute.html`
 - `buffers/buffer-bind-test.html`
 - `programs/gl-getshadersource.html`
+- `uniforms/gl-uniformmatrix4fv.html`
+- `uniforms/gl-uniform-arrays.html`
+- `uniforms/gl-uniform-bool.html`
+- `uniforms/gl-get-uniform-non-current-program.html`
 
 Original `programs/program-handling.html` requires synchronous `readPixels` through `checkCanvas`. The lock records that capability prerequisite under `cts.deferredTests`, and CTS results record `prerequisite-not-run`. Its original invalidation and shader-removal assertions are preserved in the acquired reference file. [Original program test](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/sdk/tests/conformance/programs/program-handling.html), [upstream readback helper](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/sdk/tests/js/webgl-test-utils.js#L1320)
 
@@ -62,7 +66,7 @@ Implementation proceeds from these pinned requirements. Task records distinguish
 
 | Behavior | Source and required observation | Verification |
 | --- | --- | --- |
-| Uniform type and packing | GLES 2.10.4 and WebGL uniform API rules define scalar/vector/array/matrix updates, bool conversion, transpose and length errors. Complete excess array values follow the specified truncation rules. | Four prepared original uniform CTS files and shared typed/packing regressions |
+| Uniform type and packing | GLES 2.10.4 and WebGL uniform API rules define scalar/vector/array/matrix updates, bool conversion, transpose and length errors. Complete excess array values follow the specified truncation rules. | Four original uniform CTS files and shared typed/packing regressions |
 | Typed pixel inputs | Pinned WebGL TEXIMAGE2D requires Uint8Array or Uint8ClampedArray for UNSIGNED_BYTE. IDL view conversion precedes GL validation. | Shared view-kind, offset, fixed SharedArrayBuffer and invalid-source tests |
 | Pixel storage | WebGL PIXEL_STORAGE_PARAMETERS and texture upload APIs define alignment, flip and premultiplication. Mutable source bytes are consumed synchronously. | Five-format, row alignment, alpha, zero initialization and source mutation scenes |
 | Sampling completeness | GLES 3.7 and WebGL NPOT restrictions define texture completeness and incomplete sampling behavior. Sampler uniforms select texture units. | NPOT/filter/wrap, multiple units and draw-separated update scenes |
@@ -71,3 +75,7 @@ Implementation proceeds from these pinned requirements. Task records distinguish
 | Raster state | GLES 3.5, 4.1 and WebGL raster APIs define culling, depth, blend, masks, scissor and clear. | Shared state/error queries and deterministic pixel regions |
 
 The resource bridge's define/update/write/retire sequence is an implementation contract for ordered GL behavior. GPU-write versions alias the rendered allocation. CPU subimage updates encode a copy from that allocation before its retirement. This preserves FBO-produced content and earlier encoded operations.
+
+Task 020's uniform slice passed all eleven original files with 243 assertions on each of native, JS and Rust. Texture/FBO original cases retain their synchronous-readback, CubeMap, mipmap, packed-format, copy-image or renderbuffer-format prerequisites in `fixtures.lock.json`. Their asynchronous project scenes retain separate identities and explicit source references.
+
+The pinned texture IDL declares a nullable pixel view for texSubImage2D. A null input reaches semantic validation and produces INVALID_VALUE. Framebuffer attachment queries use GLES 6.1.3 and the WebGL query table. An empty attachment returns NONE for OBJECT_TYPE and INVALID_ENUM for OBJECT_NAME, TEXTURE_LEVEL and CUBE_MAP_FACE. A renderbuffer attachment rejects the latter two texture-specific queries with INVALID_ENUM. Native observations are retained under `artifacts/rtt/native-attachment-queries.json`.

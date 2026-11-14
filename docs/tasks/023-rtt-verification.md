@@ -1,6 +1,6 @@
 # Render-to-texture verification and performance
 
-Status is running.
+Status is locally accepted on 2026-11-15. Task020 owns automatic delivery and its generated handoff.
 
 ## Goal and ownership
 
@@ -34,3 +34,37 @@ The source audit identified these acceptance details for the semantic owners.
 - `gl-get-uniform-non-current-program.html` requires querying another program and querying while no program is current, including previously set values.
 
 The existing JS uniform implementation rejects updates larger than the remaining uniform array capacity with `INVALID_OPERATION`. This conflicts with the selected original array test and GLES 2.10.4's excess-element rule. This finding is handed to the JS owner before activation.
+
+## PR2 activation and evidence
+
+PR1 preparation was accepted in commit `c9ea6e8` with the existing 64 Chrome regressions. At PR2 the four prepared uniform files moved into the executable `cts.tests` selection. The runner derives per-backend assertion totals from upstream results and checks equality with native. All eleven original files passed 243 assertions independently on native, JS and Rust.
+
+The three shared uniform scenes cover mat2/mat3/mat4 array layout, transpose/length validation, mutable input snapshots, exact signed 32-bit values, scalar/vector integer setters, float-to-boolean conversion, non-current queries, excess array values and relink resets. The shared raster scene covers scissor/write masks, depth/depthMask, blending and culling with explicit expected regions. The full i32 draw exposed ANGLE emitting an invalid WGSL literal for INT_MIN. Integration corrected the pinned emitter and retained the exact INT_MIN regression.
+
+Integration accepted the four shared scenes, eleven original CTS files and compiler GPU entry after rebuilding the compiler. Its complete stage-two suite passed 66 Chrome tests in 39.7 seconds. Compiler evidence contains 24 standalone cases and four real pipeline pairs. Logs are under `artifacts/rtt-pr2-*`. Commit `2d01d4c` activates the four uniform/raster scenes. Later-stage source fixtures remain prepared for their implementation slices.
+
+## Texture and framebuffer verification preparation
+
+The shared fixture now defines twenty native/JS/Rust scenes. Besides the four accepted uniform/raster scenes, it includes five UNSIGNED_BYTE texture formats with null storage and alpha, view offsets and mutation after upload, aligned/flip/premultiply unpacking, subimage updates and reallocations, NPOT completeness, sampler units and invalid upload atomicity. Framebuffer scenes cover depth rendering and subsequent sampling, attachment resizing/completeness, bound and retained-unbound deletion, feedback rejection, inactive-unit bindings, foreign contexts and canvas resize. Every scene specifies expected state/errors and full image-region coverage. JS/Rust images must match exactly, with explicit small native channel tolerances.
+
+All paths request the same alpha/depth/stencil/antialias/premultipliedAlpha/preserveDrawingBuffer flags for each scene and assert the actual returned flags. The premultipliedAlpha presentation flag is true. Typed upload flip and premultiply state are exercised independently. Raw readback expectations retain the uploaded alpha values.
+
+Original texture/FBO sources are acquired at the same CTS revision and recorded as prerequisite-not-run. The array-buffer upload source also needs synchronous readPixels, CubeMap and packed 16-bit formats. The NPOT source additionally needs mipmaps and copyTexImage2D. The attachment source needs color/stencil renderbuffer formats and both copyTexImage2D and copyTexSubImage2D. The feedback source needs synchronous readPixels. Source-derived asynchronous project regressions keep their own identities and are associated with these references in the lock file.
+
+## Demo and independent performance entry
+
+The pinned adapter accepts native, JS and Rust plus the existing refral-to-JS alias. It records the requested backend, actual selected core, shaders, actual attributes, initialization/resource timing and environment. The comparison runs one prepared 320×240, DPR1 scene per backend at times 0, 1000 and 2000. It writes nine raw frame/PNG results and nine pairwise comparisons. Native comparison uses the accepted two-byte/one-pixel-edge tolerance and JS/Rust comparison is exact. The UI smoke coverage retains the JS alias and adds Rust.
+
+The independent benchmark config is `benchmarks/playwright.config.ts` and the runner is `tests/performance/rtt-benchmark.spec.ts`. Five workloads execute in each of three rotated native/JS/Rust orders, producing 45 records. Each run performs a separate first frame, 30 warmup samples and 120 measured samples, with eight logical frames per sample. That is 240 warmup and 960 measured logical frames. Uniform/state/buffer/texture workloads use 64 draws per 64×64 logical frame. RTT uses the pinned scene's GL trace and records its actual draw count.
+
+Typed inputs and RTT matrix/scene computation are prepared before timing. CPU intervals include public GL dispatch, conversion/snapshots, bridge, encoding and explicit flush. Each interval is divided by eight and reported as ms/logical-frame. Full 64×64 RGBA capture paces every backend after the interval. Reports retain every CPU sample, nearest-rank p50/p95, setup/first-image timing, timer quantization, cache state, shader/configuration/build metadata, uploads/passes/copies/submits/pipeline/bind-group counters and memory estimates. GPU durations are recorded as unavailable in this CPU baseline with feature/extension availability. Native GPU allocation estimates are unavailable. The summary derives same-round native ratios and validates backend images after all 45 records are present.
+
+The former single Chrome benchmark test is removed from the default correctness suite. Its native/JS uniform, state and dynamic-buffer coverage is included in the expanded independent runner. With all prepared RTT scenes and the Rust UI test active, the default entry contains 84 tests. The independent benchmark entry contains 45 tests.
+
+## Final checks and acceptance
+
+Integration passes 107 deterministic CPU tests, 44 native Rust tests, twenty actual-Wasm tests and the final 84-test Chrome correctness entry. All twenty shared RTT scenes pass. The original sequential demo's nine pair comparisons have zero observed byte/pixel difference. Eleven original CTS files retain 243 assertions on every backend, and built deployment verifies the probe, three-path RTT/triangles and packaged ABI3/resource-protocol2.
+
+The independent 45-run benchmark passes all runs and final-image comparisons, retaining 5400 measured samples. The first complete capture exposed native timer quantization at 0.1 ms and is preserved under `artifacts/benchmarks/rtt-coarse-timer/`. The accepted entry enables benchmark-only COOP/COEP and observes approximately 0.005 ms resolution with crossOriginIsolated=true for all backends. Metadata captures Chrome's process ID through CDP and reads its actual OS command line. Source inventory, raw records, per-round summary and pooled values are under `artifacts/benchmarks/rtt/`.
+
+The performance source snapshot and Rust/compiler/demo hashes identify the exact measured worktree. CPU p50/p95 use pooled nearest-rank over 360 samples per workload/backend. The dated report contains all fifteen initialization/resource/first-frame/first-image summaries, execution counters and capacity boundaries. GPU timestamp capability is available on the adapter, while this CPU baseline leaves GPU duration fields empty and records the device-feature state and reason. The root task owns final PR integration and generated delivery records.

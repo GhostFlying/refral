@@ -1,8 +1,8 @@
 {
   "version": 2,
   "profile": "webgl1-prototype",
-  "updated": "2026-11-14",
-  "implementationRevision": "task-020 in progress, dated acceptance records identify the tested slice",
+  "updated": "2026-11-15",
+  "implementationRevision": "task-020 shared render-to-texture acceptance; dated report and delivery handoff identify tested sources",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
     "chrome-macos-arm64": {
@@ -112,7 +112,7 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Invalid buffer target and negative viewport preserve prior valid state. Buffer binding and context ownership queries are compared.",
+          "coverage": "Shared Buffer, shader/program, typed uniform, vertex, texture, pixel-store, framebuffer and raster validation. Rejected supported calls preserve prior state. Retained deletion, relink and resource versions follow the pinned specification fixtures.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential error-state",
             "tests/chrome/differential.spec.ts::WebGL1 differential resource-ownership",
@@ -140,7 +140,7 @@
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "Shared Buffer, shader/program, uniform, vertex and draw validation. Rejected supported calls preserve semantic state. Retained/deleted identities and failed relink follow the pinned specification.",
+          "coverage": "Shared Buffer, shader/program, typed uniform, vertex, texture, pixel-store, framebuffer and raster validation. Rejected supported calls preserve prior state. Retained deletion, relink and resource versions follow the pinned specification fixtures.",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
@@ -479,7 +479,7 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "TRIANGLES render through real WebGPU. Differential fixtures verify UNSIGNED_SHORT updates and interpreting the same index storage through UNSIGNED_BYTE and UNSIGNED_SHORT without a stale format cache.",
+          "coverage": "TRIANGLES arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws on default and declared offscreen targets, with owned draw-time state, resources and typed uniforms. Bounds/alignment, multipass depth/cull/blend and native comparisons pass.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update",
@@ -519,7 +519,7 @@
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "Default-target TRIANGLES arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws, with captured Buffer and uniform bytes and strict bounds/alignment validation.",
+          "coverage": "TRIANGLES arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws on default and declared offscreen targets, with owned draw-time state, resources and typed uniforms. Bounds/alignment, multipass depth/cull/blend and native comparisons pass.",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
@@ -552,7 +552,7 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Per-draw uniform snapshots and scalar sampler unit assignment. Pixel differential verifies uniform4f and sampler uniform1i.",
+          "coverage": "Float/int/bool scalar/vector and array updates, typed queries, exact i32 values, scalar sampler2D assignment and multiple-unit sampling. Original uniform CTS and shared three-path state/pixel scenes pass.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture",
@@ -610,7 +610,7 @@
         },
         "rust": {
           "status": "cts-verified",
-          "coverage": "Float/int/bool scalar/vector and array updates and typed queries, full i32 precision, scalar sampler2D assignment and validation. Actual texture sampling follows the texture slice.",
+          "coverage": "Float/int/bool scalar/vector and array updates, typed queries, exact i32 values, scalar sampler2D assignment and multiple-unit sampling. Original uniform CTS and shared three-path state/pixel scenes pass.",
           "tests": [
             "tests/chrome/rtt.spec.ts",
             "tests/chrome/cts.spec.ts",
@@ -626,10 +626,7 @@
               "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
-          "limits": [
-            "Texture/FBO execution is validated by the following task 020 slices."
-          ]
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics."
         }
       },
       "specRefs": [
@@ -697,10 +694,7 @@
               "passed": true
             }
           ],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
-          "limits": [
-            "Texture/FBO execution is validated by the following task 020 slices."
-          ]
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
         }
       }
     },
@@ -1058,10 +1052,7 @@
               "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
-          "limits": [
-            "Texture/FBO execution is validated by the following task 020 slices."
-          ]
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics."
         }
       }
     },
@@ -1110,10 +1101,7 @@
               "passed": true
             }
           ],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
-          "limits": [
-            "Texture/FBO execution is validated by the following task 020 slices."
-          ]
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
         }
       }
     },
@@ -1169,10 +1157,7 @@
               "passed": true
             }
           ],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
-          "limits": [
-            "Texture/FBO execution is validated by the following task 020 slices."
-          ]
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
         }
       }
     },
@@ -1516,7 +1501,7 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Test-only asynchronous RGBA8 capture is compared against native readPixels in the differential harness.",
+          "coverage": "Common BrowserHost asynchronous capture covers default and declared FBO targets through sixteen shared drawing and twenty RTT scenes. Public synchronous readPixels remains future coverage.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture",
@@ -1544,7 +1529,7 @@
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "Common BrowserHost default-framebuffer asynchronous capture passes all 16 shared drawing scenes. Public synchronous readPixels remains outside the profile.",
+          "coverage": "Common BrowserHost asynchronous capture covers default and declared FBO targets through sixteen shared drawing and twenty RTT scenes. Public synchronous readPixels remains future coverage.",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
@@ -1573,7 +1558,7 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "The initial profile advertises an empty extension list and returns null for requested extensions.",
+          "coverage": "The facade/core expose an empty supported-extension list and null extension results for the current profile. Extension implementations require separate acceptance.",
           "tests": [],
           "evidence": [],
           "unsupportedBehavior": "The initial getSupportedExtensions list is empty and getExtension returns null for unadvertised extensions.",
@@ -1583,7 +1568,7 @@
         },
         "rust": {
           "status": "implemented-unverified",
-          "coverage": "The Rust Buffer profile implements the Buffer-related subset; the full group requires further parity work.",
+          "coverage": "The facade/core expose an empty supported-extension list and null extension results for the current profile. Extension implementations require separate acceptance.",
           "tests": [],
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
@@ -1770,14 +1755,16 @@
     }
   ],
   "observability": {
-    "evidence": "artifacts/benchmarks/chrome.json",
+    "evidence": "artifacts/benchmarks/rtt/summary.json",
     "tests": [
-      "tests/chrome/benchmark.spec.ts::records paired native WebGL and Refral CPU baseline samples"
+      "tests/performance/rtt-benchmark.spec.ts"
     ],
-    "cpuTiming": "API processing, encoding and submission elapsed CPU time. Readback pacing is outside the sampled interval.",
+    "cpuTiming": "Public GL replay, conversion/snapshots, bridge, encoding and flush, measured in ms/logical-frame. Typed input preparation and full RGBA completion/readback pacing occur outside the interval.",
     "gpuTiming": {
       "status": "not-measured",
-      "reason": "The current benchmark does not record GPU timestamp queries."
+      "adapterTimestampAvailable": true,
+      "deviceTimestampEnabled": false,
+      "reason": "GPU timestamp queries are not enabled by this CPU baseline."
     },
     "memoryAccounting": {
       "bufferCapacity": "Application-visible GPUBuffer.size capacities for tracked buffers.",
@@ -1791,22 +1778,71 @@
     "observedCapacityPeaks": [
       {
         "scene": "uniform-draws",
+        "core": "js",
+        "peakBufferCapacityBytes": 17280,
+        "peakTextureCapacityEstimateBytes": 32768
+      },
+      {
+        "scene": "uniform-draws",
+        "core": "rust",
+        "peakBufferCapacityBytes": 41472,
+        "peakTextureCapacityEstimateBytes": 32768
+      },
+      {
+        "scene": "state-changes",
+        "core": "js",
         "peakBufferCapacityBytes": 17280,
         "peakTextureCapacityEstimateBytes": 32768
       },
       {
         "scene": "state-changes",
-        "peakBufferCapacityBytes": 17280,
+        "core": "rust",
+        "peakBufferCapacityBytes": 41472,
         "peakTextureCapacityEstimateBytes": 32768
       },
       {
-        "scene": "dynamic-upload",
+        "scene": "dynamic-buffer-upload",
+        "core": "js",
         "peakBufferCapacityBytes": 41472,
         "peakTextureCapacityEstimateBytes": 32768
+      },
+      {
+        "scene": "dynamic-buffer-upload",
+        "core": "rust",
+        "peakBufferCapacityBytes": 41472,
+        "peakTextureCapacityEstimateBytes": 32768
+      },
+      {
+        "scene": "dynamic-texture-upload",
+        "core": "js",
+        "peakBufferCapacityBytes": 1065856,
+        "peakTextureCapacityEstimateBytes": 164096
+      },
+      {
+        "scene": "dynamic-texture-upload",
+        "core": "rust",
+        "peakBufferCapacityBytes": 1090048,
+        "peakTextureCapacityEstimateBytes": 164096
+      },
+      {
+        "scene": "render-to-texture",
+        "core": "js",
+        "peakBufferCapacityBytes": 263808,
+        "peakTextureCapacityEstimateBytes": 294936
+      },
+      {
+        "scene": "render-to-texture",
+        "core": "rust",
+        "peakBufferCapacityBytes": 264672,
+        "peakTextureCapacityEstimateBytes": 294936
       }
     ],
-    "samplingLimit": "The saved end-to-end samples are an initial paired run. Longer repeated experiments are required for performance budgets and stable speedup conclusions.",
-    "core": "js"
+    "samplingLimit": "Three rotated rounds per workload/backend, thirty warmup and 120 measured samples per run, eight logical frames per sample. Five workloads and 45 accepted runs retain 5400 CPU samples. Browser contexts are fresh, Chrome process retained and driver caches unmanaged.",
+    "core": [
+      "native",
+      "js",
+      "rust"
+    ]
   },
   "verificationSummary": {
     "chromeTests": 26,
@@ -1834,90 +1870,90 @@
   "compilerVerification": {
     "node": {
       "evidence": "artifacts/compiler/corpus.json",
-      "passedCases": 23,
-      "totalCases": 23
+      "passedCases": 24,
+      "totalCases": 24
     },
     "browser": {
       "evidence": "artifacts/compiler/chrome-corpus.json",
-      "passedCases": 23,
-      "totalCases": 23,
-      "pipelines": 3
+      "passedCases": 24,
+      "totalCases": 24,
+      "pipelines": 4
     },
     "profileSource": "packages/compiler/profile-limits.json",
-    "note": "The shared 8-attribute profile and boundary corpus passed Node and actual Chrome verification. The browser test creates real ESSL100, ESSL300, and matrix-attribute WebGPU pipelines."
+    "note": "The shared eight-attribute profile and boundary corpus pass Node and Chrome. Four shader pairs create real pipelines, including the patched INT_MIN WGSL regression."
   },
   "deploymentVerification": {
     "evidence": "artifacts/deployment/result.json",
-    "scope": "Built Chrome deployment with JS compiler/demo rendering; current checks also load and exercise the packaged Rust Buffer Wasm ABI."
+    "scope": "Built Chrome probe, three-path RTT and triangle pixels, packaged Rust ABI3/resource-protocol2 and page-error checks."
   },
   "defaultCore": "js",
   "cores": {
     "js": {
-      "profile": "webgl1-rendering",
+      "profile": "webgl1-render-to-texture",
       "implementation": "packages/core-js",
       "contract": "packages/core-api",
       "facade": "packages/webgl",
-      "scope": "Current WebGL1 rendering profile plus the common Buffer contract."
+      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT vertex inputs, typed uniforms/matrices, level-zero five-format Texture2D, RGBA/depth FBO and raster profile."
     },
     "rust": {
-      "profile": "webgl1-default-drawing",
+      "profile": "webgl1-render-to-texture",
       "implementation": "crates/core",
       "binding": "crates/wasm + packages/core-wasm",
       "contract": "packages/core-api",
       "facade": "packages/webgl",
-      "scope": "Buffer, ESSL100 shader/program lifecycle/reflection, FLOAT vertex/constant attributes, float scalar/vector uniforms, default-target TRIANGLES and clear/viewport in one Rust/Wasm context. Texture/FBO and broader raster parity follow."
+      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT vertex inputs, typed uniforms/matrices, level-zero five-format Texture2D, RGBA/depth FBO and raster profile."
     }
   },
   "coreVerification": {
-    "report": "docs/validation/2026-11-14-dual-core-drawing.md",
+    "report": "docs/validation/2026-11-15-three-path-rtt.md",
     "environment": "chrome-macos-arm64",
     "allChromeTests": {
-      "passed": 64,
+      "passed": 84,
       "failed": 0,
       "skipped": 0,
-      "evidence": "artifacts/dual-core-drawing-full-chrome.log"
+      "evidence": "artifacts/rtt-final-chrome.log"
     },
     "deterministicChecks": {
       "typescript": "passed",
-      "jsUnitTests": 62,
-      "rustNativeTests": 27,
+      "jsUnitTests": 107,
+      "rustNativeTests": 44,
       "rustFmt": "passed",
       "rustClippy": "passed",
-      "actualWasmAdapterTests": 9,
+      "actualWasmAdapterTests": 20,
       "evidence": [
-        "artifacts/program-cores-check.log",
-        "artifacts/program-cores-wasm.log"
+        "artifacts/rtt-final-check.log",
+        "artifacts/rtt-final-wasm.log"
       ]
     },
     "js": {
-      "profile": "webgl1-rendering",
+      "profile": "webgl1-render-to-texture",
       "bufferSuite": "passed",
-      "renderingDifferentialFixtures": 23,
-      "ctsFiles": 7,
-      "ctsAssertions": 100,
-      "remainingParity": "Expand original CTS coverage and define further shared contracts.",
-      "sharedDrawingScenes": 16
+      "sharedDrawingScenes": 16,
+      "sharedRttScenes": 20,
+      "ctsFiles": 11,
+      "ctsAssertions": 243,
+      "remainingParity": "DOM upload acceptance, mipmaps/CubeMap/packed formats, additional targets, synchronous readback, extensions and restoration."
     },
     "rust": {
-      "profile": "webgl1-default-drawing",
+      "profile": "webgl1-render-to-texture",
       "bufferSuite": "passed",
-      "renderingDifferentialFixtures": 16,
-      "ctsFiles": 7,
-      "remainingParity": "Non-null matrix/integer/sampler updates, other vertex formats, textures/FBO and broader raster state, then additional original CTS.",
-      "ctsAssertions": 100,
-      "sharedDrawingScenes": 16
+      "sharedDrawingScenes": 16,
+      "sharedRttScenes": 20,
+      "ctsFiles": 11,
+      "ctsAssertions": 243,
+      "remainingParity": "DOM upload acceptance, mipmaps/CubeMap/packed formats, additional targets, synchronous readback, extensions and restoration."
     },
     "sharedCompiler": {
-      "corpusCases": 23,
-      "realPipelines": 3,
+      "corpusCases": 24,
+      "realPipelines": 4,
       "evidence": "artifacts/compiler/chrome-corpus.json",
-      "scope": "Shared compiler exercised through both public semantic cores and the standalone corpus."
+      "scope": "Shared compiler used by both semantic cores and original ESSL demo."
     },
     "explicitSelectionTest": "tests/chrome/core-profile.spec.ts::explicit Rust selection runs its drawing core and JS remains the default",
     "deployment": {
       "status": "passed",
       "evidence": "artifacts/deployment/result.json",
-      "scope": "Built WebGPU probe, JS render-to-texture, packaged ABI v2 and actual native/JS/Rust triangle pixels."
+      "scope": "Built Chrome probe, three-path RTT and triangle pixels, packaged Rust ABI3/resource-protocol2 and page-error checks."
     }
   },
   "specifications": {
@@ -1932,12 +1968,12 @@
     "mapping": "docs/spec-map.md"
   },
   "specVerification": {
-    "report": "docs/tasks/015-drawing-verification.md",
+    "report": "docs/tasks/020-render-to-texture.md",
     "ctsEvidence": "artifacts/cts/results.json",
     "programEvidence": "artifacts/program-spec/",
     "bufferSourceEvidence": "artifacts/buffers/sources.json",
-    "scope": "Native and JS pass seven original CTS files and five derived program scenes. Buffer input conversion is also verified with Rust. Rust shader/program acceptance follows the shared-contract stage.",
-    "rust": "Seven original CTS files, 100 assertions, and 16 shared drawing scenes passed. Native/actual-Wasm regressions cover ownership, lifecycle and transport."
+    "scope": "Eleven unchanged original CTS files pass 243 assertions per backend. Twenty separate source-derived RTT scenes cover the declared asynchronous readback profile.",
+    "rust": "Rust executes all supported semantics in one selected Wasm instance; shared resource/compiler/host behavior follows the common contracts."
   },
   "sharedDrawingVerification": {
     "cases": 16,
@@ -1953,8 +1989,8 @@
     "nativeDeviation": "Chrome 157 attribute query shadow after rejected vertexAttribPointer calls is recorded separately. JS/Rust assert specification-required unchanged state. Errors and rendered pixels are compared across all backends."
   },
   "rttStage": {
-    "status": "running",
-    "acceptedSlice": "framebuffer-three-path-demo",
+    "status": "local-acceptance-complete",
+    "acceptedSlice": "three-path-rtt-performance-deployment",
     "abi": 3,
     "unitTests": 107,
     "nativeRustTests": 44,
@@ -1977,6 +2013,9 @@
       "comparisons": 9,
       "maximumObservedDifference": 0,
       "evidence": "artifacts/demo/result.json"
-    }
+    },
+    "performanceRuns": 45,
+    "performanceSamples": 5400,
+    "report": "docs/validation/2026-11-15-three-path-rtt.md"
   }
 }

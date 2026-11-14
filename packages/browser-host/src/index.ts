@@ -134,6 +134,7 @@ export class BrowserHost implements SemanticHost {
         device: adapter.info.device, description: adapter.info.description,
         isFallbackAdapter: adapter.info.isFallbackAdapter },
       features: [...device.features],
+      adapterFeatures: [...adapter.features],
       limits: Object.fromEntries(Object.keys(Object.getPrototypeOf(device.limits)).map(
         key => [key, (device.limits as unknown as Record<string, unknown>)[key]],
       )),

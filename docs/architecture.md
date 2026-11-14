@@ -4,7 +4,7 @@
 
 The accepted direction is parallel JS/TypeScript and Rust/Wasm semantic cores with a shared WebGL facade, compiler, browser host, and verification fixtures. ADR 003 records this decision.
 
-The JS implementation lives in `packages/core-js`. Shared contracts cover Buffer semantics, shader/program lifecycle, vertex/uniform state and ordered default-framebuffer drawing in both JS and Rust/Wasm. The earlier trace experiment remains under `experiments/core-selection` as a separate measurement tool.
+The JS implementation lives in `packages/core-js`. Shared contracts cover Buffer semantics, shader/program lifecycle, typed uniforms and matrices, texture/renderbuffer/framebuffer relationships, raster state and ordered multipass drawing in JS and Rust/Wasm. The earlier trace experiment remains under `experiments/core-selection` as a separate measurement tool.
 
 | Module | Responsibility |
 | --- | --- |
@@ -37,9 +37,15 @@ Use a single owner thread. Schedule automatic submission at the current task's m
 
 The common Buffer interface uses context-owned generational handles. The facade associates opaque JS wrappers with those handles and normalizes WebIDL inputs. Both cores own Buffer validation, storage, and errors. See `core-api.md` for synchronous data ownership, validation order, and lifecycle rules.
 
-Migration is incremental. JS Buffer handles adapt the same objects and state used by its existing renderer. Shader/program handles and compiler/execution records now use core-api. BrowserHost consumes that common contract. The JS adapter maps logical handles to its existing semantic objects, and Rust emits the same draw records through ABI v2. Texture and framebuffer semantics remain the next Rust parity work. Selecting Rust executes its own state, validation and planning against the shared compiler/executor.
+The facade maps typed logical handles to context-owned wrappers for buffers, shaders, programs, textures, renderbuffers and framebuffers. The JS adapter maps these handles to its semantic objects. Rust executes its own state, validation and planning through ABI v3. Both paths emit the same execution records to BrowserHost through core-api.
+
+Each context owns an ExecutionResources registry. Cores produce ordered texture definitions, subimage updates, GPU-write version advances and retirement operations. The registry resolves typed texture versions to canonical executor storage and maps depth handles plus storage generation to executor identities. Draw records reuse these references. FBO contents stay in GPU resources through the write-to-sample transition. The registry owns resource translation and retains no GL binding state.
 
 Storage generation changes when storage or views are replaced. Content version changes on data updates. Program link generation invalidates uniform locations and executable-derived caches. GPU resource lifetimes follow queued work as well as GL-visible references.
+
+TypedArray/null texture input is consumed before the upload call returns. The selected core expands the supported UNSIGNED_BYTE formats with unpack state, retaining independent owned RGBA payloads. Framebuffer attachment relationships retain deleted logical resources until the last reference is released. BrowserHost retires replaced concrete resources after submitted work completes.
+
+The private Rust resource protocol requires ABI v3 and resource-envelope capability v2 for offscreen targets. Bounded metadata and binary ranges carry typed results, full raster/target snapshots and ordered operations. The adapter copies Rust-owned output pixels before reusing the output arena. ADR 006 records the resource and transport boundary.
 
 ## Compiler integration
 

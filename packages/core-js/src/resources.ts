@@ -1,5 +1,5 @@
 import { GL } from "@refral/core-api";
-import type { TextureParameters, TextureStorage } from "@refral/core-api";
+import type { RenderbufferHandle, TextureHandle, TextureParameters, TextureStorage } from "@refral/core-api";
 export { GL, componentCount, createRasterState, snapshotRaster } from "@refral/core-api";
 export type { AttributeSnapshot, RasterState, TargetSnapshot, TextureParameters, TextureStorage } from "@refral/core-api";
 
@@ -20,6 +20,8 @@ export class BufferObject extends LogicalObject {
 }
 
 export class TextureObject extends LogicalObject {
+  handle: TextureHandle | null = null;
+  retired = false;
   storage: TextureStorage | null = null;
   generation = 0;
   version = 0;
@@ -33,6 +35,8 @@ export class TextureObject extends LogicalObject {
 }
 
 export class RenderbufferObject extends LogicalObject {
+  handle: RenderbufferHandle | null = null;
+  retired = false;
   width = 0;
   height = 0;
   generation = 0;

@@ -55,3 +55,19 @@ On 2026-11-14, headed Chrome `157.0.8103.51` passed all seven selected original 
 Task 013 subsequently passed the same seven original files against native, JS and Rust, with 100 assertions per path. Sixteen common drawing scenes passed explicit expected regions and native comparisons with zero maximum byte difference. These include retained deleted shaders/programs and their final retirement. GLES 2.0.25 sections 2.10.1, 2.10.3 and appendix C.1.3 define the retained-name behavior. The final report is [dual-core drawing validation](validation/2026-11-14-dual-core-drawing.md).
 
 Chrome 157 has a recorded query deviation after rejected vertexAttribPointer calls. It can expose the rejected stride/size/type/offset through queries while continuing to render with the earlier valid state. GLES 2.0.25 section 2.5 requires these errors to leave state unchanged. The common fixtures preserve the native observation, assert normative state for JS/Rust, and continue comparing errors and pixels on all three paths. Evidence is under `artifacts/dual-core-drawing/native-attribute-validation.json`.
+
+## Task 020 resource and RTT mapping
+
+Implementation proceeds from these pinned requirements. Task records distinguish implemented and verified progress for each core.
+
+| Behavior | Source and required observation | Verification |
+| --- | --- | --- |
+| Uniform type and packing | GLES 2.10.4 and WebGL uniform API rules define scalar/vector/array/matrix updates, bool conversion, transpose and length errors. Complete excess array values follow the specified truncation rules. | Four prepared original uniform CTS files and shared typed/packing regressions |
+| Typed pixel inputs | Pinned WebGL TEXIMAGE2D requires Uint8Array or Uint8ClampedArray for UNSIGNED_BYTE. IDL view conversion precedes GL validation. | Shared view-kind, offset, fixed SharedArrayBuffer and invalid-source tests |
+| Pixel storage | WebGL PIXEL_STORAGE_PARAMETERS and texture upload APIs define alignment, flip and premultiplication. Mutable source bytes are consumed synchronously. | Five-format, row alignment, alpha, zero initialization and source mutation scenes |
+| Sampling completeness | GLES 3.7 and WebGL NPOT restrictions define texture completeness and incomplete sampling behavior. Sampler uniforms select texture units. | NPOT/filter/wrap, multiple units and draw-separated update scenes |
+| Framebuffer relations | GLES 4.4 and WebGL framebuffer APIs define attachment identities, dimensions, completeness, deletion and storage replacement. | Bound/unbound attachment, resize, deleted references and error-state regressions |
+| Feedback | WebGL Feedback Loops Between Textures and the Framebuffer requires INVALID_OPERATION for a sampled rendering feedback loop. | Explicit error and unchanged output checks |
+| Raster state | GLES 3.5, 4.1 and WebGL raster APIs define culling, depth, blend, masks, scissor and clear. | Shared state/error queries and deterministic pixel regions |
+
+The resource bridge's define/update/write/retire sequence is an implementation contract for ordered GL behavior. GPU-write versions alias the rendered allocation. CPU subimage updates encode a copy from that allocation before its retirement. This preserves FBO-produced content and earlier encoded operations.

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { allocateContextId, GL } from "@refral/core-api";
+import { allocateContextId, GL, ExecutionResources } from "@refral/core-api";
 import type {
   BufferHandle, Compiler, DrawingCore, ProgramHandle, SemanticHost, ShaderHandle, UniformLocationHandle,
 } from "@refral/core-api";
@@ -36,12 +36,14 @@ function createContext() {
   const registry = createCompilerRegistry(compiler);
   const release = vi.spyOn(registry, "release");
   const dispose = vi.spyOn(registry, "dispose");
+  const contextId = allocateContextId();
+  const resources = new ExecutionResources(contextId, host);
   const core = createJsDrawingCore({
-    contextId: allocateContextId(), maxBufferBytes: 4096,
+    contextId, maxBufferBytes: 4096,
     surface: { width: 64, height: 32 }, attributes: { depth: true },
     profile: { vertexAttributes: 4, vertexUniformVectors: 128, fragmentUniformVectors: 64,
       varyingVectors: 8, vertexTextureUnits: 4, fragmentTextureUnits: 4, combinedTextureUnits: 4 },
-  }, { host, compiler: registry });
+  }, { host, compiler: registry, resources });
   return { core, host, registry, release, dispose };
 }
 

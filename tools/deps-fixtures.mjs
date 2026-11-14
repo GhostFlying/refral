@@ -14,7 +14,7 @@ async function download(repository, revision, file, destination) {
 
 const demoFiles = [lock.demo.source, 'webgl/resources/webgl-utils.js', 'webgl/resources/m4.js', 'webgl/resources/webgl-tutorials.css', 'webgl/license.html'];
 await Promise.all(demoFiles.map((file) => download(lock.demo.repository, lock.demo.revision, file, `third_party/demo/${file}`)));
-const ctsFiles = [...lock.cts.tests, ...lock.cts.specifications,
+const ctsFiles = [...lock.cts.tests, ...(lock.cts.preparedTests ?? []), ...lock.cts.specifications,
   ...lock.cts.deferredTests.map(test => test.path),
   'LICENSE.txt', 'sdk/tests/js/js-test-pre.js', 'sdk/tests/js/js-test-post.js',
   'sdk/tests/js/webgl-test-utils.js', 'sdk/tests/js/glsl-conformance-test.js',

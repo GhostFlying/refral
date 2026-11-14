@@ -4,7 +4,7 @@ import {
 import type {
   AttributeSnapshot, RasterState, TargetSnapshot,
   Compiler, CompiledShader, LinkedProgram, ProgramUniform, DrawingSurface,
-  ContextAttributes, RuntimeProfile, SemanticHost,
+  ContextAttributes, RuntimeProfile, SemanticHost, ResourceRegistry, TextureVersion, PixelUpload,
 } from "@refral/core-api";
 import {
   LogicalObject, BufferObject, TextureObject, RenderbufferObject, FramebufferObject,
@@ -87,7 +87,7 @@ export class SemanticContext {
 
   constructor(readonly canvas: DrawingSurface, private readonly host: SemanticHost,
     private readonly compiler: SemanticCompiler, private readonly contextAttributes: ContextAttributes,
-    private readonly profile: RuntimeProfile) {
+    private readonly profile: RuntimeProfile, private readonly resources?: ResourceRegistry) {
     this.maxBufferBytes = host.limits.maxBufferSize ?? Number.MAX_SAFE_INTEGER;
     this.state = createRasterState(canvas.width, canvas.height);
     this.textureUnits = Array.from({ length: profile.combinedTextureUnits }, () => null);
@@ -166,9 +166,34 @@ export class SemanticContext {
       this.error(GL.INVALID_FRAMEBUFFER_OPERATION); return null;
     }
     const storage = this.framebuffer.color!.storage!;
-    return { color: storage, depth: this.framebuffer.depth,
+    const renderbuffer = this.framebuffer.depth;
+    const depth = renderbuffer && this.resources
+      ? { id: this.resources.depth(renderbuffer.handle!, renderbuffer.generation).id } : renderbuffer;
+    return { color: storage, depth,
       depthGeneration: this.framebuffer.depth?.generation ?? 0,
       width: storage.width, height: storage.height, isDefault: false };
+  }
+
+  private textureVersion(texture: TextureObject): TextureVersion {
+    if (!texture.handle) throw new Error("Texture has no logical resource handle.");
+    return { texture: texture.handle, storageGeneration: texture.generation, contentVersion: texture.version };
+  }
+
+  private wroteColorTarget(): void {
+    const texture = this.framebuffer?.color;
+    if (!this.resources || !texture?.storage || !this.state.colorMask.some(Boolean)) return;
+    const previous = this.textureVersion(texture);
+    texture.version++;
+    const version = this.textureVersion(texture);
+    this.resources.apply({ kind: "write-texture", version, previous });
+    texture.storage = this.resources.texture(version);
+  }
+
+  private retireDepth(renderbuffer: RenderbufferObject): void {
+    if (this.resources) {
+      if (renderbuffer.generation > 0) this.resources.apply({ kind: "retire-depth",
+        renderbuffer: renderbuffer.handle!, storageGeneration: renderbuffer.generation });
+    } else this.host.retireDepth(renderbuffer.id, renderbuffer.generation);
   }
 
   getError(): number { return this.errors.take(); }
@@ -630,6 +655,7 @@ export class SemanticContext {
       attributes, vertexCount: vertices, first, count, indices,
       vertexUniforms: this.program.vertexUniforms.slice(), fragmentUniforms: this.program.fragmentUniforms.slice(),
       textures: textures as NonNullable<typeof textures[number]>[] });
+    this.wroteColorTarget();
     this.schedule();
   }
 
@@ -668,6 +694,9 @@ export class SemanticContext {
     const components = format === GL.RGBA ? 4 : format === GL.RGB ? 3 : format === GL.LUMINANCE_ALPHA ? 2 : 1;
     let bytes: Uint8Array;
     let stride: number;
+    const upload = source && typeof source === "object" && "bytes" in source && "viewType" in source
+      ? source as PixelUpload : null;
+    const typedSource = ArrayBuffer.isView(source) || upload !== null;
     if (source === null) {
       const pixels = new Uint8Array(width * height * 4);
       if (format === GL.RGB || format === GL.LUMINANCE) {
@@ -675,12 +704,12 @@ export class SemanticContext {
       }
       return pixels;
     }
-    if (ArrayBuffer.isView(source)) {
-      const tag = Object.prototype.toString.call(source);
-      if (tag !== "[object Uint8Array]" && tag !== "[object Uint8ClampedArray]") {
+    if (typedSource) {
+      const tag = upload?.viewType ?? Object.prototype.toString.call(source).slice(8, -1);
+      if (tag !== "Uint8Array" && tag !== "Uint8ClampedArray") {
         this.error(GL.INVALID_OPERATION); return null;
       }
-      bytes = bytesOf(source);
+      bytes = upload?.bytes ?? bytesOf(source as ArrayBufferView);
       stride = Math.ceil(width * components / this.unpackAlignment) * this.unpackAlignment;
       if (bytes.byteLength < Math.max(0, (height - 1) * stride + width * components)) {
         this.error(GL.INVALID_OPERATION); return null;
@@ -689,7 +718,7 @@ export class SemanticContext {
       this.error(GL.INVALID_VALUE); return null;
     }
     const pixels = new Uint8Array(width * height * 4);
-    const sourceComponents = ArrayBuffer.isView(source) ? components : 4;
+    const sourceComponents = typedSource ? components : 4;
     for (let y = 0; y < height; y++) {
       const sourceY = this.unpackFlipY ? height - 1 - y : y;
       for (let x = 0; x < width; x++) {
@@ -697,7 +726,7 @@ export class SemanticContext {
         const destination = (y * width + x) * 4;
         let r = bytes[offset] ?? 0; let g = bytes[offset + 1] ?? 0;
         let b = bytes[offset + 2] ?? 0; let a = bytes[offset + 3] ?? 255;
-        if (sourceComponents !== 4 || ArrayBuffer.isView(source)) {
+        if (sourceComponents !== 4 || typedSource) {
           if (format === GL.RGB) a = 255;
           if (format === GL.ALPHA) { a = r; r = g = b = 0; }
           if (format === GL.LUMINANCE || format === GL.LUMINANCE_ALPHA) {
@@ -732,8 +761,14 @@ export class SemanticContext {
     const data = this.pixelData(width, height, format, source); if (!data) return;
     const previous = texture.storage;
     texture.generation++; texture.version++; texture.format = format;
-    texture.storage = { width, height, generation: texture.generation, data };
-    this.host.replaceStorage(previous, texture.storage);
+    if (this.resources) {
+      const version = this.textureVersion(texture);
+      this.resources.apply({ kind: "define-texture", version, width, height, data });
+      texture.storage = this.resources.texture(version);
+    } else {
+      texture.storage = { width, height, generation: texture.generation, data };
+      this.host.replaceStorage(previous, texture.storage);
+    }
     this.schedule();
   }
   texSubImage2D(...arguments_: unknown[]): void {
@@ -753,11 +788,19 @@ export class SemanticContext {
     if (format !== texture.format || type !== GL.UNSIGNED_BYTE) return this.error(GL.INVALID_OPERATION);
     const data = this.pixelData(width, height, format, source); if (!data) return;
     const previous = texture.storage;
-    texture.storage = { width: previous.width, height: previous.height,
-      generation: texture.generation, parent: previous,
-      update: { x: x!, y: y!, width, height, data } };
+    const previousVersion = this.resources ? this.textureVersion(texture) : null;
     texture.version++;
-    this.host.replaceStorage(previous, texture.storage);
+    if (this.resources) {
+      const version = this.textureVersion(texture);
+      this.resources.apply({ kind: "update-texture", version, previous: previousVersion!,
+        x: x!, y: y!, width, height, data });
+      texture.storage = this.resources.texture(version);
+    } else {
+      texture.storage = { width: previous.width, height: previous.height,
+        generation: texture.generation, parent: previous,
+        update: { x: x!, y: y!, width, height, data } };
+      this.host.replaceStorage(previous, texture.storage);
+    }
     this.schedule();
   }
   generateMipmap(_target: number): never { return unsupported("generateMipmap"); }
@@ -772,8 +815,11 @@ export class SemanticContext {
   private releaseTexture(texture: TextureObject): void {
     if (!texture.deleted) return;
     const retained = [...this.objects].some(object => object instanceof FramebufferObject && object.color === texture);
-    if (!retained && texture.storage) {
-      this.host.retireStorage(texture.storage);
+    if (!retained) {
+      texture.retired = true;
+      if (!texture.storage) return;
+      if (this.resources) this.resources.apply({ kind: "retire-texture", version: this.textureVersion(texture) });
+      else this.host.retireStorage(texture.storage);
       texture.storage = null;
       this.schedule();
     }
@@ -860,7 +906,7 @@ export class SemanticContext {
     if (width < 0 || height < 0 || width > this.host.limits.maxTextureDimension2D ||
         height > this.host.limits.maxTextureDimension2D) return this.error(GL.INVALID_VALUE);
     if (format !== GL.DEPTH_COMPONENT16) return unsupported("non-depth renderbuffer storage");
-    this.host.retireDepth(this.renderbuffer.id, this.renderbuffer.generation);
+    this.retireDepth(this.renderbuffer);
     Object.assign(this.renderbuffer, { width, height, format, generation: this.renderbuffer.generation + 1 });
     this.schedule();
   }
@@ -892,7 +938,11 @@ export class SemanticContext {
   private releaseRenderbuffer(renderbuffer: RenderbufferObject): void {
     if (!renderbuffer.deleted) return;
     const retained = [...this.objects].some(object => object instanceof FramebufferObject && object.depth === renderbuffer);
-    if (!retained) { this.host.retireDepth(renderbuffer.id, renderbuffer.generation); this.schedule(); }
+    if (!retained && !renderbuffer.retired) {
+      this.retireDepth(renderbuffer);
+      renderbuffer.retired = true;
+      this.schedule();
+    }
   }
   isRenderbuffer(renderbuffer: unknown): boolean {
     return !this.lost && renderbuffer instanceof RenderbufferObject && renderbuffer.owner === this.owner && !renderbuffer.deleted;
@@ -967,6 +1017,7 @@ export class SemanticContext {
     if (mask & ~(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT | GL.STENCIL_BUFFER_BIT)) return this.error(GL.INVALID_VALUE);
     const target = this.target(); if (!target || this.lost || !target.width || !target.height) return;
     this.host.clear(target, snapshotRaster(this.state), mask, this.clearColorValue, this.clearDepthValue);
+    if (mask & GL.COLOR_BUFFER_BIT) this.wroteColorTarget();
     this.schedule();
   }
 

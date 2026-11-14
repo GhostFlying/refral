@@ -47,7 +47,7 @@ function toSize(value: unknown): number {
   return Number.isSafeInteger(integer) ? integer : Number(BigInt.asIntN(64, BigInt(integer)));
 }
 
-function bytes(value: unknown): Uint8Array {
+export function bufferSourceBytes(value: unknown): Uint8Array {
   if (ArrayBuffer.isView(value)) {
     let buffer: ArrayBufferLike;
     let offset: number;
@@ -72,7 +72,7 @@ function bytes(value: unknown): Uint8Array {
 
 function bufferDataSource(value: unknown): number | Uint8Array | null {
   if (value === null || value === undefined) return null;
-  if (ArrayBuffer.isView(value) || storage(value)) return bytes(value);
+  if (ArrayBuffer.isView(value) || storage(value)) return bufferSourceBytes(value);
   return toSize(value);
 }
 
@@ -124,7 +124,7 @@ export function createBufferFacade(core: BufferCore) {
       requireArguments('bufferSubData', args, 3);
       const target = toEnum(args[0]);
       const offset = toSize(args[1]);
-      const source = bytes(args[2]);
+      const source = bufferSourceBytes(args[2]);
       core.bufferSubData(target, offset, source);
     },
     getBufferParameter: (...args) => {

@@ -66,7 +66,9 @@ export function createProgramFacade(core: DrawingCore) {
   const wrappers = new Map<string, object>();
   function wrap(handle: LogicalHandle | null): object | null {
     if (!handle) return null;
-    if (handle.kind === 'buffer') throw new Error('Buffer handle returned by a program operation.');
+    if (handle.kind !== 'shader' && handle.kind !== 'program' && handle.kind !== 'uniform-location') {
+      throw new Error('Resource handle returned by a program operation.');
+    }
     const key = `${handle.kind}/${handle.contextId}/${handle.slot}/${handle.generation}`;
     let wrapper = handle.kind === 'uniform-location' ? undefined : wrappers.get(key);
     if (!wrapper) {

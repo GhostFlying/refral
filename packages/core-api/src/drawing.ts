@@ -3,6 +3,7 @@ import type { CompiledShader, LinkedProgram, ShaderStage } from './compiler.js';
 import type {
   ContextAttributes, DrawingSurface, RuntimeProfile, SemanticHost, TargetSnapshot,
 } from './execution.js';
+import type { ResourceRegistry } from './resources.js';
 
 /** Per-context artifacts owned by the shared synchronous compiler service. */
 export interface CompilerRegistry {
@@ -23,6 +24,7 @@ export interface DrawingCoreOptions extends BufferCoreOptions {
 export interface DrawingCoreServices {
   readonly compiler: CompilerRegistry;
   readonly host: SemanticHost;
+  readonly resources: ResourceRegistry;
 }
 
 /** Arguments contain normalized scalar/data values and logical object handles. */

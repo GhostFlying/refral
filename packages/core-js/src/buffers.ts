@@ -33,7 +33,7 @@ export class JsBufferCore implements BufferCore {
   }
 
   private findSlot(handle: BufferHandle): BufferSlot | null {
-    if (typeof handle !== "object" || handle === null || handle.contextId !== this.contextId ||
+    if (typeof handle !== "object" || handle === null || handle.kind !== "buffer" || handle.contextId !== this.contextId ||
         !isPositiveU32(handle.slot) || !isPositiveU32(handle.generation)) return null;
     return this.slots.get(handle.slot) ?? null;
   }
@@ -57,7 +57,7 @@ export class JsBufferCore implements BufferCore {
     const generation = (previous?.generation ?? 0) + 1;
     const buffer = this.core.createBuffer();
     if (!buffer) return null;
-    const handle = Object.freeze({ contextId: this.contextId, slot: slotNumber, generation });
+    const handle = Object.freeze({ kind: "buffer" as const, contextId: this.contextId, slot: slotNumber, generation });
     this.slots.set(slotNumber, { generation, buffer });
     this.handles.set(buffer, handle);
     return handle;

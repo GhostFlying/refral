@@ -217,3 +217,4 @@ export async function createCompiler(baseURL = "/artifacts/compiler/"): Promise<
     link: linkShaders,
   };
 }
+export { createCompilerRegistry } from './registry.js';

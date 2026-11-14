@@ -1,7 +1,7 @@
 {
   "version": 2,
   "profile": "webgl1-prototype",
-  "updated": "2026-11-13",
+  "updated": "2026-11-14",
   "implementationRevision": "working-tree",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
@@ -196,11 +196,18 @@
           }
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "cts-verified",
+          "coverage": "ESSL100 compile status/logs and exact DOMString source, including invalid shader diagnostics. Shared ANGLE service with Rust-owned lifecycle.",
+          "tests": [
+            "tests/chrome/cts.spec.ts::pinned Khronos CTS cases execute original assertions"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/cts/results.json",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
         }
       },
       "specRefs": [
@@ -271,11 +278,18 @@
           }
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "cts-verified",
+          "coverage": "Program attachment/link status, active attributes including matrix reflection, uniform locations and null-location no-op semantics. Full shader/program and source CTS run through the selected Rust core.",
+          "tests": [
+            "tests/chrome/cts.spec.ts::pinned Khronos CTS cases execute original assertions"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/cts/results.json",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
         }
       },
       "specRefs": [
@@ -384,11 +398,19 @@
           }
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "implemented-unverified",
+          "coverage": "FLOAT attributes and constants, size/stride/offset, enable/disable and Buffer references. Rust native and actual-Wasm checks passed. Three-path pixel scenes are pending final acceptance.",
+          "tests": [
+            "packages/core-wasm/tests/render.integration.ts",
+            "crates/core/src/render_tests.rs"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/program-cores-wasm.log",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
         }
       },
       "specRefs": [
@@ -443,11 +465,19 @@
           ]
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "implemented-unverified",
+          "coverage": "Default-target TRIANGLES drawArrays and drawElements with UNSIGNED_BYTE/UNSIGNED_SHORT, owned Buffer/uniform snapshots. Real-Wasm CPU executor tests passed. Three-path pixel scenes are pending final acceptance.",
+          "tests": [
+            "packages/core-wasm/tests/render.integration.ts",
+            "crates/core/src/render_tests.rs"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/program-cores-wasm.log",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
         }
       },
       "specRefs": [
@@ -520,11 +550,19 @@
           }
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "implemented-unverified",
+          "coverage": "Float 1..4 scalar/vector f/fv updates and queries. Null locations are ignored for all setters. Non-null integer/sampler and matrix updates remain outside the Rust profile.",
+          "tests": [
+            "packages/core-wasm/tests/render.integration.ts",
+            "crates/core/src/render_tests.rs"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/program-cores-wasm.log",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
         }
       },
       "specRefs": [
@@ -834,11 +872,19 @@
           ]
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "implemented-unverified",
+          "coverage": "Viewport and default color/depth clear. Scissor and write-mask updates remain subsequent Rust parity work.",
+          "tests": [
+            "packages/core-wasm/tests/render.integration.ts",
+            "crates/core/src/render_tests.rs"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/program-cores-wasm.log",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
         }
       }
     },
@@ -1073,11 +1119,19 @@
           ]
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "implemented-unverified",
+          "coverage": "Microtask submission after draw/clear and explicit flush. Actual-Wasm CPU checks passed. Three-path presentation scenes are pending final acceptance.",
+          "tests": [
+            "packages/core-wasm/tests/render.integration.ts",
+            "crates/core/src/render_tests.rs"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/program-cores-wasm.log",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
         }
       }
     },
@@ -1161,11 +1215,19 @@
           ]
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "implemented-unverified",
+          "coverage": "Common BrowserHost asynchronous default-framebuffer capture. Chrome explicit-core selection/capture regression passed.",
+          "tests": [
+            "packages/core-wasm/tests/render.integration.ts",
+            "crates/core/src/render_tests.rs"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/program-cores-wasm.log",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
         }
       }
     },
@@ -1465,33 +1527,33 @@
       "scope": "Current WebGL1 rendering profile plus the common Buffer contract."
     },
     "rust": {
-      "profile": "webgl1-buffer",
+      "profile": "webgl1-default-drawing",
       "implementation": "crates/core",
       "binding": "crates/wasm + packages/core-wasm",
       "contract": "packages/core-api",
       "facade": "packages/webgl",
-      "scope": "Buffer lifecycle/data/query/errors in Rust/Wasm. Shader, texture, vertex-input, and draw parity are pending."
+      "scope": "Buffer, ESSL100 shader/program lifecycle/reflection, FLOAT vertex/constant attributes, float scalar/vector uniforms, default-target TRIANGLES and clear/viewport in one Rust/Wasm context. Texture/FBO and broader raster parity follow."
     }
   },
   "coreVerification": {
     "report": "docs/validation/2026-11-13-dual-core-buffers.md",
     "environment": "chrome-macos-arm64",
     "allChromeTests": {
-      "passed": 34,
+      "passed": 45,
       "failed": 0,
       "skipped": 0,
-      "evidence": "artifacts/chrome-results.json"
+      "evidence": "artifacts/program-cores-full-chrome.log"
     },
     "deterministicChecks": {
       "typescript": "passed",
-      "jsUnitTests": 25,
-      "rustNativeTests": 15,
+      "jsUnitTests": 62,
+      "rustNativeTests": 27,
       "rustFmt": "passed",
       "rustClippy": "passed",
-      "actualWasmAdapterTests": 4,
+      "actualWasmAdapterTests": 9,
       "evidence": [
-        "artifacts/dual-core-check.log",
-        "artifacts/dual-core-wasm-tests.log"
+        "artifacts/program-cores-check.log",
+        "artifacts/program-cores-wasm.log"
       ]
     },
     "js": {
@@ -1503,23 +1565,23 @@
       "remainingParity": "Expand original CTS coverage and define further shared contracts."
     },
     "rust": {
-      "profile": "webgl1-buffer",
+      "profile": "webgl1-default-drawing",
       "bufferSuite": "passed",
       "renderingDifferentialFixtures": 0,
-      "ctsFiles": 0,
-      "remainingParity": "Shader/program, vertex input, uniforms, textures, framebuffer state, and draw planning."
+      "ctsFiles": 7,
+      "remainingParity": "Final default-target drawing acceptance in task 013 PR4, followed by matrix/integer updates, other vertex formats, textures, framebuffer and broader raster state.",
+      "ctsAssertions": 100
     },
     "sharedCompiler": {
       "corpusCases": 23,
       "realPipelines": 3,
       "evidence": "artifacts/compiler/chrome-corpus.json",
-      "scope": "Standalone compiler/pipeline verification; Rust public shader/program semantics remain pending."
+      "scope": "Shared compiler exercised through both public semantic cores and the standalone corpus."
     },
-    "explicitSelectionTest": "tests/chrome/core-profile.spec.ts::explicit Rust selection reports its Buffer profile and JS remains the rendering default",
+    "explicitSelectionTest": "tests/chrome/core-profile.spec.ts::explicit Rust selection runs its drawing core and JS remains the default",
     "deployment": {
-      "status": "passed",
-      "evidence": "artifacts/deployment/result.json",
-      "scope": "Built JS rendering demo and packaged Rust Buffer ABI smoke."
+      "status": "pending",
+      "scope": "ABI v2 and native/JS/Rust triangle deployment acceptance in task 013 PR4."
     }
   },
   "specifications": {
@@ -1538,6 +1600,7 @@
     "ctsEvidence": "artifacts/cts/results.json",
     "programEvidence": "artifacts/program-spec/",
     "bufferSourceEvidence": "artifacts/buffers/sources.json",
-    "scope": "Native and JS pass seven original CTS files and five derived program scenes. Buffer input conversion is also verified with Rust. Rust shader/program acceptance follows the shared-contract stage."
+    "scope": "Native and JS pass seven original CTS files and five derived program scenes. Buffer input conversion is also verified with Rust. Rust shader/program acceptance follows the shared-contract stage.",
+    "rust": "Seven unchanged CTS files passed 100 assertions. Shader/program, UTF16, float and owned-draw transport also pass native/actual-Wasm CPU checks. Final three-path drawing scenes are in task 013 PR4."
   }
 }

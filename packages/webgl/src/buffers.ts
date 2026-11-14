@@ -105,7 +105,7 @@ export function createBufferFacade(core: BufferCore) {
         // Public WebGL objects created during loss exist in an invalidated state.
         // No logical resource is allocated; zero is never a live core handle.
         const wrapper = new RefralBuffer() as WebGLBuffer;
-        handles.set(wrapper, Object.freeze({ contextId: core.contextId, slot: 0, generation: 0 }));
+        handles.set(wrapper, Object.freeze({ kind: 'buffer', contextId: core.contextId, slot: 0, generation: 0 }));
         return wrapper;
       }
       return wrap(core.createBuffer());

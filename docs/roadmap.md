@@ -6,6 +6,8 @@ Build a WebGL1-over-WebGPU library with an explicit asynchronous context factory
 
 ## Current foundation work
 
+Task 013 advances the shared profile through spec-driven minimal drawing. Its first two PRs establish pinned specification mappings, lifecycle/conversion corrections and host-neutral execution contracts. Shader/program handles, shared compiler artifact ownership and ABI v2 follow, then three-path draw/Buffer/uniform regressions and a native/JS/Rust triangle example. The seven selected original CTS files execute against all three paths. `program-handling.html` retains its synchronous readPixels prerequisite, with source-marked asynchronous project regressions covering the supported semantics.
+
 ADR 003 defines the accepted parallel-core direction. The root pnpm/Cargo workspaces contain the shared API, migrated JS core, formal Rust core, Wasm exports, and JS adapter. The first shared feature is Buffer lifecycle/data/query/error behavior with native/JS/Rust fixtures. Task 006 records integration acceptance. Track implementation and verification per core.
 
 The existing Chrome prototype and recorded P0–P2 results describe the JS rendering implementation. The Rust trace experiment supplies its documented small-core measurements. Following Buffer acceptance, define shared vertex-input and draw snapshot contracts and implement the first Rust triangle using the common compiler and executor. Follow with uniforms, textures, and framebuffer passes, reusing the same fixtures for both cores.

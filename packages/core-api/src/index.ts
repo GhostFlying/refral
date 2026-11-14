@@ -1,14 +1,21 @@
 export { GL } from './gl.js';
 export type * from './compiler.js';
 export * from './execution.js';
+export type * from './drawing.js';
 
 export type CoreKind = 'js' | 'rust';
 
-export interface BufferHandle {
+export interface LogicalHandle {
+  readonly kind: 'buffer' | 'shader' | 'program' | 'uniform-location';
   readonly contextId: number;
   readonly slot: number;
   readonly generation: number;
 }
+
+export interface BufferHandle extends LogicalHandle { readonly kind: 'buffer' }
+export interface ShaderHandle extends LogicalHandle { readonly kind: 'shader' }
+export interface ProgramHandle extends LogicalHandle { readonly kind: 'program' }
+export interface UniformLocationHandle extends LogicalHandle { readonly kind: 'uniform-location' }
 
 export interface BufferCoreOptions {
   readonly contextId: number;

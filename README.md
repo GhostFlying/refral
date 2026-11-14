@@ -6,7 +6,7 @@ WebGL1 over public browser WebGPU, with an ANGLE shader compiler delivered as Wa
 
 Use Node 24.14.0, pnpm 10.12.3, and the Rust toolchain pinned in `rust-toolchain.toml` (1.94.1, rustfmt, clippy, and `wasm32-unknown-unknown`). Install it with `rustup toolchain install 1.94.1 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown`. CMake, Ninja, Python, Git, curl, and tar are required for the pinned compiler build. Compiler dependencies are acquired under ignored `artifacts/compiler`.
 
-The repository uses the public npm registry and commits pnpm/Cargo lockfiles. Rust's formal Buffer crates currently require no third-party crates.
+The repository uses the public npm registry and commits pnpm/Cargo lockfiles. The Rust semantic crate has no third-party dependencies. Its Wasm binding pins serde and serde_json for cold compiler/reflection metadata.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -40,7 +40,7 @@ The build produces a standalone `dist` tree containing the browser bundles, comp
 | `pnpm rust:check` | Pinned Rust formatting and clippy checks |
 | `pnpm rust:test` | Native Rust core and ABI tests |
 | `pnpm rust:test:wasm` | Actual compiled Wasm adapter, memory growth, and shared contract tests |
-| `pnpm rust:build` | Formal Rust Buffer core Wasm module |
+| `pnpm rust:build` | Formal Rust semantic core Wasm module |
 | `pnpm check` | Strict TypeScript, deterministic unit/native Rust checks, and support validation |
 | `pnpm ci:check` | Lightweight CI selection, commit policy, documentation, and support checks |
 | `pnpm test:probe` | Actual Chrome WebGPU/native WebGL environment probe |
@@ -62,11 +62,11 @@ GitHub Actions uses affected-module checks in `ci/required`. Actual Wasm and com
 import { createWebGLOnWebGPU } from '@refral/webgl';
 
 const gl = await createWebGLOnWebGPU(canvas, { version: 1 });
-// Select the current Rust Buffer profile explicitly:
+// Select the Rust drawing profile explicitly:
 const rustGl = await createWebGLOnWebGPU(otherCanvas, { version: 1, core: 'rust' });
 ```
 
-The asynchronous factory prepares GPU and compiler dependencies and the selected core. JS is the default and implements the current rendering profile. Rust implements Buffer semantics in its Wasm instance; remaining shader, texture, and rendering operations report `NotSupportedError`. Supported calls are synchronous. See `docs/core-api.md` for the shared contract and `docs/support.json` for per-core scope and evidence. The test adapter exposes asynchronous pixel capture separately from the public GL interface.
+The asynchronous factory prepares GPU and compiler dependencies and the selected core. JS is the default and implements the current rendering profile. Rust implements Buffer, shader/program, float uniform/vertex and default-framebuffer triangle drawing semantics in one Wasm instance. Its remaining texture/FBO and broader raster operations report `NotSupportedError`. Supported calls are synchronous. See `docs/core-api.md` for the shared contract and `docs/support.json` for per-core scope and evidence. The test adapter exposes asynchronous pixel capture separately from the public GL interface.
 
 ## Development and evidence
 

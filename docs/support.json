@@ -713,48 +713,90 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "RGBA8 level-zero textures render and preserve caller bytes after the source array is modified. The zero-initialized RGB fixture verifies implicit opaque alpha and zero-initialized color storage.",
+          "coverage": "Level-zero UNSIGNED_BYTE RGBA, RGB, ALPHA, LUMINANCE and LUMINANCE_ALPHA from typed views or null, with normalized channels, alpha and zero initialization.",
           "tests": [
-            "tests/chrome/differential.spec.ts::WebGL1 differential texture-orientation",
-            "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture",
-            "tests/chrome/differential.spec.ts::WebGL1 differential zero-initialized-rgb"
+            "tests/chrome/rtt.spec.ts::RTT texture-format-rgba",
+            "tests/chrome/rtt.spec.ts::RTT texture-format-rgb",
+            "tests/chrome/rtt.spec.ts::RTT texture-format-alpha",
+            "tests/chrome/rtt.spec.ts::RTT texture-format-luminance",
+            "tests/chrome/rtt.spec.ts::RTT texture-format-luminance-alpha",
+            "tests/chrome/rtt.spec.ts::RTT texture-invalid-state"
           ],
           "evidence": [
             {
-              "path": "artifacts/differential/texture-orientation/result.json",
-              "passed": true,
-              "maxDifference": 0,
-              "mismatchedChannels": 0
+              "path": "artifacts/rtt/texture-format-rgba/result.json",
+              "passed": true
             },
             {
-              "path": "artifacts/differential/render-to-texture/result.json",
-              "passed": true,
-              "maxDifference": 0,
-              "mismatchedChannels": 0
+              "path": "artifacts/rtt/texture-format-rgb/result.json",
+              "passed": true
             },
             {
-              "path": "artifacts/differential/zero-initialized-rgb/result.json",
-              "passed": true,
-              "maxDifference": 0,
-              "mismatchedChannels": 0
+              "path": "artifacts/rtt/texture-format-alpha/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-format-luminance/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-format-luminance-alpha/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-invalid-state/result.json",
+              "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
-          "formats": [
-            "RGBA/UNSIGNED_BYTE",
-            "RGB/UNSIGNED_BYTE null storage"
-          ],
           "limits": [
-            "Image dimensions are bounded by device maxTextureDimension2D",
-            "RGB, ALPHA, LUMINANCE and LUMINANCE_ALPHA conversion paths are implemented with pending format-specific pixel cases"
-          ]
+            "TypedArray/null, level zero and UNSIGNED_BYTE are the verified upload profile. DOM sources, mipmaps, CubeMap, packed types and additional formats require subsequent acceptance."
+          ],
+          "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the declared Rust profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Level-zero UNSIGNED_BYTE RGBA, RGB, ALPHA, LUMINANCE and LUMINANCE_ALPHA from typed views or null, with normalized channels, alpha and zero initialization.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT texture-format-rgba",
+            "tests/chrome/rtt.spec.ts::RTT texture-format-rgb",
+            "tests/chrome/rtt.spec.ts::RTT texture-format-alpha",
+            "tests/chrome/rtt.spec.ts::RTT texture-format-luminance",
+            "tests/chrome/rtt.spec.ts::RTT texture-format-luminance-alpha",
+            "tests/chrome/rtt.spec.ts::RTT texture-invalid-state"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/rtt/texture-format-rgba/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-format-rgb/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-format-alpha/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-format-luminance/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-format-luminance-alpha/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-invalid-state/result.json",
+              "passed": true
+            }
+          ],
+          "limits": [
+            "TypedArray/null, level zero and UNSIGNED_BYTE are the verified upload profile. DOM sources, mipmaps, CubeMap, packed types and additional formats require subsequent acceptance."
+          ],
+          "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
       }
     },
@@ -794,43 +836,60 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Texture redefinition, filtering changes, and draw-separated full-level RGBA8 subimage uploads pass native pixel differentials. Modifying the subimage source array after upload preserves the queued upload contents.",
+          "coverage": "Synchronous input snapshots, subimage updates and reallocations preserve prior draws and invalidate replaced execution storage. Invalid and empty updates preserve the required state and versions.",
           "tests": [
-            "tests/chrome/differential.spec.ts::WebGL1 differential texture-reallocation",
-            "tests/chrome/differential.spec.ts::WebGL1 differential texture-subimage-snapshot"
+            "tests/chrome/rtt.spec.ts::RTT texture-unpack-snapshot",
+            "tests/chrome/rtt.spec.ts::RTT texture-updates-reallocation",
+            "tests/chrome/rtt.spec.ts::RTT texture-invalid-state"
           ],
           "evidence": [
             {
-              "path": "artifacts/differential/texture-reallocation/result.json",
-              "passed": true,
-              "maxDifference": 0,
-              "mismatchedChannels": 0
+              "path": "artifacts/rtt/texture-unpack-snapshot/result.json",
+              "passed": true
             },
             {
-              "path": "artifacts/differential/texture-subimage-snapshot/result.json",
-              "passed": true,
-              "maxDifference": 0,
-              "mismatchedChannels": 0
+              "path": "artifacts/rtt/texture-updates-reallocation/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-invalid-state/result.json",
+              "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "limits": [
-            "Subimage updates use versioned GPU image copies",
-            "Only level0 is implemented",
-            "Subregion and non-RGBA subimage combinations have narrower direct verification coverage"
+            "TypedArray/null, level zero and UNSIGNED_BYTE are the verified upload profile. DOM sources, mipmaps, CubeMap, packed types and additional formats require subsequent acceptance."
           ],
-          "overloadStates": {
-            "texImage2D_RGBA8_redefinition": "differential-verified",
-            "texSubImage2D_RGBA8_fullLevel": "differential-verified",
-            "texSubImage2D_partialRegion": "implemented-unverified"
-          }
+          "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the declared Rust profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Synchronous input snapshots, subimage updates and reallocations preserve prior draws and invalidate replaced execution storage. Invalid and empty updates preserve the required state and versions.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT texture-unpack-snapshot",
+            "tests/chrome/rtt.spec.ts::RTT texture-updates-reallocation",
+            "tests/chrome/rtt.spec.ts::RTT texture-invalid-state"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/rtt/texture-unpack-snapshot/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-updates-reallocation/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-invalid-state/result.json",
+              "passed": true
+            }
+          ],
+          "limits": [
+            "TypedArray/null, level zero and UNSIGNED_BYTE are the verified upload profile. DOM sources, mipmaps, CubeMap, packed types and additional formats require subsequent acceptance."
+          ],
+          "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
       }
     },
@@ -843,39 +902,50 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Nearest filtered sampling, Texture2D unit0 and clamp addressing are pixel-verified by the texture and framebuffer fixtures.",
+          "coverage": "Scalar sampler2D selects multiple units with query/type/range validation. NPOT filter/wrap restrictions and incomplete black sampling follow the shared profile. A 1x1 level-zero image satisfies its full mip chain.",
           "tests": [
-            "tests/chrome/differential.spec.ts::WebGL1 differential texture-orientation",
-            "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture"
+            "tests/chrome/rtt.spec.ts::RTT texture-npot-completeness",
+            "tests/chrome/rtt.spec.ts::RTT texture-sampler-units"
           ],
           "evidence": [
             {
-              "path": "artifacts/differential/texture-orientation/result.json",
-              "passed": true,
-              "maxDifference": 0,
-              "mismatchedChannels": 0
+              "path": "artifacts/rtt/texture-npot-completeness/result.json",
+              "passed": true
             },
             {
-              "path": "artifacts/differential/render-to-texture/result.json",
-              "passed": true,
-              "maxDifference": 0,
-              "mismatchedChannels": 0
+              "path": "artifacts/rtt/texture-sampler-units/result.json",
+              "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "limits": [
-            "NEAREST and LINEAR min/mag are implemented",
-            "REPEAT and MIRRORED_REPEAT are available for POT textures with pending wrap-specific differential tests",
-            "Incomplete textures sample opaque black",
-            "Mipmap min filters make the current level-zero profile incomplete"
-          ]
+            "TypedArray/null, level zero and UNSIGNED_BYTE are the verified upload profile. DOM sources, mipmaps, CubeMap, packed types and additional formats require subsequent acceptance."
+          ],
+          "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the declared Rust profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Scalar sampler2D selects multiple units with query/type/range validation. NPOT filter/wrap restrictions and incomplete black sampling follow the shared profile. A 1x1 level-zero image satisfies its full mip chain.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT texture-npot-completeness",
+            "tests/chrome/rtt.spec.ts::RTT texture-sampler-units"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/rtt/texture-npot-completeness/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-sampler-units/result.json",
+              "passed": true
+            }
+          ],
+          "limits": [
+            "TypedArray/null, level zero and UNSIGNED_BYTE are the verified upload profile. DOM sources, mipmaps, CubeMap, packed types and additional formats require subsequent acceptance."
+          ],
+          "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
       }
     },
@@ -884,39 +954,54 @@
       "api": "pixelStorei UNPACK_ALIGNMENT, UNPACK_FLIP_Y_WEBGL, UNPACK_PREMULTIPLY_ALPHA_WEBGL",
       "cores": {
         "js": {
-          "status": "implemented-unverified",
+          "status": "differential-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Alignment, Y flip and alpha premultiplication are implemented. The current orientation fixture validates the default alignment and unflipped RGBA8 path.",
+          "coverage": "Selected view offsets, row alignment including omitted last-row padding, flip and premultiply state are applied before returning. Queries and input error atomicity are covered.",
           "tests": [
-            "tests/chrome/differential.spec.ts::WebGL1 differential texture-orientation"
+            "tests/chrome/rtt.spec.ts::RTT texture-unpack-snapshot",
+            "tests/chrome/rtt.spec.ts::RTT texture-invalid-state"
           ],
           "evidence": [
             {
-              "path": "artifacts/differential/texture-orientation/result.json",
-              "passed": true,
-              "maxDifference": 0,
-              "mismatchedChannels": 0
+              "path": "artifacts/rtt/texture-unpack-snapshot/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-invalid-state/result.json",
+              "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "limits": [
-            "Dedicated nondefault alignment, flipY, premultiplication and color-space tests remain pending"
+            "TypedArray/null, level zero and UNSIGNED_BYTE are the verified upload profile. DOM sources, mipmaps, CubeMap, packed types and additional formats require subsequent acceptance."
           ],
-          "overloadStates": {
-            "defaultRGBAAlignment": "differential-verified",
-            "pixelStorei_nondefaultAlignment": "implemented-unverified",
-            "pixelStorei_flipY": "implemented-unverified",
-            "pixelStorei_premultiplyAlpha": "implemented-unverified"
-          }
+          "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the declared Rust profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Selected view offsets, row alignment including omitted last-row padding, flip and premultiply state are applied before returning. Queries and input error atomicity are covered.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT texture-unpack-snapshot",
+            "tests/chrome/rtt.spec.ts::RTT texture-invalid-state"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/rtt/texture-unpack-snapshot/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-invalid-state/result.json",
+              "passed": true
+            }
+          ],
+          "limits": [
+            "TypedArray/null, level zero and UNSIGNED_BYTE are the verified upload profile. DOM sources, mipmaps, CubeMap, packed types and additional formats require subsequent acceptance."
+          ],
+          "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
       }
     },
@@ -1785,15 +1870,17 @@
   },
   "rttStage": {
     "status": "running",
-    "acceptedSlice": "uniform-raster-abi-v3",
+    "acceptedSlice": "textures-unpack-sampling",
     "abi": 3,
-    "unitTests": 86,
-    "nativeRustTests": 30,
-    "actualWasmTests": 12,
+    "unitTests": 99,
+    "nativeRustTests": 33,
+    "actualWasmTests": 16,
     "originalCtsFiles": 11,
     "assertionsPerBackend": 243,
     "compilerCorpus": 24,
     "realPipelines": 4,
-    "task": "docs/tasks/020-render-to-texture.md"
+    "task": "docs/tasks/020-render-to-texture.md",
+    "sharedScenes": 14,
+    "resourceProtocol": 1
   }
 }

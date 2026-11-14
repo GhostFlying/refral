@@ -672,6 +672,7 @@ export class SemanticContext {
   bindTexture(target: number, texture: TextureObject | null): void {
     if (target !== GL.TEXTURE_2D) return this.error(GL.INVALID_ENUM);
     if (texture !== null && !this.valid(texture, TextureObject)) return;
+    if (texture) texture.initialized = true;
     this.textureUnits[this.activeUnit] = texture;
   }
   texParameteri(target: number, parameter: number, value: number): void {
@@ -694,6 +695,10 @@ export class SemanticContext {
       [GL.TEXTURE_WRAP_T]: texture.parameters.wrapT };
     if (parameter in values) return values[parameter]; this.error(GL.INVALID_ENUM); return null;
   }
+  private allocatePixels(width: number, height: number): Uint8Array | null {
+    try { return new Uint8Array(width * height * 4); }
+    catch { this.error(GL.OUT_OF_MEMORY); return null; }
+  }
   private pixelData(width: number, height: number, format: number, source: unknown): Uint8Array | null {
     const components = format === GL.RGBA ? 4 : format === GL.RGB ? 3 : format === GL.LUMINANCE_ALPHA ? 2 : 1;
     let bytes: Uint8Array;
@@ -702,7 +707,7 @@ export class SemanticContext {
       ? source as PixelUpload : null;
     const typedSource = ArrayBuffer.isView(source) || upload !== null;
     if (source === null) {
-      const pixels = new Uint8Array(width * height * 4);
+      const pixels = this.allocatePixels(width, height); if (!pixels) return null;
       if (format === GL.RGB || format === GL.LUMINANCE) {
         for (let pixel = 0; pixel < width * height; pixel++) pixels[pixel * 4 + 3] = 255;
       }
@@ -721,7 +726,7 @@ export class SemanticContext {
     } else {
       this.error(GL.INVALID_VALUE); return null;
     }
-    const pixels = new Uint8Array(width * height * 4);
+    const pixels = this.allocatePixels(width, height); if (!pixels) return null;
     const sourceComponents = typedSource ? components : 4;
     for (let y = 0; y < height; y++) {
       const sourceY = this.unpackFlipY ? height - 1 - y : y;
@@ -781,16 +786,21 @@ export class SemanticContext {
     if (!texture?.storage) return this.error(GL.INVALID_OPERATION);
     const dimensions = arguments_.length === 9;
     const source = arguments_[dimensions ? 8 : 6];
-    const image = source as { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number };
-    const width = Number(dimensions ? arguments_[4] : image.naturalWidth ?? image.width);
-    const height = Number(dimensions ? arguments_[5] : image.naturalHeight ?? image.height);
+    const image = source as { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number } | null;
+    const width = Number(dimensions ? arguments_[4] : image?.naturalWidth ?? image?.width);
+    const height = Number(dimensions ? arguments_[5] : image?.naturalHeight ?? image?.height);
     const format = Number(arguments_[dimensions ? 6 : 4]);
     const type = Number(arguments_[dimensions ? 7 : 5]);
+    if (level! < 0) return this.error(GL.INVALID_VALUE);
     if (level !== 0) return unsupported("texture mip levels");
-    if (x! < 0 || y! < 0 || width < 0 || height < 0 || x! + width > texture.storage.width ||
+    if (x! < 0 || y! < 0 || width < 0 || height < 0 || !Number.isInteger(width) || !Number.isInteger(height) || x! + width > texture.storage.width ||
         y! + height > texture.storage.height) return this.error(GL.INVALID_VALUE);
+    if (![GL.RGBA, GL.RGB, GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA].includes(format as 0x1908) ||
+        type !== GL.UNSIGNED_BYTE) return this.error(GL.INVALID_ENUM);
     if (format !== texture.format || type !== GL.UNSIGNED_BYTE) return this.error(GL.INVALID_OPERATION);
+    if (source === null) return this.error(GL.INVALID_VALUE);
     const data = this.pixelData(width, height, format, source); if (!data) return;
+    if (width === 0 || height === 0) return;
     const previous = texture.storage;
     const previousVersion = this.resources ? this.textureVersion(texture) : null;
     texture.version++;
@@ -829,7 +839,7 @@ export class SemanticContext {
     }
   }
   isTexture(texture: unknown): boolean {
-    return !this.lost && texture instanceof TextureObject && texture.owner === this.owner && !texture.deleted;
+    return !this.lost && texture instanceof TextureObject && texture.owner === this.owner && texture.initialized && !texture.deleted;
   }
   pixelStorei(parameter: number, value: number): void {
     if (parameter === GL.UNPACK_ALIGNMENT || parameter === GL.PACK_ALIGNMENT) {

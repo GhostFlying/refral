@@ -17,6 +17,8 @@ test('explicit Rust selection runs its drawing core and JS remains the default',
       rust.drawArrays(rust.TRIANGLES, 0, 3);
       const drawError = rust.getError();
       const captured = await getTestingHooks(rust).capture();
+      const texture = rust.createTexture();
+      rust.bindTexture(rust.TEXTURE_2D, texture);
       const result = {
         defaultCore: getTestingHooks(js).core,
         explicitCore: getTestingHooks(rust).core,
@@ -24,11 +26,13 @@ test('explicit Rust selection runs its drawing core and JS remains the default',
         rustShaderCreated: rustShader !== null,
         drawError,
         captureDimensions: [captured.width, captured.height],
-        textureGap: await failure(() => rust.createTexture()),
+        rustTextureCreated: rust.isTexture(texture),
+        mipmapGap: await failure(() => rust.generateMipmap(rust.TEXTURE_2D)),
         rustError: rust.getError(),
       };
       js.deleteShader(shader);
       rust.deleteShader(rustShader);
+      rust.deleteTexture(texture);
       return result;
     } finally {
       await getTestingHooks(js).dispose();
@@ -38,6 +42,6 @@ test('explicit Rust selection runs its drawing core and JS remains the default',
   expect(result).toEqual({
     defaultCore: 'js', explicitCore: 'rust', jsShaderCreated: true,
     rustShaderCreated: true, drawError: 0x0502, captureDimensions: [300, 150],
-    textureGap: 'NotSupportedError', rustError: 0,
+    rustTextureCreated: true, mipmapGap: 'NotSupportedError', rustError: 0,
   });
 });

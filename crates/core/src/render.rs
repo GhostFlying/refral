@@ -1,8 +1,12 @@
 use super::*;
 
 mod raster;
+#[cfg(test)]
+mod texture_tests;
+mod textures;
 mod uniforms;
 pub use raster::RasterState;
+pub use textures::{ResourceOperation, TextureBinding, TextureParameters, TextureVersion};
 
 pub const VERTEX_SHADER: u32 = 0x8b31;
 pub const FRAGMENT_SHADER: u32 = 0x8b30;
@@ -19,6 +23,9 @@ pub enum ObjectKind {
     Shader = 2,
     Program = 3,
     UniformLocation = 4,
+    Texture = 5,
+    Renderbuffer = 6,
+    Framebuffer = 7,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,6 +55,7 @@ pub enum Argument {
     Text(Vec<u16>),
     Floats(Vec<f32>),
     Ints(Vec<i32>),
+    Pixels { data: Vec<u8>, valid_u8: bool },
 }
 impl Argument {
     fn number(&self) -> f64 {
@@ -156,6 +164,7 @@ pub struct DrawSnapshot {
     pub indices: Option<(BufferSnapshot, u32, usize)>,
     pub vertex_uniforms: Vec<u8>,
     pub fragment_uniforms: Vec<u8>,
+    pub textures: Vec<TextureBinding>,
 }
 pub struct ClearSnapshot {
     pub state: RasterState,
@@ -254,6 +263,7 @@ pub(crate) struct RenderState {
     dither: bool,
     texture_unit_limit: usize,
     texture_dimension_limit: u32,
+    textures: textures::TextureState,
     clear_color: [f32; 4],
     clear_depth: f32,
     next_request: u32,
@@ -273,6 +283,7 @@ impl Default for RenderState {
             dither: true,
             texture_unit_limit: 8,
             texture_dimension_limit: 4096,
+            textures: textures::TextureState::default(),
             clear_color: [0.0; 4],
             clear_depth: 1.0,
             next_request: 0,
@@ -729,6 +740,9 @@ impl ContextCore {
         if let Some(reply) = self.raster_invoke(operation, args) {
             return reply;
         }
+        if let Some(reply) = self.texture_invoke(operation, args) {
+            return reply;
+        }
         match operation {
             "setSurfaceSize" => {
                 self.render.surface = [arg(0).number() as u32, arg(1).number() as u32];
@@ -1037,6 +1051,9 @@ impl ContextCore {
             }
             "getParameter" => {
                 if let Some(reply) = self.raster_query(arg(0).number() as u32) {
+                    return reply;
+                }
+                if let Some(reply) = self.texture_query(arg(0).number() as u32) {
                     return reply;
                 }
                 return match arg(0).number() as u32 {
@@ -1480,9 +1497,10 @@ impl ContextCore {
         }
         let program = self.render.programs[program_index].value.as_ref().unwrap();
         let executable = program.executable.as_ref().unwrap();
-        if !executable.layout.samplers.is_empty() {
-            return Reply::Unsupported("texture sampling");
-        }
+        let Some(textures) = self.sampled_textures(executable) else {
+            self.record_error(OUT_OF_MEMORY);
+            return Reply::Null;
+        };
         let mut attributes = Vec::new();
         if attributes
             .try_reserve_exact(executable.layout.attributes.len())
@@ -1572,6 +1590,7 @@ impl ContextCore {
             indices,
             vertex_uniforms,
             fragment_uniforms,
+            textures,
         })
     }
 }

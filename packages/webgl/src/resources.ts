@@ -23,8 +23,8 @@ function unwrap(value: unknown, kind: ResourceKind): ResourceHandle | null {
   return handle;
 }
 
-function pixels(value: unknown, nullable: boolean): PixelUpload | null {
-  if (nullable && (value === null || value === undefined)) return null;
+function pixels(value: unknown): PixelUpload | null {
+  if (value === null || value === undefined) return null;
   if (!ArrayBuffer.isView(value)) throw new TypeError('Texture pixels require an ArrayBufferView.');
   return { bytes: bufferSourceBytes(value), viewType: typedArrayTag.call(value) ?? 'DataView' };
 }
@@ -86,14 +86,14 @@ export function createResourceFacade(core: DrawingCore) {
       toEnum(args[3]), toEnum(args[4]), args[5]];
     requireArguments('texImage2D', args, 9);
     return [toEnum(args[0]), integer(args[1]), integer(args[2]), integer(args[3]), integer(args[4]),
-      integer(args[5]), toEnum(args[6]), toEnum(args[7]), pixels(args[8], true)];
+      integer(args[5]), toEnum(args[6]), toEnum(args[7]), pixels(args[8])];
   });
   method('texSubImage2D', 7, args => {
     if (args.length === 7) return [toEnum(args[0]), integer(args[1]), integer(args[2]), integer(args[3]),
       toEnum(args[4]), toEnum(args[5]), args[6]];
     requireArguments('texSubImage2D', args, 9);
     return [toEnum(args[0]), integer(args[1]), integer(args[2]), integer(args[3]), integer(args[4]),
-      integer(args[5]), toEnum(args[6]), toEnum(args[7]), pixels(args[8], false)];
+      integer(args[5]), toEnum(args[6]), toEnum(args[7]), pixels(args[8])];
   });
   method('framebufferTexture2D', 5, args => [toEnum(args[0]), toEnum(args[1]), toEnum(args[2]),
     unwrap(args[3], 'texture'), integer(args[4])]);

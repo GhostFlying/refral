@@ -53,3 +53,11 @@ The full i32 shared GPU fixture exposed ANGLE emitting `-2147483648i`, whose pos
 PR #7 rebase-merged the resource contract at 75872b1 after ci/required passed. ABI v3 and typed uniform/raster implementations pass 86 deterministic CPU tests, 30 native Rust tests, TypeScript, formatting/clippy and twelve actual-Wasm tests. Eleven unchanged original CTS files pass 243 assertions on each backend. The four shared uniform/raster scenes, original CTS and compiler GPU test pass six targeted Chrome tests after the INT_MIN source patch. Standalone corpus passes 24 cases and four real shader pairs create GPU pipelines. The patch's second build passes idempotence checking and Ninja reports no work.
 
 PR2 activates four RTT cases in the normal Chrome entry. Texture and framebuffer traces are prepared for activation in their implementation slices. Future draft CPU tests remain outside this PR's source and acceptance. Logs are under `artifacts/rtt-pr2-*`.
+
+### PR3 acceptance
+
+PR #8 rebase-merged the uniform/raster boundary at 60a1783. Texture implementations now pass 99 deterministic CPU tests, 33 native Rust tests and sixteen actual-Wasm tests. The public texture-unit regression exposed missing TEXTURE1 through TEXTURE31 facade constants. Adding the complete constant family preserved the multi-unit test and produced identical expected pixels across all three backends.
+
+The targeted original CTS, profile-selection and fourteen shared uniform/texture/raster scenes pass sixteen Chrome tests. All eleven original CTS files retain 243 assertions per backend. The complete in-scope functional browser regression passes 77 tests in 39.6 seconds, including the existing JS RTT demo. The independent benchmark replacement and Rust FBO/demo activation belong to the following boundaries. Logs are `artifacts/rtt-pr3-{unit,wasm,chrome,regression,type,ci}.log` and `artifacts/rtt/rust-pr3-native.log`.
+
+The accepted Wasm has ABI3/resource protocol1, 261,640 bytes and SHA-256 834c7ce70eb3a42f6475d38fc13fd7dc53e8df44d730bab5f57d1147382b6130. Resource operations carry bounded headers and Rust-owned output pixels copied before arena reuse. PR3 records the resource protocol marker so an older ABI3 build receives explicit rebuild guidance before initialization.

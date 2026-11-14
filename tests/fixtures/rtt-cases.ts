@@ -31,7 +31,7 @@ export async function prepareRttContext(backend: DrawingBackend, width = 64, hei
   canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
   document.body.append(canvas);
   const attributes: WebGLContextAttributes = { alpha, depth: true, stencil: false, antialias: false,
-    premultipliedAlpha: false, preserveDrawingBuffer: true };
+    premultipliedAlpha: true, preserveDrawingBuffer: true };
   let gl: WebGLRenderingContext | null;
   let hooks: TestingHooks | null = null;
   try {
@@ -49,7 +49,7 @@ export async function prepareRttContext(backend: DrawingBackend, width = 64, hei
       version: gl.getParameter(gl.VERSION), renderer: gl.getParameter(gl.RENDERER) }),
       attributes: gl.getContextAttributes(), devicePixelRatio: window.devicePixelRatio };
     return {
-      canvas, gl: context, hooks, selectedCore, environment,
+      canvas, gl: context, hooks, selectedCore, environment, requestedAttributes: attributes,
       async capture() {
         if (hooks) return hooks.capture();
         const data = new Uint8Array(canvas.width * canvas.height * 4);
@@ -446,6 +446,11 @@ export async function runRttCase(name: RttCaseName, backend: DrawingBackend): Pr
   try {
     context = await prepareRttContext(backend, width, 64, alpha);
     result.selectedCore = context.selectedCore; result.environment = context.environment;
+    const actualAttributes = context.gl.getContextAttributes();
+    for (const [attribute, expected] of Object.entries(context.requestedAttributes)) {
+      const actual = actualAttributes?.[attribute as keyof WebGLContextAttributes];
+      result.checks.push({ name: 'context attribute ' + attribute, actual, expected, passed: actual === expected });
+    }
     await executeRtt(result, context);
     const image = await context.capture();
     result.width = image.width; result.height = image.height; result.pixels = Array.from(image.data);

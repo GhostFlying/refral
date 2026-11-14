@@ -60,7 +60,8 @@ describe('resource facade conversion and identity', () => {
     expect(facade.invoke).not.toHaveBeenCalled();
     image(null);
     expect(facade.invoke.mock.calls.at(-1)![1][8]).toBeNull();
-    expect(() => facade.methods.texSubImage2D!(GL.TEXTURE_2D, 0, 0, 0, 1, 1,
-      GL.RGBA, GL.UNSIGNED_BYTE, null)).toThrow(TypeError);
+    facade.methods.texSubImage2D!(GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, null);
+    expect(facade.invoke).toHaveBeenLastCalledWith('texSubImage2D',
+      [GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, null]);
   });
 });

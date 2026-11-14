@@ -8,6 +8,11 @@ use serde_json::{json, Value};
 
 const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
 
+#[no_mangle]
+pub extern "C" fn rf_resource_protocol_version() -> u32 {
+    1
+}
+
 #[derive(Default)]
 pub(super) struct Transport {
     metadata: Vec<u8>,
@@ -15,6 +20,8 @@ pub(super) struct Transport {
     output: Vec<u8>,
     binary: Vec<u8>,
     prepared: bool,
+    resource_before: Vec<refral_core::ResourceOperation>,
+    resource_after: Vec<refral_core::ResourceOperation>,
 }
 
 fn reserve(bytes: &mut Vec<u8>, length: usize) -> bool {
@@ -31,6 +38,8 @@ pub extern "C" fn rf_command_prepare(metadata_length: f64, binary_length: f64) -
     with_state(0, |state| {
         let transport = &mut state.render_transport;
         transport.prepared = false;
+        transport.resource_before.clear();
+        transport.resource_after.clear();
         if !metadata_length.is_finite()
             || metadata_length < 0.0
             || metadata_length.fract() != 0.0
@@ -43,7 +52,10 @@ pub extern "C" fn rf_command_prepare(metadata_length: f64, binary_length: f64) -
             state.core.record_error(INVALID_OPERATION);
             return 0;
         }
-        if !reserve(&mut transport.metadata, metadata_length as usize)
+        // Reserve resource headers before any semantic state can change.
+        transport.binary.clear();
+        if transport.binary.try_reserve_exact(128).is_err()
+            || !reserve(&mut transport.metadata, metadata_length as usize)
             || !reserve(&mut transport.input, binary_length as usize)
         {
             state.core.record_error(OUT_OF_MEMORY);
@@ -95,6 +107,9 @@ fn parse_handle(value: &Value) -> Option<ObjectHandle> {
         "shader" => ObjectKind::Shader,
         "program" => ObjectKind::Program,
         "uniform-location" => ObjectKind::UniformLocation,
+        "texture" => ObjectKind::Texture,
+        "renderbuffer" => ObjectKind::Renderbuffer,
+        "framebuffer" => ObjectKind::Framebuffer,
         _ => return None,
     };
     Some(ObjectHandle {
@@ -105,7 +120,7 @@ fn parse_handle(value: &Value) -> Option<ObjectHandle> {
     })
 }
 fn handle_json(handle: ObjectHandle) -> Value {
-    json!({"kind":match handle.kind { ObjectKind::Buffer=>"buffer", ObjectKind::Shader=>"shader", ObjectKind::Program=>"program", ObjectKind::UniformLocation=>"uniform-location" },"contextId":handle.context_id,"slot":handle.slot,"generation":handle.generation})
+    json!({"kind":match handle.kind { ObjectKind::Buffer=>"buffer", ObjectKind::Shader=>"shader", ObjectKind::Program=>"program", ObjectKind::UniformLocation=>"uniform-location", ObjectKind::Texture=>"texture", ObjectKind::Renderbuffer=>"renderbuffer", ObjectKind::Framebuffer=>"framebuffer" },"contextId":handle.context_id,"slot":handle.slot,"generation":handle.generation})
 }
 fn range<'a>(value: &Value, tag: &str, bytes: &'a [u8], width: usize) -> Option<&'a [u8]> {
     let values = value.get(tag)?.as_array()?;
@@ -115,7 +130,7 @@ fn range<'a>(value: &Value, tag: &str, bytes: &'a [u8], width: usize) -> Option<
         .checked_mul(width)?;
     bytes.get(offset..offset.checked_add(length)?)
 }
-fn argument(value: &Value, bytes: &[u8]) -> Option<Argument> {
+fn argument(value: &Value, bytes: &[u8], allocation_failed: &mut bool) -> Option<Argument> {
     if value.is_null() {
         return Some(Argument::Null);
     }
@@ -151,6 +166,22 @@ fn argument(value: &Value, bytes: &[u8]) -> Option<Argument> {
                 .map(|bytes| i32::from_le_bytes(bytes.try_into().unwrap()))
                 .collect(),
         ));
+    }
+    if value.get("p").is_some() {
+        let input = range(value, "p", bytes, 1)?;
+        let mut data = Vec::new();
+        if data.try_reserve_exact(input.len()).is_err() {
+            *allocation_failed = true;
+            return None;
+        }
+        data.extend_from_slice(input);
+        return Some(Argument::Pixels {
+            data,
+            valid_u8: matches!(
+                value.get("viewType")?.as_str()?,
+                "Uint8Array" | "Uint8ClampedArray"
+            ),
+        });
     }
     parse_handle(value).map(Argument::Handle)
 }
@@ -233,11 +264,9 @@ pub extern "C" fn rf_command_commit() -> u32 {
         transport.prepared = false;
         let response = (|| {
             let command: Command = serde_json::from_slice(&transport.metadata).ok()?;
-            let args = command
-                .args
-                .iter()
-                .map(|value| argument(value, &transport.input))
-                .collect::<Option<Vec<_>>>()?;
+            let mut allocation_failed=false;
+            let args = command.args.iter().map(|value|argument(value,&transport.input,&mut allocation_failed)).collect::<Option<Vec<_>>>();
+            let Some(args)=args else {if allocation_failed {state.core.record_error(OUT_OF_MEMORY);return Some(json!({"type":"null"}));}return None;};
             let value = match command.op.as_str() {
                 "initializeDrawing" => {
                     initialize_drawing(&mut state.core, &args);
@@ -293,16 +322,30 @@ pub extern "C" fn rf_command_commit() -> u32 {
                 }
                 _ => state.core.render_invoke(&command.op, &args),
             };
-            let capacity = reply_capacity(&value)?;
-            if transport.binary.try_reserve_exact(capacity).is_err() {
+            let (before,after) = state.core.take_resource_operations();
+            transport.resource_before=before;transport.resource_after=after;
+            let before_length=crate::resources::capacity(&transport.resource_before)?;
+            let after_length=crate::resources::capacity(&transport.resource_after)?;
+            let main_length=reply_capacity(&value)?;
+            let capacity=before_length.checked_add(main_length)?.checked_add(after_length)?;
+            if capacity>u32::MAX as usize || transport.binary.try_reserve_exact(capacity).is_err() {
                 state.core.record_error(OUT_OF_MEMORY);
                 return Some(json!({"type":"null"}));
             }
-            Some(reply(value, &mut transport.binary))
+            crate::resources::encode(&mut transport.binary,&transport.resource_before);
+            let main_start=transport.binary.len();
+            let descriptor=reply(value,&mut transport.binary);
+            let main_length=transport.binary.len()-main_start;
+            crate::resources::encode(&mut transport.binary,&transport.resource_after);
+            Some(json!({"value":descriptor,"beforeBytes":before_length,"mainBytes":main_length,"afterBytes":after_length}))
         })()
         .unwrap_or_else(|| json!({"type":"protocol-error"}));
         let releases = state.core.take_artifact_releases();
-        let response = json!({"value":response,"releases":releases});
+        let response = if response.get("value").is_some() {
+            json!({"value":response["value"],"beforeBytes":response["beforeBytes"],"mainBytes":response["mainBytes"],"afterBytes":response["afterBytes"],"releases":releases})
+        } else {
+            json!({"value":response,"beforeBytes":0,"mainBytes":0,"afterBytes":0,"releases":releases})
+        };
         match serde_json::to_vec(&response) {
             Ok(bytes) if bytes.len() <= MAX_METADATA_BYTES => {
                 transport.output = bytes;
@@ -316,11 +359,11 @@ pub extern "C" fn rf_command_commit() -> u32 {
     })
 }
 
-fn bytes(output: &mut Vec<u8>, data: &[u8]) {
+pub(super) fn bytes(output: &mut Vec<u8>, data: &[u8]) {
     output.extend_from_slice(&(data.len() as u32).to_le_bytes());
     output.extend_from_slice(data);
 }
-fn u32_value(output: &mut Vec<u8>, value: u32) {
+pub(super) fn u32_value(output: &mut Vec<u8>, value: u32) {
     output.extend_from_slice(&value.to_le_bytes());
 }
 fn f32_value(output: &mut Vec<u8>, value: f32) {
@@ -387,7 +430,7 @@ fn reply_capacity(value: &Reply) -> Option<usize> {
         Reply::Compile(request) => request.source.len().checked_mul(2),
         Reply::Clear(_) => Some(148),
         Reply::Draw(snapshot) => {
-            let mut total = 184_usize
+            let mut total = 188_usize
                 .checked_add(snapshot.vertex_uniforms.len())?
                 .checked_add(snapshot.fragment_uniforms.len())?;
             for attribute in &snapshot.attributes {
@@ -398,6 +441,12 @@ fn reply_capacity(value: &Reply) -> Option<usize> {
             }
             if let Some((buffer, _, _)) = &snapshot.indices {
                 total = total.checked_add(40)?.checked_add(buffer.data.len())?;
+            }
+            for binding in &snapshot.textures {
+                total = total.checked_add(20)?;
+                if binding.version.is_some() {
+                    total = total.checked_add(28)?;
+                }
             }
             Some(total)
         }
@@ -513,6 +562,14 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             }
             bytes(output, &snapshot.vertex_uniforms);
             bytes(output, &snapshot.fragment_uniforms);
+            u32_value(output, snapshot.textures.len() as u32);
+            for binding in snapshot.textures {
+                u32_value(output, u32::from(binding.version.is_some()));
+                if let Some(version) = binding.version {
+                    crate::resources::version(output, version);
+                }
+                crate::resources::parameters(output, binding.parameters);
+            }
             json!({"type":"draw"})
         }
     }
@@ -543,6 +600,7 @@ mod tests {
 
     #[test]
     fn command_transport_preserves_utf16_and_owns_output() {
+        assert_eq!(rf_resource_protocol_version(), 1);
         assert_eq!(rf_init(7, 4096.0), 1);
         let stage = (refral_core::VERTEX_SHADER as f64).to_le_bytes();
         let created = command("createShader", json!([{"n":0}]), &stage);
@@ -561,16 +619,24 @@ mod tests {
         assert_eq!(queried["value"]["type"], "text");
         STATE.with(|state| {
             assert_eq!(
-                state.borrow().as_ref().unwrap().render_transport.binary,
-                bytes
+                &state.borrow().as_ref().unwrap().render_transport.binary[queried["beforeBytes"]
+                    .as_u64()
+                    .unwrap()
+                    as usize
+                    ..queried["beforeBytes"].as_u64().unwrap() as usize + bytes.len()],
+                bytes.as_slice()
             )
         });
         let request = command("prepareCompileShader", json!([handle]), &[]);
         assert_eq!(request["value"]["type"], "compile");
         STATE.with(|state| {
             assert_eq!(
-                state.borrow().as_ref().unwrap().render_transport.binary,
-                bytes
+                &state.borrow().as_ref().unwrap().render_transport.binary[request["beforeBytes"]
+                    .as_u64()
+                    .unwrap()
+                    as usize
+                    ..request["beforeBytes"].as_u64().unwrap() as usize + bytes.len()],
+                bytes.as_slice()
             )
         });
     }
@@ -582,6 +648,7 @@ mod tests {
             json!({"n":u64::MAX}),
             json!({"s":[4,1]}),
             json!({"f":[0,u64::MAX]}),
+            json!({"p":[0,u64::MAX],"viewType":"Uint8Array"}),
         ] {
             let result = command("getParameter", json!([argument]), &[0; 4]);
             assert_eq!(result["value"]["type"], "protocol-error");

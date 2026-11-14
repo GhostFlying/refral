@@ -47,3 +47,15 @@ Uniform updates now consume only the remaining active array elements while accep
 Viewport dimensions clamp to the advertised limit. Destination RGB/alpha saturation factors report INVALID_ENUM before changing blend state. Source saturation and the RGB-only constant-color conflict rule retain their specified behavior. Clear snapshots preserve the raster values observed at the call.
 
 Seven uniform and four raster tests were added. `pnpm test:unit` passed 14 files and 86 tests. The latest TypeScript invocation reported only the integrating agent's in-progress Rust example backend union in `examples/main.ts`. This task's files had no type errors. Texture/FBO semantic changes remain for the following boundary.
+
+## PR3 texture plan
+
+The pinned WebGL TEXIMAGE2D/TEXSUBIMAGE2D and pixel-storage sections require five-format UNSIGNED_BYTE source validation, row alignment, synchronous source consumption, flip/premultiply handling, zero initialization, and INVALID_VALUE for null subimages. Preserve data and versions after rejected calls and valid empty subimage updates. Track first successful texture binding for object checks. GLES texture completeness requires only level zero for a 1x1 mip chain. Add focused CPU coverage before handing this boundary to integration. [Pinned WebGL texture specification](https://raw.githubusercontent.com/KhronosGroup/WebGL/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#TEXSUBIMAGE2D)
+
+## PR3 implementation and handoff
+
+Null subimages now return INVALID_VALUE after normal argument validation. Negative subimage levels, invalid format enums, bounds, source brand, and short input rows preserve prior storage and versions when rejected. Valid zero-area subimage updates validate their inputs and preserve storage/version state. Pixel allocation failure reports OUT_OF_MEMORY without replacing prior data.
+
+Texture object checks track the first successful binding. A 1x1 image is complete with a mipmap filter because it requires only level zero. Larger images retain the declared level-zero completeness limits.
+
+Thirteen texture cases cover all five normalized formats and null initialization, source subviews/row padding, flip/premultiply, input failure atomicity, valid empty updates, NPOT parameters, 1x1 completeness, first binding, and simulated allocation failure. `pnpm exec vitest run --exclude packages/core-js/src/framebuffers.test.ts` passed 15 files and 99 tests. The excluded file contains future phase-4 assertions and is outside this PR boundary. `pnpm typecheck` passed. FBO corrections remain held for the next integration snapshot.

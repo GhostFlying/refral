@@ -857,6 +857,7 @@ export class SemanticContext {
   bindFramebuffer(target: number, framebuffer: FramebufferObject | null): void {
     if (target !== GL.FRAMEBUFFER) return this.error(GL.INVALID_ENUM);
     if (framebuffer !== null && !this.valid(framebuffer, FramebufferObject)) return;
+    if (framebuffer) framebuffer.initialized = true;
     this.framebuffer = framebuffer;
   }
   framebufferTexture2D(target: number, attachment: number, textureTarget: number,
@@ -865,6 +866,7 @@ export class SemanticContext {
     if (level !== 0) return this.error(GL.INVALID_VALUE);
     if (!this.framebuffer) return this.error(GL.INVALID_OPERATION);
     if (texture !== null && !this.valid(texture, TextureObject)) return;
+    if (texture !== null && !texture.initialized) return this.error(GL.INVALID_OPERATION);
     const previous = this.framebuffer.color;
     this.framebuffer.color = texture;
     if (previous && previous !== texture) this.releaseTexture(previous);
@@ -874,11 +876,13 @@ export class SemanticContext {
     if (target !== GL.FRAMEBUFFER) { this.error(GL.INVALID_ENUM); return 0; }
     if (!this.framebuffer) return GL.FRAMEBUFFER_COMPLETE;
     const color = this.framebuffer.color?.storage;
-    if (!color) return GL.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
-    if (!color.width || !color.height || this.framebuffer.color!.format !== GL.RGBA) return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
     const depth = this.framebuffer.depth;
+    if (!this.framebuffer.color && !depth) return GL.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
+    if (this.framebuffer.color && (!color || !color.width || !color.height ||
+        !([GL.RGB, GL.RGBA] as number[]).includes(this.framebuffer.color.format))) return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
     if (depth && (!depth.width || !depth.height)) return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
-    if (depth && (depth.width !== color.width || depth.height !== color.height)) return GL.FRAMEBUFFER_INCOMPLETE_DIMENSIONS;
+    if (color && depth && (depth.width !== color.width || depth.height !== color.height)) return GL.FRAMEBUFFER_INCOMPLETE_DIMENSIONS;
+    if (!color || this.framebuffer.color!.format !== GL.RGBA) return GL.FRAMEBUFFER_UNSUPPORTED;
     return GL.FRAMEBUFFER_COMPLETE;
   }
   getFramebufferAttachmentParameter(target: number, attachment: number, parameter: number): unknown {
@@ -889,13 +893,14 @@ export class SemanticContext {
     const object = attachment === GL.COLOR_ATTACHMENT0 ? this.framebuffer.color : this.framebuffer.depth;
     if (parameter === GL.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE) return object === null ? GL.NONE :
       attachment === GL.COLOR_ATTACHMENT0 ? GL.TEXTURE : GL.RENDERBUFFER;
+    if (!object) { this.error(GL.INVALID_ENUM); return null; }
     if (parameter === GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME) return object;
-    if (object && parameter === GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL) return 0;
-    if (object && parameter === GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE) return 0;
+    if (attachment === GL.COLOR_ATTACHMENT0 && parameter === GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL) return 0;
+    if (attachment === GL.COLOR_ATTACHMENT0 && parameter === GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE) return 0;
     this.error(GL.INVALID_ENUM); return null;
   }
   deleteFramebuffer(framebuffer: FramebufferObject | null): void {
-    if (framebuffer === null || !this.valid(framebuffer, FramebufferObject, true)) return;
+    if (framebuffer === null || !this.valid(framebuffer, FramebufferObject, true) || framebuffer.deleted) return;
     const color = framebuffer.color;
     const depth = framebuffer.depth;
     framebuffer.deleted = true; this.objects.delete(framebuffer);
@@ -906,19 +911,21 @@ export class SemanticContext {
     if (depth) this.releaseRenderbuffer(depth);
   }
   isFramebuffer(framebuffer: unknown): boolean {
-    return !this.lost && framebuffer instanceof FramebufferObject && framebuffer.owner === this.owner && !framebuffer.deleted;
+    return !this.lost && framebuffer instanceof FramebufferObject && framebuffer.owner === this.owner && framebuffer.initialized && !framebuffer.deleted;
   }
   createRenderbuffer(): RenderbufferObject | null { return this.lost ? null : this.track(new RenderbufferObject(this.owner)); }
   bindRenderbuffer(target: number, renderbuffer: RenderbufferObject | null): void {
     if (target !== GL.RENDERBUFFER) return this.error(GL.INVALID_ENUM);
     if (renderbuffer !== null && !this.valid(renderbuffer, RenderbufferObject)) return;
+    if (renderbuffer) renderbuffer.initialized = true;
     this.renderbuffer = renderbuffer;
   }
   renderbufferStorage(target: number, format: number, width: number, height: number): void {
     if (target !== GL.RENDERBUFFER) return this.error(GL.INVALID_ENUM);
     if (!this.renderbuffer) return this.error(GL.INVALID_OPERATION);
-    if (width < 0 || height < 0 || width > this.host.limits.maxTextureDimension2D ||
+    if (width < 0 || height < 0 || !Number.isInteger(width) || !Number.isInteger(height) || width > this.host.limits.maxTextureDimension2D ||
         height > this.host.limits.maxTextureDimension2D) return this.error(GL.INVALID_VALUE);
+    if (![GL.RGBA4, GL.RGB5_A1, GL.RGB565, GL.DEPTH_COMPONENT16, GL.STENCIL_INDEX8].includes(format as 0x8056)) return this.error(GL.INVALID_ENUM);
     if (format !== GL.DEPTH_COMPONENT16) return unsupported("non-depth renderbuffer storage");
     this.retireDepth(this.renderbuffer);
     Object.assign(this.renderbuffer, { width, height, format, generation: this.renderbuffer.generation + 1 });
@@ -929,6 +936,7 @@ export class SemanticContext {
     if (target !== GL.FRAMEBUFFER || attachment !== GL.DEPTH_ATTACHMENT || renderbufferTarget !== GL.RENDERBUFFER) return this.error(GL.INVALID_ENUM);
     if (!this.framebuffer) return this.error(GL.INVALID_OPERATION);
     if (renderbuffer !== null && !this.valid(renderbuffer, RenderbufferObject)) return;
+    if (renderbuffer !== null && !renderbuffer.initialized) return this.error(GL.INVALID_OPERATION);
     const previous = this.framebuffer.depth;
     this.framebuffer.depth = renderbuffer;
     if (previous && previous !== renderbuffer) this.releaseRenderbuffer(previous);
@@ -939,11 +947,12 @@ export class SemanticContext {
     const values: Record<number, number> = { [GL.RENDERBUFFER_WIDTH]: this.renderbuffer.width,
       [GL.RENDERBUFFER_HEIGHT]: this.renderbuffer.height, [GL.RENDERBUFFER_INTERNAL_FORMAT]: this.renderbuffer.format,
       [GL.RENDERBUFFER_RED_SIZE]: 0, [GL.RENDERBUFFER_GREEN_SIZE]: 0, [GL.RENDERBUFFER_BLUE_SIZE]: 0,
-      [GL.RENDERBUFFER_ALPHA_SIZE]: 0, [GL.RENDERBUFFER_DEPTH_SIZE]: 24, [GL.RENDERBUFFER_STENCIL_SIZE]: 0 };
+      [GL.RENDERBUFFER_ALPHA_SIZE]: 0, [GL.RENDERBUFFER_DEPTH_SIZE]: this.renderbuffer.generation > 0 ? 24 : 0,
+      [GL.RENDERBUFFER_STENCIL_SIZE]: 0 };
     if (parameter in values) return values[parameter]; this.error(GL.INVALID_ENUM); return null;
   }
   deleteRenderbuffer(renderbuffer: RenderbufferObject | null): void {
-    if (renderbuffer === null || !this.valid(renderbuffer, RenderbufferObject, true)) return;
+    if (renderbuffer === null || !this.valid(renderbuffer, RenderbufferObject, true) || renderbuffer.deleted) return;
     renderbuffer.deleted = true; if (this.renderbuffer === renderbuffer) this.renderbuffer = null;
     if (this.framebuffer?.depth === renderbuffer) this.framebuffer.depth = null;
     this.objects.delete(renderbuffer);
@@ -959,7 +968,7 @@ export class SemanticContext {
     }
   }
   isRenderbuffer(renderbuffer: unknown): boolean {
-    return !this.lost && renderbuffer instanceof RenderbufferObject && renderbuffer.owner === this.owner && !renderbuffer.deleted;
+    return !this.lost && renderbuffer instanceof RenderbufferObject && renderbuffer.owner === this.owner && renderbuffer.initialized && !renderbuffer.deleted;
   }
 
   enable(capability: number): void { this.setCapability(capability, true); }
@@ -1039,6 +1048,11 @@ export class SemanticContext {
 
   getParameter(parameter: number): unknown {
     if (this.lost) return null;
+    const colorBits = this.framebuffer ? (this.framebuffer.color?.storage ? 8 : 0) : 8;
+    const alphaBits = this.framebuffer ? (this.framebuffer.color?.format === GL.RGBA ? colorBits : 0)
+      : (this.contextAttributes.alpha ? 8 : 0);
+    const depthBits = this.framebuffer ? (this.framebuffer.depth?.generation ? 24 : 0)
+      : (this.contextAttributes.depth ? 24 : 0);
     const values: Record<number, unknown> = {
       [GL.ARRAY_BUFFER_BINDING]: this.arrayBuffer, [GL.ELEMENT_ARRAY_BUFFER_BINDING]: this.elementBuffer,
       [GL.CURRENT_PROGRAM]: this.program, [GL.FRAMEBUFFER_BINDING]: this.framebuffer,
@@ -1064,9 +1078,8 @@ export class SemanticContext {
       [GL.MAX_VIEWPORT_DIMS]: new Int32Array([this.host.limits.maxTextureDimension2D, this.host.limits.maxTextureDimension2D]),
       [GL.VERSION]: "WebGL 1.0 (Refral prototype)", [GL.SHADING_LANGUAGE_VERSION]: "WebGL GLSL ES 1.0 (ANGLE)",
       [GL.VENDOR]: "Refral", [GL.RENDERER]: "WebGPU",
-      [GL.RED_BITS]: 8, [GL.GREEN_BITS]: 8, [GL.BLUE_BITS]: 8,
-      [GL.ALPHA_BITS]: this.contextAttributes.alpha ? 8 : 0,
-      [GL.DEPTH_BITS]: this.contextAttributes.depth ? 24 : 0, [GL.STENCIL_BITS]: 0,
+      [GL.RED_BITS]: colorBits, [GL.GREEN_BITS]: colorBits, [GL.BLUE_BITS]: colorBits,
+      [GL.ALPHA_BITS]: alphaBits, [GL.DEPTH_BITS]: depthBits, [GL.STENCIL_BITS]: 0,
       [GL.SAMPLES]: 0, [GL.SAMPLE_BUFFERS]: 0,
     };
     if (parameter in values) return values[parameter];

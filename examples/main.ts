@@ -1,5 +1,6 @@
 import { runProbe } from './probe';
 import { replaceCanvas } from './canvas-lifecycle';
+import type { DemoBackend } from './render-to-texture';
 
 const status = document.querySelector<HTMLOutputElement>('#status')!;
 const report = document.querySelector<HTMLPreElement>('#report')!;
@@ -28,7 +29,7 @@ document.querySelector<HTMLButtonElement>('#probe')!.addEventListener('click', (
 document.querySelector<HTMLButtonElement>('#demo')!.addEventListener('click', () => {
   void execute(async () => {
     const { runDemo } = await import('./render-to-texture');
-    const backend = document.querySelector<HTMLSelectElement>('#backend')!.value as 'native' | 'refral';
+    const backend = document.querySelector<HTMLSelectElement>('#backend')!.value as DemoBackend;
     const canvas = await replaceCanvas('gpu');
     const nativeCanvas = await replaceCanvas('native');
     const nativeReference = await runDemo(nativeCanvas, 'native');

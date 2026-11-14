@@ -3,6 +3,7 @@ pub const INVALID_ENUM: u32 = 0x0500;
 pub const INVALID_VALUE: u32 = 0x0501;
 pub const INVALID_OPERATION: u32 = 0x0502;
 pub const OUT_OF_MEMORY: u32 = 0x0505;
+pub const INVALID_FRAMEBUFFER_OPERATION: u32 = 0x0506;
 pub const CONTEXT_LOST_WEBGL: u32 = 0x9242;
 pub const ARRAY_BUFFER: u32 = 0x8892;
 pub const ELEMENT_ARRAY_BUFFER: u32 = 0x8893;
@@ -80,7 +81,7 @@ pub struct ContextCore {
     slots: Vec<Slot>,
     array_binding: Option<BufferHandle>,
     element_binding: Option<BufferHandle>,
-    errors: [u32; 4],
+    errors: [u32; 5],
     error_count: usize,
     lost: bool,
     lost_error_pending: bool,
@@ -103,7 +104,7 @@ impl ContextCore {
             slots: Vec::new(),
             array_binding: None,
             element_binding: None,
-            errors: [NO_ERROR; 4],
+            errors: [NO_ERROR; 5],
             error_count: 0,
             lost: false,
             lost_error_pending: false,
@@ -123,7 +124,11 @@ impl ContextCore {
         if self.lost
             || !matches!(
                 error,
-                INVALID_ENUM | INVALID_VALUE | INVALID_OPERATION | OUT_OF_MEMORY
+                INVALID_ENUM
+                    | INVALID_VALUE
+                    | INVALID_OPERATION
+                    | OUT_OF_MEMORY
+                    | INVALID_FRAMEBUFFER_OPERATION
             )
         {
             return;

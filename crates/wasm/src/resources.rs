@@ -36,6 +36,29 @@ pub(super) fn parameters(output: &mut Vec<u8>, parameters: TextureParameters) {
         u32_value(output, value);
     }
 }
+pub(super) fn target_capacity(target: &refral_core::TargetSnapshot) -> usize {
+    20 + if target.color.is_some() { 28 } else { 0 } + if target.depth.is_some() { 20 } else { 0 }
+}
+pub(super) fn target(output: &mut Vec<u8>, target: refral_core::TargetSnapshot) {
+    u32_value(output, target.width);
+    u32_value(output, target.height);
+    u32_value(output, u32::from(target.is_default));
+    u32_value(output, u32::from(target.color.is_some()));
+    if let Some(color) = target.color {
+        version(output, color);
+    }
+    u32_value(output, u32::from(target.depth.is_some()));
+    if let Some(depth) = target.depth {
+        for value in [
+            depth.renderbuffer.context_id,
+            depth.renderbuffer.slot,
+            depth.renderbuffer.generation,
+        ] {
+            u32_value(output, value);
+        }
+        output.extend_from_slice(&depth.storage_generation.to_le_bytes());
+    }
+}
 pub(super) fn encode(output: &mut Vec<u8>, operations: &[ResourceOperation]) {
     u32_value(output, operations.len() as u32);
     for operation in operations {

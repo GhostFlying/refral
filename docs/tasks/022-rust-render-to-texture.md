@@ -1,6 +1,6 @@
 # Rust typed uniforms, raster, and render-to-texture
 
-Status is running.
+Status is complete for Rust implementation and native/actual-Wasm acceptance. Task 020 owns final delivery and performance evidence.
 
 ## Ownership and scope
 
@@ -39,3 +39,19 @@ Draw packets carry texture versions and parameter snapshots, and the adapter res
 Validation passed native 33/33, formatting/clippy, TypeScript and twelve actual-Wasm drawing/resource tests. The new cases cover all five formats and null definitions, offset views and row layout, flip/premultiply, units and NPOT/1x1 completeness, updates/reallocation/deletion, failed update state, and 1 MiB output arenas surviving later command/memory reuse. Malformed pixel descriptors are included in the native transport bounds regression. Logs are `artifacts/rtt/rust-pr3-native.log` and `artifacts/rtt/rust-pr3-wasm.log`.
 
 The PR3 candidate is 261,640 bytes, ABI3/resource protocol 1, SHA-256 `834c7ce70eb3a42f6475d38fc13fd7dc53e8df44d730bab5f57d1147382b6130`, with no host imports. Its module and build metadata are under `artifacts/core-wasm-v3/`. The integrating agent advances the default artifact and records real GPU acceptance.
+
+## PR4 handoff
+
+The native framebuffer module and focused tests were implemented as the bounded task 024, then integrated with the context, resource wire and shared executor. Texture/renderbuffer/framebuffer handles retain independent context/slot/generation identity. FBO bindings and attachments, renderbuffer storage, completeness, queries, deletion, shared retained references and resize generations remain in the native context.
+
+Targets are explicit binary descriptors with default/offscreen identity, dimensions, optional color texture version, and optional renderbuffer handle/storage generation. The adapter resolves these references through the common registry before host encoding. Successful FBO color draws/clears advance the native content version and emit a write-texture operation in the after stream. The bridge applies that alias after encoding, preserving the rendered allocation for subsequent sampling and subimage copies. Pending color-version advances roll back if the main output packet cannot allocate before encoding.
+
+Capture resolves the currently bound native target and synchronizes default canvas dimensions without resetting viewport state. Feedback, undefined attachments, size mismatches, and invalid framebuffer operations are validated before writes. RGBA color texture plus optional DEPTH_COMPONENT16 renderbuffer is the supported FBO profile. Legal depth-only and RGB targets report FRAMEBUFFER_UNSUPPORTED. Initial renderbuffers report RGBA4 and zero dimensions/component sizes. Allocated depth uses the shared depth24plus backing. Current-framebuffer component queries follow attachments and actual default context attributes.
+
+Deleting a texture/renderbuffer clears bindings and the currently bound FBO attachment while unbound FBO references retain its image. Repeated deletion preserves those retained references. Final reference release retires the canonical texture/depth record, while previously encoded operations retain their execution objects. Loss invalidates resource checks, returns the neutral framebuffer status, releases owned arenas/registry state and suppresses flush submission.
+
+The target layout advances `rf_resource_protocol_version()` to 2. The adapter rejects resource protocol 1 before context initialization with rebuild guidance. ABI remains 3. The final candidate is 282,639 bytes with SHA-256 `e407526a05e998a987c90de691d5f679494df7b3ec27b1501693f27815d982ea`, ABI3/protocol2, and no host imports.
+
+Final local acceptance passed native 44/44, actual candidate-Wasm drawing/resource/FBO 16/16, rustfmt/clippy and TypeScript. Native coverage includes output-packet color-write rollback and checked image-byte overflow/OOM with existing storage retained. Actual-Wasm coverage includes post-encoding write alias order, same-allocation sampling, feedback/incompleteness, resize/capture generations, retained deletion, repeated renderbuffer deletion, dynamic component queries, loss and atomic overflow failure. Logs are `artifacts/rtt/rust-pr4-native.log` and `artifacts/rtt/rust-pr4-wasm.log`.
+
+The integrating agent reported full actual-Wasm 20/20, targeted Chrome 23/23, full Chrome 85/85, and packaged RTT/triangle/probe verification passing. The three-path demo at 0/1000/2000 produced zero byte/pixel differences across all nine pair comparisons. Task 020 records the corresponding GPU/environment artifacts, official build manifest, commits and final performance measurements.

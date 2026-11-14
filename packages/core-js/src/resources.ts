@@ -37,14 +37,16 @@ export class TextureObject extends LogicalObject {
 
 export class RenderbufferObject extends LogicalObject {
   handle: RenderbufferHandle | null = null;
+  initialized = false;
   retired = false;
   width = 0;
   height = 0;
   generation = 0;
-  format: number = GL.DEPTH_COMPONENT16;
+  format: number = GL.RGBA4;
 }
 
 export class FramebufferObject extends LogicalObject {
+  initialized = false;
   color: TextureObject | null = null;
   depth: RenderbufferObject | null = null;
 }

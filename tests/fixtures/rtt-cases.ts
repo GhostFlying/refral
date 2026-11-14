@@ -45,8 +45,11 @@ export async function prepareRttContext(backend: DrawingBackend, width = 64, hei
     const context = gl;
     const selectedCore: DrawingBackend = hooks?.core ?? 'native';
     if (selectedCore !== backend) throw new Error(`Requested ${backend}, received ${selectedCore}`);
+    const nativeInfo = backend === 'native' ? gl.getExtension('WEBGL_debug_renderer_info') : null;
     const environment = { ...(hooks?.environment ?? { userAgent: navigator.userAgent,
-      version: gl.getParameter(gl.VERSION), renderer: gl.getParameter(gl.RENDERER) }),
+      version: gl.getParameter(gl.VERSION), renderer: gl.getParameter(gl.RENDERER),
+      unmaskedRenderer: nativeInfo ? gl.getParameter(nativeInfo.UNMASKED_RENDERER_WEBGL) : null,
+      unmaskedVendor: nativeInfo ? gl.getParameter(nativeInfo.UNMASKED_VENDOR_WEBGL) : null }),
       attributes: gl.getContextAttributes(), devicePixelRatio: window.devicePixelRatio };
     return {
       canvas, gl: context, hooks, selectedCore, environment, requestedAttributes: attributes,
@@ -341,12 +344,15 @@ gl_FragColor=vec4(u_i[0].x==16777217?1.:0.,u_i[1].w==(-2147483647-1)&&u_b[1].z&&
     }
     case 'fbo-depth-render-sample': {
       const t = target(32, 32, true);
+      check('FBO alpha bits come from RGBA attachment', gl.getParameter(gl.ALPHA_BITS), 8);
+      check('FBO depth has at least sixteen bits', gl.getParameter(gl.DEPTH_BITS) >= 16, true);
       check('color attachment wrapper', gl.getFramebufferAttachmentParameter(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME) === t.texture, true);
       check('depth attachment wrapper', gl.getFramebufferAttachmentParameter(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME) === t.renderbuffer, true);
       gl.viewport(0, 0, 32, 32); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
       drawColor([1, 0, 0, 1], 0.5); drawColor([0, 1, 0, 1], -0.5);
       gl.deleteRenderbuffer(t.renderbuffer);
+      check('depth deletion updates framebuffer bits', gl.getParameter(gl.DEPTH_BITS), 0);
       check('bound depth deletion detaches', gl.getFramebufferAttachmentParameter(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE), gl.NONE);
       check('color-only target remains complete', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_COMPLETE);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.disable(gl.DEPTH_TEST);

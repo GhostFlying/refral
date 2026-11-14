@@ -10,6 +10,7 @@ import type {
   LogicalHandle,
   SemanticHost,
   ResourceOperation,
+  ContextAttributes,
 } from '@refral/core-api';
 import { createRustDrawingCoreFromModule } from '../src/render';
 import { runBufferCoreContract } from '../../../tests/core/buffer-contract';
@@ -26,7 +27,12 @@ beforeAll(async () => {
   );
 });
 
-function setup(contextId = 1, maxBufferBytes = 1024 * 1024) {
+function setup(
+  contextId = 1,
+  maxBufferBytes = 1024 * 1024,
+  dimensionLimit = 4096,
+  attributes: ContextAttributes = { alpha: true, depth: true },
+) {
   let nextId = 1;
   let linkSuccess = true;
   let layout: Partial<LinkedProgram> = {};
@@ -92,12 +98,16 @@ function setup(contextId = 1, maxBufferBytes = 1024 * 1024) {
     },
   };
   const draws: DrawOperation[] = [];
+  const events: string[] = [];
   const host: SemanticHost = {
-    limits: { maxTextureDimension2D: 4096, maxBufferSize: maxBufferBytes },
+    limits: { maxTextureDimension2D: dimensionLimit, maxBufferSize: maxBufferBytes },
     draw: vi.fn((draw) => {
       draws.push(draw);
+      events.push('draw');
     }),
-    clear: vi.fn(),
+    clear: vi.fn(() => {
+      events.push('clear');
+    }),
     flush: vi.fn(),
     replaceStorage: vi.fn(),
     retireStorage: vi.fn(),
@@ -108,15 +118,17 @@ function setup(contextId = 1, maxBufferBytes = 1024 * 1024) {
   const apply = resources.apply.bind(resources);
   vi.spyOn(resources, 'apply').mockImplementation((operation) => {
     operations.push(operation);
+    events.push(operation.kind);
     apply(operation);
   });
+  const surface = { width: 16, height: 16 };
   const core = createRustDrawingCoreFromModule(
     module,
     {
       contextId,
       maxBufferBytes,
-      surface: { width: 16, height: 16 },
-      attributes: { alpha: true, depth: true },
+      surface,
+      attributes,
       profile: {
         vertexAttributes: 8,
         vertexUniformVectors: 128,
@@ -135,6 +147,8 @@ function setup(contextId = 1, maxBufferBytes = 1024 * 1024) {
     draws,
     resources,
     operations,
+    events,
+    surface,
     compile,
     setLayout(value: Partial<LinkedProgram>) {
       layout = value;
@@ -643,6 +657,194 @@ describe('owned texture resource protocol', () => {
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
       expect(state.draws[1].textures[0].storage!.data![0]).toBe(0x77);
       expect(original.data!.at(-1)).toBe(0x55);
+    } finally {
+      core.dispose();
+    }
+  });
+});
+
+describe('framebuffer targets and ordered GPU writes', () => {
+  function offscreen(core: DrawingCore, width = 2, height = 2) {
+    const texture = core.invoke('createTexture', []);
+    core.invoke('bindTexture', [GL.TEXTURE_2D, texture]);
+    core.invoke('texImage2D', [GL.TEXTURE_2D, 0, GL.RGBA, width, height, 0, GL.RGBA, GL.UNSIGNED_BYTE, null]);
+    core.invoke('texParameteri', [GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST]);
+    const depth = core.invoke('createRenderbuffer', []);
+    core.invoke('bindRenderbuffer', [GL.RENDERBUFFER, depth]);
+    core.invoke('renderbufferStorage', [GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, width, height]);
+    const framebuffer = core.invoke('createFramebuffer', []);
+    core.invoke('bindFramebuffer', [GL.FRAMEBUFFER, framebuffer]);
+    core.invoke('framebufferTexture2D', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0]);
+    core.invoke('framebufferRenderbuffer', [GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, depth]);
+    expect(core.invoke('checkFramebufferStatus', [GL.FRAMEBUFFER])).toBe(GL.FRAMEBUFFER_COMPLETE);
+    return { texture, depth, framebuffer };
+  }
+  it('encodes the target before advancing its canonical write alias and samples that allocation', () => {
+    const state = setup(1, 1024 * 1024, 4096, { alpha: false, depth: false });
+    const { core } = state;
+    try {
+      const { program } = scene(core);
+      expect(core.invoke('getParameter', [GL.ALPHA_BITS])).toBe(0);
+      expect(core.invoke('getParameter', [GL.DEPTH_BITS])).toBe(0);
+      const target = offscreen(core);
+      expect(core.invoke('getParameter', [GL.ALPHA_BITS])).toBe(8);
+      expect(core.invoke('getParameter', [GL.DEPTH_BITS])).toBe(24);
+      core.invoke('clearColor', [1, 0, 0, 1]);
+      core.invoke('clear', [GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT]);
+      expect(state.events.slice(-2)).toEqual(['clear', 'write-texture']);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      expect(state.events.slice(-2)).toEqual(['draw', 'write-texture']);
+      const drawn = state.draws[0].target;
+      expect(drawn).toMatchObject({ width: 2, height: 2, isDefault: false, depthGeneration: 1 });
+      expect(drawn.depth).not.toBeNull();
+      const write = state.operations.at(-1)!;
+      expect(write.kind).toBe('write-texture');
+      if (write.kind === 'write-texture') expect(state.resources.texture(write.version)).toBe(drawn.color);
+      expect(core.captureTarget().color).toBe(drawn.color);
+      core.invoke('bindFramebuffer', [GL.FRAMEBUFFER, null]);
+      state.setLayout({
+        samplers: [{ name: 'u_texture', type: GL.SAMPLER_2D, size: 1, samplerBinding: 0, textureBinding: 1 }],
+      });
+      core.invoke('linkProgram', [program]);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      expect(state.draws[1].textures[0].storage).toBe(drawn.color);
+      expect(state.operations.filter((op) => op.kind === 'define-texture')).toHaveLength(1);
+      core.invoke('bindFramebuffer', [GL.FRAMEBUFFER, target.framebuffer]);
+      core.invoke('deleteRenderbuffer', [target.depth]);
+      expect(core.invoke('getParameter', [GL.DEPTH_BITS])).toBe(0);
+      expect(core.invoke('checkFramebufferStatus', [GL.FRAMEBUFFER])).toBe(GL.FRAMEBUFFER_COMPLETE);
+      expect(state.host.retireDepth).toHaveBeenCalledWith(drawn.depth!.id, 1);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally {
+      core.dispose();
+    }
+  });
+  it('rejects feedback/incomplete draws and keeps depth/image resize generations distinct', () => {
+    const state = setup();
+    const { core } = state;
+    try {
+      state.setLayout({
+        samplers: [{ name: 'u_texture', type: GL.SAMPLER_2D, size: 1, samplerBinding: 0, textureBinding: 1 }],
+      });
+      scene(core);
+      const target = offscreen(core);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      expect(core.getError()).toBe(GL.INVALID_OPERATION);
+      expect(state.draws).toHaveLength(0);
+      core.invoke('bindTexture', [GL.TEXTURE_2D, null]);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      expect(state.draws).toHaveLength(1);
+      const previous = core.captureTarget();
+      core.invoke('bindTexture', [GL.TEXTURE_2D, target.texture]);
+      core.invoke('texImage2D', [GL.TEXTURE_2D, 0, GL.RGBA, 4, 4, 0, GL.RGBA, GL.UNSIGNED_BYTE, null]);
+      expect(core.invoke('checkFramebufferStatus', [GL.FRAMEBUFFER])).toBe(
+        GL.FRAMEBUFFER_INCOMPLETE_DIMENSIONS,
+      );
+      core.invoke('clear', [GL.COLOR_BUFFER_BIT]);
+      expect(core.getError()).toBe(GL.INVALID_FRAMEBUFFER_OPERATION);
+      core.invoke('renderbufferStorage', [GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, 4, 4]);
+      expect(core.invoke('checkFramebufferStatus', [GL.FRAMEBUFFER])).toBe(GL.FRAMEBUFFER_COMPLETE);
+      const current = core.captureTarget();
+      expect(previous).toMatchObject({ width: 2, height: 2, depthGeneration: 1 });
+      expect(current).toMatchObject({ width: 4, height: 4, depthGeneration: 2 });
+      expect(current.color).not.toBe(previous.color);
+      state.surface.width = 32;
+      state.surface.height = 24;
+      expect(core.captureTarget().width).toBe(4);
+      core.invoke('bindFramebuffer', [GL.FRAMEBUFFER, null]);
+      expect(core.captureTarget()).toMatchObject({ width: 32, height: 24, isDefault: true });
+      expect(Array.from(core.invoke('getParameter', [GL.VIEWPORT]) as Int32Array)).toEqual([0, 0, 16, 16]);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally {
+      core.dispose();
+    }
+  });
+  it('retains deleted resources in unbound FBOs and ignores repeated renderbuffer deletion', () => {
+    const state = setup();
+    const { core } = state;
+    try {
+      scene(core);
+      const first = offscreen(core);
+      const second = core.invoke('createFramebuffer', []);
+      core.invoke('bindFramebuffer', [GL.FRAMEBUFFER, second]);
+      core.invoke('framebufferTexture2D', [
+        GL.FRAMEBUFFER,
+        GL.COLOR_ATTACHMENT0,
+        GL.TEXTURE_2D,
+        first.texture,
+        0,
+      ]);
+      core.invoke('framebufferRenderbuffer', [
+        GL.FRAMEBUFFER,
+        GL.DEPTH_ATTACHMENT,
+        GL.RENDERBUFFER,
+        first.depth,
+      ]);
+      core.invoke('bindFramebuffer', [GL.FRAMEBUFFER, first.framebuffer]);
+      core.invoke('deleteTexture', [first.texture]);
+      core.invoke('deleteRenderbuffer', [first.depth]);
+      expect(core.invoke('isTexture', [first.texture])).toBe(false);
+      expect(core.invoke('isRenderbuffer', [first.depth])).toBe(false);
+      core.invoke('bindFramebuffer', [GL.FRAMEBUFFER, second]);
+      core.invoke('deleteRenderbuffer', [first.depth]);
+      expect(
+        core.invoke('getFramebufferAttachmentParameter', [
+          GL.FRAMEBUFFER,
+          GL.DEPTH_ATTACHMENT,
+          GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,
+        ]),
+      ).toEqual(first.depth);
+      expect(
+        core.invoke('getFramebufferAttachmentParameter', [
+          GL.FRAMEBUFFER,
+          GL.COLOR_ATTACHMENT0,
+          GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,
+        ]),
+      ).toEqual(first.texture);
+      expect(core.invoke('checkFramebufferStatus', [GL.FRAMEBUFFER])).toBe(GL.FRAMEBUFFER_COMPLETE);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      const snapshot = state.draws[0].target;
+      core.invoke('deleteFramebuffer', [second]);
+      expect(state.host.retireStorage).toHaveBeenCalledWith(snapshot.color);
+      expect(state.host.retireDepth).toHaveBeenCalledWith(snapshot.depth!.id, 1);
+      expect(snapshot.color).not.toBeNull();
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally {
+      core.dispose();
+    }
+  });
+  it('reports resource loss neutrally and rejects impossible image byte allocations atomically', () => {
+    const state = setup(1, 1024 * 1024, 32768);
+    const { core } = state;
+    try {
+      scene(core);
+      const target = offscreen(core, 1, 1);
+      core.invoke('bindFramebuffer', [GL.FRAMEBUFFER, null]);
+      const before = state.operations.length;
+      core.invoke('texImage2D', [
+        GL.TEXTURE_2D,
+        0,
+        GL.RGBA,
+        32768,
+        32768,
+        0,
+        GL.RGBA,
+        GL.UNSIGNED_BYTE,
+        null,
+      ]);
+      expect(core.getError()).toBe(GL.OUT_OF_MEMORY);
+      expect(state.operations).toHaveLength(before);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      const flushes = vi.mocked(state.host.flush).mock.calls.length;
+      core.markLost();
+      expect(core.getError()).toBe(GL.CONTEXT_LOST_WEBGL);
+      for (const name of ['isTexture', 'isFramebuffer', 'isRenderbuffer'])
+        expect(core.invoke(name, [target.texture])).toBe(false);
+      expect(core.invoke('checkFramebufferStatus', [GL.FRAMEBUFFER])).toBe(GL.FRAMEBUFFER_UNSUPPORTED);
+      core.invoke('flush', []);
+      expect(state.host.flush).toHaveBeenCalledTimes(flushes);
+      expect(core.getError()).toBe(GL.NO_ERROR);
     } finally {
       core.dispose();
     }

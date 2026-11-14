@@ -25,7 +25,7 @@ function compare(result: RttResult, expected: number[], tolerances: number[]) {
   return { mismatchedChannels, maxDifference, pixels };
 }
 
-for (const name of rttCaseNames.filter(name => /^(uniform-|texture-|raster-)/.test(name))) {
+for (const name of rttCaseNames) {
   test(`RTT ${name}`, async ({ page, browser }) => {
     await page.goto('/tests/fixtures/runner.html');
     const results: RttResult[] = [];

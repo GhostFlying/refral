@@ -2,13 +2,13 @@
 
 ## Shared scope
 
-Both implementations execute WebGL1 Buffer semantics and the default-framebuffer drawing profile introduced by task 013. `DrawingCore` extends `BufferCore` with normalized semantic dispatch and target capture. The facade selects `core: 'js' | 'rust'`, with JS as the default, and owns JS object wrappers and WebIDL conversion.
+Both implementations execute the shared WebGL1 drawing and render-to-texture profile. `DrawingCore` extends `BufferCore` with normalized semantic dispatch and target capture. The facade selects `core: 'js' | 'rust'`, with JS as the default, and owns JS object wrappers and WebIDL conversion.
 
-The shared drawing profile includes ESSL100 shader/program lifecycle and reflection, FLOAT attributes and constants, float scalar/vector uniforms, TRIANGLES arrays and u8/u16 indices, viewport, default color/depth clear, ordered snapshots, submission and asynchronous testing capture. JS also implements its recorded texture/framebuffer and broader raster profile. Rust reports valid operations beyond its declared profile through an explicit library diagnostic.
+The shared drawing profile includes ESSL100 shader/program lifecycle and reflection, FLOAT attributes and constants, float/int/bool scalar/vector arrays, mat2/mat3/mat4, scalar sampler2D, TRIANGLES arrays and u8/u16 indices, level-zero five-format UNSIGNED_BYTE Texture2D uploads, RGBA color/depth framebuffers, raster state, ordered snapshots, submission and asynchronous testing capture. Each core reports valid operations beyond its declared profile through an explicit library diagnostic. The support matrix records verified behavior per core.
 
 ## Handles and identity
 
-A logical handle is the immutable value `{ kind, contextId, slot, generation }`, with a kind literal and positive u32 fields. Buffer, shader, program and uniform-location handles use distinct kinds. Zero is reserved for the nullable ABI representation. Each context receives a process-local context ID from the common JS boundary, and each implementation validates context ownership, slot membership, and generation.
+A logical handle is the immutable value `{ kind, contextId, slot, generation }`, with a kind literal and positive u32 fields. Buffer, shader, program, uniform-location, texture, renderbuffer and framebuffer handles use distinct kinds. Zero is reserved for the nullable ABI representation. Each context receives a process-local context ID from the common JS boundary, and each implementation validates context ownership, slot membership, and generation.
 
 The facade maps opaque, extensible JS wrappers to handles and caches live wrappers by handle. A repeated binding or attribute query returns the existing wrapper. Deleted and foreign handles follow GL behavior. Reused slots receive a new generation and stale handles remain invalid.
 
@@ -30,7 +30,7 @@ Context loss reports CONTEXT_LOST_WEBGL once, then NO_ERROR. The internal core's
 
 ## Wasm boundary
 
-The Rust core crate owns the semantics and has native unit tests. The Wasm crate exports a private single-context ABI for one instance per facade context. The version 2 adapter passes kind/context/slot/generation explicitly and validates ABI version/exports. Uploads use a Rust-owned input arena. The adapter refreshes memory views after allocation or growth and passes bytes synchronously. Inspection returns a copied output view.
+The Rust core crate owns the semantics and has native unit tests. The Wasm crate exports a private single-context ABI for one instance per facade context. The version 3 adapter passes kind/context/slot/generation explicitly and validates ABI version/exports. The resource-envelope capability additionally requires `rf_resource_protocol_version() === 2` before initialization. Capability v1 introduced texture operations, and v2 adds typed offscreen targets. The check detects stale artifacts before initialization and gives rebuild guidance. Uploads use a Rust-owned input arena. The adapter refreshes memory views after allocation or growth and passes bytes synchronously. Inspection returns a copied output view.
 
 Wasm functions validate handle and arena bounds and return explicit status or GL errors for input failures. Allocation failures become OUT_OF_MEMORY. The exact exports are documented by the Wasm adapter and checked by the integration tests. This ABI is scoped to the project adapter.
 
@@ -42,8 +42,18 @@ Link attempts advance program link generation and invalidate old uniform locatio
 
 DOMString source is preserved as code units, including NUL and lone surrogates. Numeric input conversion preserves unrestricted GLfloat values. Null uniform locations are ignored after WebIDL argument conversion, including matrix transpose and malformed array-length GL validation. Float vector lists require complete values and their length must be a multiple of the assigned width. Stale, foreign, mismatched and wrong-current-program locations produce INVALID_OPERATION.
 
+Uniform storage preserves f32 and i32 values through binary channels. Boolean queries return booleans or boolean arrays. Integer vector queries return Int32Array and floating vector/matrix queries return Float32Array. Matrix packing uses column-major input and reflected offset, arrayStride and matrixStride. Complete excess array elements are ignored after filling the remaining declared array. Queries can target a successfully linked program while another program is current.
+
+## Texture and framebuffer resources
+
+The facade preserves the selected typed view's byte offset, byte length and element type. TypedArray/null upload semantics include RGBA, RGB, ALPHA, LUMINANCE and LUMINANCE_ALPHA with UNSIGNED_BYTE. Each core expands input to owned RGBA bytes using unpack alignment, flip and premultiplication state before the call returns. Null texImage2D initializes storage, while null texSubImage2D records INVALID_VALUE. Input failures preserve existing image contents and versions.
+
+TextureVersion contains a typed texture handle, storageGeneration and contentVersion. The per-context ExecutionResources registry receives ordered define, update, write and retirement operations. Definitions and subimage updates carry owned pixels. Draws carry stable version references and sampler parameters. The registry resolves these references to canonical executor records. Replacement materializes ordered GPU copies before retiring the predecessor. An FBO write advances logical content while retaining its GPU allocation, allowing subsequent sampling to consume rendered contents.
+
+Framebuffer attachments retain logical references independently from GL-visible deletion. A color target is an RGBA texture image with optional DEPTH_COMPONENT16 renderbuffer storage. Completeness, dimensions, feedback checks and attachment queries belong to each core. The host maps depth identity using the complete renderbuffer handle and its storage generation. Queued GPU records retain their resources until submitted work completes.
+
 ## Execution and ownership
 
 Both cores pass shared DrawOperation, TargetSnapshot and RasterState records to SemanticHost. Drawing captures the executable, target dimensions, attributes, uniform bytes and index/vertex Buffer versions observed at the call. Host encoding retains the data needed by queued work. Automatic microtask submission and explicit flush submit encoded operations, while asynchronous testing capture also waits for GPU readback.
 
-Rust uses one context for the complete profile. ABI v2 carries cold metadata in bounded JSON, source/names as explicit little-endian UTF16, numeric payloads as binary floats, and draw results as owned versioned binary snapshots. The adapter copies output arenas before further Wasm calls. Binding-only serde dependencies stay outside the native semantic crate. ADR 005 records this boundary.
+Rust uses one context for the complete profile. ABI v3 carries cold metadata in bounded JSON, source/names as explicit little-endian UTF16, numeric payloads as binary floats or signed integers, and draw results as owned versioned binary snapshots. Resource envelopes bracket execution so uploads precede draws and GPU-write version advances follow them. Pixel payload pointers refer to Rust-owned output storage. The adapter validates ranges and takes independent ownership before another command can reuse that storage. Binding-only serde dependencies stay outside the native semantic crate. ADRs 005 and 006 record this boundary.

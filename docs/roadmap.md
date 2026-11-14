@@ -6,11 +6,11 @@ Build a WebGL1-over-WebGPU library with an explicit asynchronous context factory
 
 ## Current foundation work
 
-Task 013 advances the shared profile through spec-driven minimal drawing. Its first two PRs establish pinned specification mappings, lifecycle/conversion corrections and host-neutral execution contracts. Shader/program handles, shared compiler artifact ownership and ABI v2 follow, then three-path draw/Buffer/uniform regressions and a native/JS/Rust triangle example. The seven selected original CTS files execute against all three paths. `program-handling.html` retains its synchronous readPixels prerequisite, with source-marked asynchronous project regressions covering the supported semantics.
+Task 013 established spec-driven minimal drawing, typed shader/program handles, shared compiler ownership and the three-path triangle. Task 020 advances the common profile through render-to-texture in five bounded PRs. Shared resource handles and execution operations precede typed uniforms/raster/ABI v3, Texture2D/unpack, framebuffer multipass drawing, and repeated performance/deployment acceptance.
 
 ADR 003 defines the accepted parallel-core direction. The root pnpm/Cargo workspaces contain the shared API, migrated JS core, formal Rust core, Wasm exports, and JS adapter. Task 006 established Buffer lifecycle/data/query/error behavior with native/JS/Rust fixtures. Task 013 extends the shared contract through default-framebuffer drawing. Track implementation and verification per core.
 
-The existing Chrome prototype and recorded P0–P2 results describe the JS rendering implementation. The Rust trace experiment supplies its documented small-core measurements. The shared vertex/uniform and draw snapshot contracts now support the Rust triangle through the common compiler and executor. Next extend Rust matrix/integer updates, textures, framebuffer passes and broader raster state using the same fixtures for both cores.
+The existing Chrome prototype and recorded P0–P2 results describe the earlier JS rendering implementation. The Rust trace experiment retains its documented small-core measurements. The current shared contract includes float/int/bool uniforms and matrices, level-zero five-format UNSIGNED_BYTE texture uploads, RGBA color/depth targets and raster state. Both semantic cores use the common compiler, executor, inputs and acceptance fixtures. The selected original CTS set contains eleven files, while source-derived asynchronous texture/FBO scenes cover the current readback profile.
 
 ## P0 Engineering and environment
 
@@ -41,6 +41,15 @@ Acceptance requires actual Chrome rendering, passing supported differential case
 ## P3 CTS coverage
 
 Grow a pinned suite by semantic dependency. Retain test identities, assertions, adapter changes, and pass/fail/unsupported/timeout outcomes. Expand formats, extensions, context behavior, and synchronous GPU-dependent APIs as implementation permits.
+
+After the RTT milestone, organize the next bounded tasks around the recorded upstream prerequisites.
+
+1. Add DOM image-source uploads and their conversion/ownership rules through the shared facade and fixtures.
+2. Expand mip levels, mipmap generation, CubeMap, packed pixel types and framebuffer formats with per-core support entries.
+3. Resolve synchronous readback and related context behavior through a dedicated design/feasibility task, then activate original cases that depend on those APIs.
+4. Extend context restoration, extensions and remaining state according to the fixed CTS dependency graph.
+
+Use the repeated drawing baseline to choose separate optimization tasks for the measured CPU, bridge, allocation and host costs. Preserve workload sizes, raw samples and image assertions when comparing changes.
 
 ## P4 Internal host
 
@@ -75,6 +84,8 @@ The integrating agent owns root configuration, architecture, shared contracts, i
 
 The JS prototype's P0, P1, and P2 initial Chrome profile passed executable acceptance on 2026-11-13. See `validation.md` for commands, environment, limitations, and performance observations. ADR 001 records the initial TypeScript choice and its small-core experiment. ADR 003 establishes parallel JS/Rust development. ADR 002 records the ANGLE Wasm compiler and shared resource profile.
 
-P3 starts with broader original-assertion CTS coverage and optimization of the measured per-draw allocation and binding costs. P4 begins when the actual internal transport and Dawn ownership interfaces are available for inspection.
+P3 continues with broader original-assertion CTS coverage and separately scoped optimization of measured per-draw allocation, bridge and binding costs. P4 begins when the actual internal transport and Dawn ownership interfaces are available for inspection.
 
 The first dual-core Buffer milestone passed on 2026-11-13: 34 Chrome tests, 25 JS unit tests, 15 native Rust tests, four actual-Wasm adapter tests, and built deployment verification. See `validation/2026-11-13-dual-core-buffers.md`. This dated milestone established the Buffer contract. The next drawing milestone passes 64 Chrome tests, 62 JS CPU tests, 27 Rust native tests and nine actual-Wasm tests. Sixteen shared drawing scenes and seven original CTS files now pass native/JS/Rust acceptance. See `validation/2026-11-14-dual-core-drawing.md` for scope and remaining parity.
+
+The RTT milestone completes local acceptance on 2026-11-15 with 84 Chrome correctness tests, 107 CPU tests, 44 native Rust tests, twenty actual-Wasm tests, twenty shared RTT scenes and eleven original CTS files with 243 assertions per backend. The sequential three-path demo has zero observed pixel differences. Deployment and 45 repeated performance runs pass. See `validation/2026-11-15-three-path-rtt.md` for raw-data paths, timing boundaries and current compatibility limits.

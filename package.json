@@ -30,7 +30,8 @@
     "test:drawing": "playwright test dual-core-drawing.spec.ts",
     "test:dist": "node tools/verify-dist.mjs",
     "snapshot": "node tools/snapshot.mjs",
-    "bench:chrome": "playwright test benchmark.spec.ts",
+    "bench:chrome": "playwright test -c benchmarks/playwright.config.ts rtt-benchmark.spec.ts",
+    "bench:rtt": "playwright test -c benchmarks/playwright.config.ts rtt-benchmark.spec.ts",
     "check": "pnpm typecheck && pnpm test:unit && pnpm rust:check && pnpm rust:test && node tools/check-support.mjs"
   },
   "devDependencies": {

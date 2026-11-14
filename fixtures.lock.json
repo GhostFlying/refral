@@ -29,6 +29,26 @@
           "shader-source-compile-executable",
           "detached-deleted-shader-executable"
         ]
+      },
+      {
+        "path": "sdk/tests/conformance/textures/misc/tex-image-and-sub-image-2d-with-array-buffer-view.html",
+        "prerequisites": ["synchronous WebGL readPixels", "TEXTURE_CUBE_MAP", "packed UNSIGNED_SHORT texture formats"],
+        "derivedCases": ["texture-unpack-snapshot", "texture-updates-reallocation"]
+      },
+      {
+        "path": "sdk/tests/conformance/textures/misc/texture-npot.html",
+        "prerequisites": ["synchronous WebGL readPixels", "TEXTURE_CUBE_MAP", "mipmaps", "copyTexImage2D"],
+        "derivedCases": ["texture-npot-completeness"]
+      },
+      {
+        "path": "sdk/tests/conformance/renderbuffers/framebuffer-object-attachment.html",
+        "prerequisites": ["synchronous WebGL readPixels", "color and stencil renderbuffer formats", "copyTexImage2D and copyTexSubImage2D"],
+        "derivedCases": ["fbo-depth-render-sample", "fbo-attachment-resize", "fbo-deletion-bound-unbound"]
+      },
+      {
+        "path": "sdk/tests/conformance/renderbuffers/feedback-loop.html",
+        "prerequisites": ["synchronous WebGL readPixels"],
+        "derivedCases": ["fbo-feedback-loop"]
       }
     ]
   },

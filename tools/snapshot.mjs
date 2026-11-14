@@ -4,7 +4,10 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 
 const listed = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { encoding: 'utf8' });
 if (listed.status !== 0) throw new Error('Could not enumerate repository source files.');
-const paths = [...new Set(listed.stdout.split('\0').filter(Boolean))].sort();
+const removed = spawnSync('git', ['ls-files', '-z', '--deleted'], { encoding: 'utf8' });
+if (removed.status !== 0) throw new Error('Could not enumerate deleted source files.');
+const deleted = new Set(removed.stdout.split('\0').filter(Boolean));
+const paths = [...new Set(listed.stdout.split('\0').filter(path => path && !deleted.has(path)))].sort();
 const tree = createHash('sha256');
 const files = [];
 for (const path of paths) {

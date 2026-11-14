@@ -28,6 +28,10 @@ export default defineConfig({
     },
   },
   server: { host: '127.0.0.1', port: 4173, strictPort: true, hmr: process.env.REFRAL_TEST !== '1',
+    headers: process.env.REFRAL_BENCHMARK === '1' ? {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    } : undefined,
     watch: { ignored: ['**/artifacts/**', '**/third_party/**', '**/target/**'] } },
   build: { outDir: 'dist', rollupOptions: { input: {
     validation: path('./examples/index.html'),

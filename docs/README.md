@@ -16,11 +16,14 @@ Current direction is parallel JS/TypeScript and Rust/Wasm semantic cores sharing
 | [Initial Chrome validation](validation.md) | Dated prototype verification and measurements |
 | [Dual-core Buffer validation](validation/2026-11-13-dual-core-buffers.md) | Current shared Buffer acceptance, JS regression, and remaining Rust parity |
 | [Dual-core drawing validation](validation/2026-11-14-dual-core-drawing.md) | Unified cores, original CTS, three-path pixels, built examples, and remaining Rust scope |
+| [Three-path RTT validation](validation/2026-11-15-three-path-rtt.md) | Current shared texture/FBO profile, sequential demo, eleven original CTS files, deployment and repeated performance |
 
 ADR 003 records the current [parallel-core direction](adr/003-parallel-cores.md). ADR 001 records the earlier [small-core experiment and initial JS implementation choice](adr/001-runtime-core.md). ADR 002 documents the [ANGLE Wasm compiler](adr/002-compiler.md).
 
 ADR 004 records the first [Buffer contract and Rust Wasm boundary](adr/004-buffer-core-boundary.md).
 
-Dated reports live under `docs/validation/`; the initial JS report remains `docs/validation.md`. Source/reference material belongs under `docs/references/` when needed. Each report identifies the tested implementation and revision. Support entries record JS and Rust progress independently; the broad rendering profile currently belongs to JS.
+Dated reports live under `docs/validation/`. The initial JS report remains `docs/validation.md`. Source/reference material belongs under `docs/references/` when needed. Each report identifies the tested implementation and revision. Support entries record JS and Rust progress independently through the current shared RTT profile.
 
 ADR 005 records the [unified drawing core and compiler-artifact boundary](adr/005-drawing-core-boundary.md) introduced by task 013.
+
+ADR 006 records [resource versions and shared execution](adr/006-resource-execution.md), including typed targets and the ABI3/resource-protocol2 boundary.

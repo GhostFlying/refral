@@ -1,6 +1,6 @@
 # Spec-driven dual-core drawing
 
-Status is running.
+Status is complete for implementation and local acceptance. PR integration is recorded in the delivery handoff and GitHub history.
 
 ## Goal and ownership
 
@@ -51,3 +51,11 @@ PR3 introduces typed object handles, per-context compiler artifact ownership, th
 Local implementation checks pass TypeScript, 62 JS unit tests, Rust formatting/clippy and the native Rust suite. The actual-Wasm entry now runs nine tests across Buffer and drawing transport. Seven unchanged CTS files passed 100 assertions on each of native, JS and Rust. The existing 45-test Chrome suite passed after public DrawingCore integration. Raw records are `artifacts/program-cores-check.log`, `artifacts/program-cores-wasm.log`, `artifacts/program-cores-full-chrome.log` and `artifacts/cts/results.json`.
 
 The lifecycle audit additionally verifies retained deleted shaders/programs, rejects rebinding a deleted program, and reports INVALID_VALUE after final shader/program retirement. The native probe is preserved in `artifacts/dual-core-drawing/native-retained-deletion.json`. Final three-path scenes and built deployment remain under PR4 acceptance.
+
+### Final drawing acceptance
+
+PR #5 introduced the unified-core implementation and was rebase-merged at 570e760 after ci/required passed. The final implementation passes 62 JS CPU tests, 27 Rust native tests, nine actual-Wasm tests and all 23 standalone compiler corpus cases. The standalone Node compiler entry required a relative-export resolution correction during integration, which is included in the final delivery.
+
+The final complete headed Chrome run passed all 64 tests in 41.9 seconds, including 16 common scenes through native/JS/Rust and all three triangle examples. Shared expected regions and native comparisons had zero byte difference. The seven unchanged CTS files passed 100 assertions per backend. Built deployment verification passed the WebGPU probe, JS render-to-texture demo, packaged ABI v2 and native/JS/Rust triangle pixels with no page errors.
+
+The final report is [dual-core drawing validation](../validation/2026-11-14-dual-core-drawing.md). Chrome's rejected attribute-pointer query deviation is preserved alongside the normative JS/Rust assertion. Rust texture/FBO, non-null matrix/integer updates and broader raster parity remain subsequent roadmap work. Required Actions retain their existing lightweight affected-module policy.

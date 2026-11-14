@@ -25,6 +25,8 @@ pnpm dev
 
 Open [the Chrome validation page](http://127.0.0.1:4173/examples/index.html). The probe checks actual WebGPU adapter/device creation, drawing, pixel readback, presentation, and the native WebGL environment. The demo selects native WebGL or Refral and runs the pinned WebGL Fundamentals render-to-texture scene.
 
+Open [the Rust triangle](http://127.0.0.1:4173/examples/triangle/index.html?core=rust) for the shared drawing profile. Set core=js or core=native in the URL to run the same scene through either reference path.
+
 The build produces a standalone `dist` tree containing the browser bundles, compiler Wasm, formal Rust core Wasm, core-selection experiment Wasm, and pinned demo resources. Serve it over localhost or HTTPS.
 
 ## Commands
@@ -47,6 +49,7 @@ The build produces a standalone `dist` tree containing the browser bundles, comp
 | `pnpm test:chrome` | Chrome compiler, core selection, semantics, CTS, and baseline collection |
 | `pnpm test:cts` | Original-assertion pinned Khronos cases through the recorded test adapter |
 | `pnpm test:buffers` | Shared native/JS/Rust public Buffer, handle, ownership, and loss fixtures |
+| `pnpm test:drawing` | Shared native/JS/Rust drawing, state/error, pixel and minimal-example checks |
 | `pnpm bench:chrome` | Paired native WebGL / Refral CPU samples |
 | `pnpm build` | Browser deployment tree |
 | `pnpm test:dist` | Built deployment probe and demo in actual Chrome |
@@ -75,6 +78,8 @@ Start with `AGENTS.md`, the documentation map in `docs/README.md`, and the relev
 The JS prototype's first Chrome verification passed 26 browser tests, 18 unit tests, and the built deployment check. `docs/validation.md` records that dated evidence and initial performance observations. Formal dual-core development starts with the common Buffer contract and shared fixtures. ADR 003 records the parallel-core direction. Current native-comparison microbenchmarks show higher CPU costs for the prototype, and allocation/binding optimization is queued in P3.
 
 The [dual-core Buffer milestone](docs/validation/2026-11-13-dual-core-buffers.md) passed 34 Chrome tests, 25 JS unit tests, 15 native Rust tests, and four actual-Wasm adapter tests. Both cores pass the shared Buffer fixtures. The built deployment also passes JS demo rendering and packaged Rust Wasm verification. Rust rendering parity advances through subsequent contracts.
+
+The [dual-core drawing milestone](docs/validation/2026-11-14-dual-core-drawing.md) passes 64 Chrome tests, 62 JS unit tests, 27 Rust native tests and nine actual-Wasm tests. Sixteen shared scenes pass native/JS/Rust state, error and pixel checks. Seven original CTS files pass 100 assertions per path. The standalone build includes a native/JS/Rust triangle example and the JS render-to-texture demo. Rust's next parity work covers matrix/integer updates, texture/FBO and broader raster state.
 
 Raw outputs are under ignored `artifacts/`. They include environment reports, compiler build/corpus results, JS/Rust samples, differential images, CTS assertions, screenshots, and paired performance samples. Validation summaries describe their environment and measurement limits. GPU timestamp results and internal Dawn integration require their own actual implementation and verification.
 

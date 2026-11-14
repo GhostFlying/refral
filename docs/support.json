@@ -2,7 +2,7 @@
   "version": 2,
   "profile": "webgl1-prototype",
   "updated": "2026-11-14",
-  "implementationRevision": "working-tree",
+  "implementationRevision": "task-013, exact source hashes in artifacts/environment/source.json",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
     "chrome-macos-arm64": {
@@ -55,7 +55,8 @@
           ],
           "coverage": "Explicit asynchronous WebGL1 factory. Differential fixtures request alpha=false, depth=true, stencil=false, antialias=false, preserveDrawingBuffer=true.",
           "tests": [
-            "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot"
+            "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
+            "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
             {
@@ -74,11 +75,24 @@
           ]
         },
         "rust": {
-          "status": "implemented-unverified",
-          "coverage": "The Rust Buffer profile implements the Buffer-related subset; the full group requires further parity work.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "status": "differential-verified",
+          "coverage": "Explicit async factory selects Rust, initializes one semantic instance, and returns recorded requested attributes. Shared drawing scenes use alpha=false, depth=true, stencil=false, antialias=false and DPR1.",
+          "tests": [
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/buffers.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/dual-core-drawing/",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dual-core-drawing-full-chrome.log",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
           "limits": [
             "See buffer-lifecycle-contract for the independently verified common Buffer scope."
           ]
@@ -97,7 +111,8 @@
           "coverage": "Invalid buffer target and negative viewport preserve prior valid state. Buffer binding and context ownership queries are compared.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential error-state",
-            "tests/chrome/differential.spec.ts::WebGL1 differential resource-ownership"
+            "tests/chrome/differential.spec.ts::WebGL1 differential resource-ownership",
+            "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
             {
@@ -120,11 +135,24 @@
           ]
         },
         "rust": {
-          "status": "implemented-unverified",
-          "coverage": "The Rust Buffer profile implements the Buffer-related subset; the full group requires further parity work.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "status": "differential-verified",
+          "coverage": "Shared Buffer, shader/program, uniform, vertex and draw validation. Rejected supported calls preserve semantic state. Retained/deleted identities and failed relink follow the pinned specification.",
+          "tests": [
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/buffers.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/dual-core-drawing/",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dual-core-drawing-full-chrome.log",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
           "limits": [
             "See buffer-lifecycle-contract for the independently verified common Buffer scope."
           ]
@@ -310,7 +338,8 @@
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update",
             "tests/chrome/differential.spec.ts::WebGL1 differential upload-snapshot",
-            "tests/chrome/differential.spec.ts::WebGL1 differential storage-replacement"
+            "tests/chrome/differential.spec.ts::WebGL1 differential storage-replacement",
+            "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
             {
@@ -340,11 +369,24 @@
           ]
         },
         "rust": {
-          "status": "implemented-unverified",
-          "coverage": "The Rust Buffer profile implements the Buffer-related subset; the full group requires further parity work.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "status": "differential-verified",
+          "coverage": "Draw-time owned Buffer snapshots preserve bytes across vertex/index updates, upload-view caller mutation, reallocation and deletion. Storage generation and content version remain independent.",
+          "tests": [
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/buffers.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/dual-core-drawing/",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dual-core-drawing-full-chrome.log",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
           "limits": [
             "See buffer-lifecycle-contract for the independently verified common Buffer scope."
           ]
@@ -367,7 +409,8 @@
           "coverage": "FLOAT attributes with sizes 1-4, aligned offsets and strides, and constant attributes. Pixel differential currently exercises enabled vec2 FLOAT data.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
-            "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update"
+            "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update",
+            "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
             {
@@ -398,19 +441,24 @@
           }
         },
         "rust": {
-          "status": "implemented-unverified",
-          "coverage": "FLOAT attributes and constants, size/stride/offset, enable/disable and Buffer references. Rust native and actual-Wasm checks passed. Three-path pixel scenes are pending final acceptance.",
+          "status": "differential-verified",
+          "coverage": "FLOAT array attributes and constants, enable/disable, size/stride/offset, null Buffer at offset zero, short constant-list rejection and Buffer query identity. Other vertex formats remain outside the Rust profile.",
           "tests": [
-            "packages/core-wasm/tests/render.integration.ts",
-            "crates/core/src/render_tests.rs"
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/buffers.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
           ],
           "evidence": [
             {
-              "path": "artifacts/program-cores-wasm.log",
+              "path": "artifacts/dual-core-drawing/",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dual-core-drawing-full-chrome.log",
               "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics."
         }
       },
       "specRefs": [
@@ -431,7 +479,8 @@
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update",
-            "tests/chrome/differential.spec.ts::WebGL1 differential index-format-cache"
+            "tests/chrome/differential.spec.ts::WebGL1 differential index-format-cache",
+            "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
             {
@@ -465,19 +514,24 @@
           ]
         },
         "rust": {
-          "status": "implemented-unverified",
-          "coverage": "Default-target TRIANGLES drawArrays and drawElements with UNSIGNED_BYTE/UNSIGNED_SHORT, owned Buffer/uniform snapshots. Real-Wasm CPU executor tests passed. Three-path pixel scenes are pending final acceptance.",
+          "status": "differential-verified",
+          "coverage": "Default-target TRIANGLES arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws, with captured Buffer and uniform bytes and strict bounds/alignment validation.",
           "tests": [
-            "packages/core-wasm/tests/render.integration.ts",
-            "crates/core/src/render_tests.rs"
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/buffers.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
           ],
           "evidence": [
             {
-              "path": "artifacts/program-cores-wasm.log",
+              "path": "artifacts/dual-core-drawing/",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dual-core-drawing-full-chrome.log",
               "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics."
         }
       },
       "specRefs": [
@@ -499,7 +553,8 @@
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture",
             "tests/chrome/differential.spec.ts::WebGL1 differential relink-and-errors",
-            "tests/chrome/cts.spec.ts::sdk/tests/conformance/uniforms/null-uniform-location.html"
+            "tests/chrome/cts.spec.ts::sdk/tests/conformance/uniforms/null-uniform-location.html",
+            "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
             {
@@ -550,19 +605,27 @@
           }
         },
         "rust": {
-          "status": "implemented-unverified",
-          "coverage": "Float 1..4 scalar/vector f/fv updates and queries. Null locations are ignored for all setters. Non-null integer/sampler and matrix updates remain outside the Rust profile.",
+          "status": "differential-verified",
+          "coverage": "Float 1..4 f/fv updates and queries, float array packing, independent draw values and relink reset. Non-null integer/sampler and matrix updates remain subsequent Rust parity work. All null uniform setter forms are covered by original CTS.",
           "tests": [
-            "packages/core-wasm/tests/render.integration.ts",
-            "crates/core/src/render_tests.rs"
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/buffers.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
           ],
           "evidence": [
             {
-              "path": "artifacts/program-cores-wasm.log",
+              "path": "artifacts/dual-core-drawing/",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dual-core-drawing-full-chrome.log",
               "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
+          "limits": [
+            "Rust non-null setters cover float scalar/vector values. Integer, sampler and matrix updates are pending."
+          ]
         }
       },
       "specRefs": [
@@ -849,7 +912,8 @@
           "coverage": "Masked/scissored color clear and viewport-separated draws match native pixels. Clear uses a draw-based path that honors masks.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential masked-clear",
-            "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot"
+            "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
+            "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
             {
@@ -872,19 +936,24 @@
           ]
         },
         "rust": {
-          "status": "implemented-unverified",
-          "coverage": "Viewport and default color/depth clear. Scissor and write-mask updates remain subsequent Rust parity work.",
+          "status": "differential-verified",
+          "coverage": "Viewport and default color/depth clear, including ordered regions and canvas resize. Scissor and write-mask updates remain subsequent Rust parity work.",
           "tests": [
-            "packages/core-wasm/tests/render.integration.ts",
-            "crates/core/src/render_tests.rs"
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/buffers.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
           ],
           "evidence": [
             {
-              "path": "artifacts/program-cores-wasm.log",
+              "path": "artifacts/dual-core-drawing/",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dual-core-drawing-full-chrome.log",
               "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics."
         }
       }
     },
@@ -1055,7 +1124,8 @@
           ],
           "coverage": "Deletion after encoded draws, buffer unbinding and cross-context buffer rejection are pixel/state verified. Other object classes have implemented reference and retirement handling.",
           "tests": [
-            "tests/chrome/differential.spec.ts::WebGL1 differential resource-ownership"
+            "tests/chrome/differential.spec.ts::WebGL1 differential resource-ownership",
+            "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
             {
@@ -1080,11 +1150,24 @@
           }
         },
         "rust": {
-          "status": "implemented-unverified",
-          "coverage": "The Rust Buffer profile implements the Buffer-related subset; the full group requires further parity work.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "status": "differential-verified",
+          "coverage": "Typed context/kind/generation validation, Buffer replacement/deletion, shader/program retained deletion and final retirement, program link generations and old locations. Texture/FBO lifetime remains subsequent Rust parity work.",
+          "tests": [
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/buffers.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/dual-core-drawing/",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dual-core-drawing-full-chrome.log",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
           "limits": [
             "See buffer-lifecycle-contract for the independently verified common Buffer scope."
           ]
@@ -1102,7 +1185,8 @@
           ],
           "coverage": "Draws outside rAF and inside rAF submit automatically. Explicit flush works with pending drawing.",
           "tests": [
-            "tests/chrome/differential.spec.ts::WebGL1 differential automatic-submit"
+            "tests/chrome/differential.spec.ts::WebGL1 differential automatic-submit",
+            "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
             {
@@ -1119,19 +1203,24 @@
           ]
         },
         "rust": {
-          "status": "implemented-unverified",
-          "coverage": "Microtask submission after draw/clear and explicit flush. Actual-Wasm CPU checks passed. Three-path presentation scenes are pending final acceptance.",
+          "status": "differential-verified",
+          "coverage": "Microtask submission inside and outside requestAnimationFrame, explicit flush and presented canvas pixels. Common host encoding/submission follows each Rust-owned draw snapshot.",
           "tests": [
-            "packages/core-wasm/tests/render.integration.ts",
-            "crates/core/src/render_tests.rs"
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/buffers.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
           ],
           "evidence": [
             {
-              "path": "artifacts/program-cores-wasm.log",
+              "path": "artifacts/dual-core-drawing/",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dual-core-drawing-full-chrome.log",
               "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics."
         }
       }
     },
@@ -1147,7 +1236,8 @@
           "coverage": "Resize and resource disposal paths are implemented. Device loss dispatches the browser context event and marks the semantic context lost.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential resize-framebuffer",
-            "tests/chrome/lifecycle.spec.ts::device loss notifies the context and terminates resource creation"
+            "tests/chrome/lifecycle.spec.ts::device loss notifies the context and terminates resource creation",
+            "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
             {
@@ -1169,11 +1259,24 @@
           }
         },
         "rust": {
-          "status": "implemented-unverified",
-          "coverage": "The Rust Buffer profile implements the Buffer-related subset; the full group requires further parity work.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "status": "differential-verified",
+          "coverage": "Default-target drawing/capture follows canvas dimensions. Shared Buffer loss fixtures verify neutral state and one loss error. Device recovery and context restoration remain outside this milestone.",
+          "tests": [
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/buffers.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/dual-core-drawing/",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dual-core-drawing-full-chrome.log",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
           "limits": [
             "See buffer-lifecycle-contract for the independently verified common Buffer scope."
           ]
@@ -1192,7 +1295,8 @@
           "coverage": "Test-only asynchronous RGBA8 capture is compared against native readPixels in the differential harness.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
-            "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture"
+            "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture",
+            "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
             {
@@ -1215,19 +1319,24 @@
           ]
         },
         "rust": {
-          "status": "implemented-unverified",
-          "coverage": "Common BrowserHost asynchronous default-framebuffer capture. Chrome explicit-core selection/capture regression passed.",
+          "status": "differential-verified",
+          "coverage": "Common BrowserHost default-framebuffer asynchronous capture passes all 16 shared drawing scenes. Public synchronous readPixels remains outside the profile.",
           "tests": [
-            "packages/core-wasm/tests/render.integration.ts",
-            "crates/core/src/render_tests.rs"
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/buffers.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
           ],
           "evidence": [
             {
-              "path": "artifacts/program-cores-wasm.log",
+              "path": "artifacts/dual-core-drawing/",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dual-core-drawing-full-chrome.log",
               "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid supported inputs set GL errors. Valid operations beyond the declared Rust profile report NotSupportedError."
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics."
         }
       }
     },
@@ -1536,13 +1645,13 @@
     }
   },
   "coreVerification": {
-    "report": "docs/validation/2026-11-13-dual-core-buffers.md",
+    "report": "docs/validation/2026-11-14-dual-core-drawing.md",
     "environment": "chrome-macos-arm64",
     "allChromeTests": {
-      "passed": 45,
+      "passed": 64,
       "failed": 0,
       "skipped": 0,
-      "evidence": "artifacts/program-cores-full-chrome.log"
+      "evidence": "artifacts/dual-core-drawing-full-chrome.log"
     },
     "deterministicChecks": {
       "typescript": "passed",
@@ -1562,15 +1671,17 @@
       "renderingDifferentialFixtures": 23,
       "ctsFiles": 7,
       "ctsAssertions": 100,
-      "remainingParity": "Expand original CTS coverage and define further shared contracts."
+      "remainingParity": "Expand original CTS coverage and define further shared contracts.",
+      "sharedDrawingScenes": 16
     },
     "rust": {
       "profile": "webgl1-default-drawing",
       "bufferSuite": "passed",
-      "renderingDifferentialFixtures": 0,
+      "renderingDifferentialFixtures": 16,
       "ctsFiles": 7,
-      "remainingParity": "Final default-target drawing acceptance in task 013 PR4, followed by matrix/integer updates, other vertex formats, textures, framebuffer and broader raster state.",
-      "ctsAssertions": 100
+      "remainingParity": "Non-null matrix/integer/sampler updates, other vertex formats, textures/FBO and broader raster state, then additional original CTS.",
+      "ctsAssertions": 100,
+      "sharedDrawingScenes": 16
     },
     "sharedCompiler": {
       "corpusCases": 23,
@@ -1580,8 +1691,9 @@
     },
     "explicitSelectionTest": "tests/chrome/core-profile.spec.ts::explicit Rust selection runs its drawing core and JS remains the default",
     "deployment": {
-      "status": "pending",
-      "scope": "ABI v2 and native/JS/Rust triangle deployment acceptance in task 013 PR4."
+      "status": "passed",
+      "evidence": "artifacts/deployment/result.json",
+      "scope": "Built WebGPU probe, JS render-to-texture, packaged ABI v2 and actual native/JS/Rust triangle pixels."
     }
   },
   "specifications": {
@@ -1601,6 +1713,19 @@
     "programEvidence": "artifacts/program-spec/",
     "bufferSourceEvidence": "artifacts/buffers/sources.json",
     "scope": "Native and JS pass seven original CTS files and five derived program scenes. Buffer input conversion is also verified with Rust. Rust shader/program acceptance follows the shared-contract stage.",
-    "rust": "Seven unchanged CTS files passed 100 assertions. Shader/program, UTF16, float and owned-draw transport also pass native/actual-Wasm CPU checks. Final three-path drawing scenes are in task 013 PR4."
+    "rust": "Seven original CTS files, 100 assertions, and 16 shared drawing scenes passed. Native/actual-Wasm regressions cover ownership, lifecycle and transport."
+  },
+  "sharedDrawingVerification": {
+    "cases": 16,
+    "backends": [
+      "native",
+      "js",
+      "rust"
+    ],
+    "tolerance": 1,
+    "maximumObservedDifference": 0,
+    "mismatchedChannels": 0,
+    "evidence": "artifacts/dual-core-drawing/",
+    "nativeDeviation": "Chrome 157 attribute query shadow after rejected vertexAttribPointer calls is recorded separately. JS/Rust assert specification-required unchanged state. Errors and rendered pixels are compared across all backends."
   }
 }

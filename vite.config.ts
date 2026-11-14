@@ -29,5 +29,9 @@ export default defineConfig({
   },
   server: { host: '127.0.0.1', port: 4173, strictPort: true, hmr: process.env.REFRAL_TEST !== '1',
     watch: { ignored: ['**/artifacts/**', '**/third_party/**', '**/target/**'] } },
-  build: { outDir: 'dist', rollupOptions: { input: { validation: path('./examples/index.html'), selection: path('./experiments/core-selection/index.html') } } },
+  build: { outDir: 'dist', rollupOptions: { input: {
+    validation: path('./examples/index.html'),
+    selection: path('./experiments/core-selection/index.html'),
+    triangle: path('./examples/triangle/index.html'),
+  } } },
 });

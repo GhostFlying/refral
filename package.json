@@ -27,6 +27,7 @@
     "test:probe": "playwright test probe.spec.ts",
     "test:cts": "playwright test cts.spec.ts",
     "test:buffers": "playwright test buffers.spec.ts",
+    "test:drawing": "playwright test dual-core-drawing.spec.ts",
     "test:dist": "node tools/verify-dist.mjs",
     "snapshot": "node tools/snapshot.mjs",
     "bench:chrome": "playwright test benchmark.spec.ts",

@@ -1,27 +1,10 @@
-import { GL, componentCount } from "@refral/core-js";
+import { GL, componentCount } from "@refral/core-api";
 import type {
   AttributeSnapshot, RasterState, TargetSnapshot, TextureParameters, TextureStorage,
-} from "@refral/core-js";
-import type { LinkedProgram } from "@refral/compiler";
+  LinkedProgram, DrawOperation, SemanticHost,
+} from "@refral/core-api";
 
-export interface TextureBinding {
-  storage: TextureStorage | null;
-  parameters: TextureParameters;
-}
-
-export interface DrawOperation {
-  program: LinkedProgram;
-  target: TargetSnapshot;
-  state: RasterState;
-  attributes: AttributeSnapshot[];
-  vertexCount: number;
-  count: number;
-  first: number;
-  indices: { data: Uint8Array; type: number; offset: number } | null;
-  vertexUniforms: Uint8Array;
-  fragmentUniforms: Uint8Array;
-  textures: TextureBinding[];
-}
+export type { TextureBinding, DrawOperation } from "@refral/core-api";
 
 export interface HostStats {
   draws: number;
@@ -94,7 +77,7 @@ function colorWriteMask(mask: readonly boolean[]): GPUColorWriteFlags {
   return mask.reduce((bits, enabled, index) => bits | (enabled ? 1 << index : 0), 0);
 }
 
-export class BrowserHost {
+export class BrowserHost implements SemanticHost {
   readonly stats: HostStats = {
     draws: 0, passes: 0, submits: 0, copies: 0, uploadedBytes: 0,
     pipelines: 0, bindGroups: 0, allocatedBufferBytes: 0, allocatedTextureBytes: 0,

@@ -1,4 +1,6 @@
 export { GL } from './gl.js';
+export type * from './compiler.js';
+export * from './execution.js';
 
 export type CoreKind = 'js' | 'rust';
 

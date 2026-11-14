@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
+import { PNG } from 'pngjs';
 
 await mkdir('artifacts/deployment', { recursive: true });
 const log = createWriteStream('artifacts/deployment/preview.log');
@@ -58,9 +59,24 @@ try {
   });
   assert.deepEqual(rustBuffer, { version: 2, initialized: 1, slot: 1, generation: 1, byteLength: 4, error: 0 });
   await page.screenshot({ path: 'artifacts/deployment/chrome.png' });
-  const result = { recordedAt: new Date().toISOString(), url: page.url(), browserVersion: browser.version(), headless: process.env.REFRAL_HEADLESS === '1', viewport: page.viewportSize(), probe, demo, rustBuffer, pageErrors: errors };
+  const triangles = [];
+  for (const core of ['native', 'js', 'rust']) {
+    await page.goto(`http://127.0.0.1:4174/examples/triangle/index.html?core=${core}`);
+    await page.waitForFunction(expected => document.querySelector('#status').textContent === `${expected} · rendered`, core);
+    const context = await page.evaluate(() => window.refralTriangle);
+    assert.equal(context.selectedCore, core);
+    assert.equal(context.ready, true);
+    const screenshot = await page.locator('canvas').screenshot({ path: `artifacts/deployment/triangle-${core}.png` });
+    const png = PNG.sync.read(screenshot);
+    const center = (Math.floor(png.height / 2) * png.width + Math.floor(png.width / 2)) * 4;
+    const centerPixel = Array.from(png.data.subarray(center, center + 4));
+    assert.ok(centerPixel[0] + centerPixel[1] + centerPixel[2] > 150, `${core} triangle pixels`);
+    triangles.push({ ...context, centerPixel });
+  }
+  assert.deepEqual(errors, []);
+  const result = { recordedAt: new Date().toISOString(), url: page.url(), browserVersion: browser.version(), headless: process.env.REFRAL_HEADLESS === '1', viewport: page.viewportSize(), probe, demo, rustBuffer, triangles, pageErrors: errors };
   await writeFile('artifacts/deployment/result.json', JSON.stringify(result, null, 2) + '\n');
-  console.log('Built deployment passed Chrome probe, compiler/demo rendering, packaged Rust Buffer ABI, controls and page-error checks.');
+  console.log('Built deployment passed Chrome probe, JS render-to-texture demo, native/JS/Rust triangle rendering, packaged ABI v2 and page-error checks.');
 } finally {
   try { await browser?.close(); } finally {
     if (server.exitCode === null) {

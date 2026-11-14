@@ -15,6 +15,7 @@ Current direction is parallel JS/TypeScript and Rust/Wasm semantic cores sharing
 | [Agent tasks](tasks/) | Bounded implementation plans, dependencies, acceptance, and results |
 | [Initial Chrome validation](validation.md) | Dated prototype verification and measurements |
 | [Dual-core Buffer validation](validation/2026-11-13-dual-core-buffers.md) | Current shared Buffer acceptance, JS regression, and remaining Rust parity |
+| [Dual-core drawing validation](validation/2026-11-14-dual-core-drawing.md) | Unified cores, original CTS, three-path pixels, built examples, and remaining Rust scope |
 
 ADR 003 records the current [parallel-core direction](adr/003-parallel-cores.md). ADR 001 records the earlier [small-core experiment and initial JS implementation choice](adr/001-runtime-core.md). ADR 002 documents the [ANGLE Wasm compiler](adr/002-compiler.md).
 

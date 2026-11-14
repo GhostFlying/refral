@@ -9,7 +9,7 @@ use refral_core::{BufferCore, BufferHandle, BufferSnapshot, INVALID_OPERATION, O
 
 mod render;
 
-const ABI_VERSION: u32 = 2;
+const ABI_VERSION: u32 = 3;
 
 enum Upload {
     Data { target: u32, usage: u32 },
@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn initializes_and_rejects_invalid_limits() {
-        assert_eq!(rf_abi_version(), 2);
+        assert_eq!(rf_abi_version(), 3);
         assert_eq!(rf_init(0, 1.0), 0);
         assert_eq!(rf_init(1, f64::NAN), 0);
         assert_eq!(rf_init(1, -1.0), 0);

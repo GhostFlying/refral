@@ -49,6 +49,9 @@ class UniformLocation {
 
 function clamp(value: number): number { return Math.max(0, Math.min(1, Number(value) || 0)); }
 function baseName(name: string): string { return name.replace(/\[0\]$/, ""); }
+function isUniformArray(uniform: { name: string; size: number; arrayStride?: number }): boolean {
+  return uniform.size > 1 || (uniform.arrayStride ?? 0) > 0 || uniform.name.endsWith("[0]");
+}
 function bytesOf(value: ArrayBufferView | ArrayBuffer): Uint8Array {
   return ArrayBuffer.isView(value)
     ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
@@ -411,7 +414,7 @@ export class SemanticContext {
     const list = [...(program.executable?.uniforms ?? []), ...(program.executable?.samplers ?? [])];
     const uniform = list[index];
     if (!uniform) { this.error(GL.INVALID_VALUE); return null; }
-    return { name: uniform.size > 1 ? `${baseName(uniform.name)}[0]` : uniform.name,
+    return { name: isUniformArray(uniform) ? `${baseName(uniform.name)}[0]` : uniform.name,
       size: uniform.size, type: uniform.type };
   }
   getUniformLocation(program: ProgramObject, name: string): UniformLocation | null {
@@ -469,12 +472,13 @@ export class SemanticContext {
     const expectedMatrix = uniform.type === GL.FLOAT_MAT2 ? 2 : uniform.type === GL.FLOAT_MAT3 ? 3 :
       uniform.type === GL.FLOAT_MAT4 ? 4 : 0;
     if ((!isBoolean && integer !== isInteger) || expectedMatrix !== matrix || componentCount(uniform.type) !== components ||
-        values.length / components > uniform.size - location.index) {
+        (values.length / components > 1 && !isUniformArray(uniform))) {
       return this.error(GL.INVALID_OPERATION);
     }
     const stored = program.values.get(location.name)!;
-    for (let i = 0; i < values.length; i++) {
-      const value = isBoolean ? (values[i] ? 1 : 0) : Number(values[i]);
+    const length = Math.min(values.length, (uniform.size - location.index) * components);
+    for (let i = 0; i < length; i++) {
+      const value = isBoolean ? (Number(values[i]) === 0 ? 0 : 1) : Number(values[i]);
       stored[location.index * components + i] = value;
     }
     this.packUniform(program, uniform, stored);
@@ -970,7 +974,8 @@ export class SemanticContext {
   }
   viewport(x: number, y: number, width: number, height: number): void {
     if (width < 0 || height < 0) return this.error(GL.INVALID_VALUE);
-    this.state.viewport = [x, y, width, height];
+    const maximum = this.host.limits.maxTextureDimension2D;
+    this.state.viewport = [x, y, Math.min(width, maximum), Math.min(height, maximum)];
   }
   scissor(x: number, y: number, width: number, height: number): void {
     if (width < 0 || height < 0) return this.error(GL.INVALID_VALUE);
@@ -1007,6 +1012,7 @@ export class SemanticContext {
       GL.ONE_MINUS_DST_ALPHA, GL.CONSTANT_COLOR, GL.ONE_MINUS_CONSTANT_COLOR,
       GL.CONSTANT_ALPHA, GL.ONE_MINUS_CONSTANT_ALPHA, GL.SRC_ALPHA_SATURATE] as number[];
     if (![srcRGB, dstRGB, srcAlpha, dstAlpha].every(value => factors.includes(value))) return this.error(GL.INVALID_ENUM);
+    if (dstRGB === GL.SRC_ALPHA_SATURATE || dstAlpha === GL.SRC_ALPHA_SATURATE) return this.error(GL.INVALID_ENUM);
     const colorFactors = [GL.CONSTANT_COLOR, GL.ONE_MINUS_CONSTANT_COLOR] as number[];
     const alphaFactors = [GL.CONSTANT_ALPHA, GL.ONE_MINUS_CONSTANT_ALPHA] as number[];
     if ((colorFactors.includes(srcRGB) && alphaFactors.includes(dstRGB)) ||

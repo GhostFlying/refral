@@ -459,3 +459,236 @@ fn attribute_vector_length_and_null_buffer_pointer_follow_webgl_rules() {
     );
     assert_eq!(core.get_error(), INVALID_OPERATION);
 }
+
+fn install_layout(core: &mut ContextCore, program: ObjectHandle, layout: ProgramLayout) {
+    let Reply::Link(request) = core.prepare_link(Some(program)) else {
+        panic!()
+    };
+    assert!(core.commit_link(
+        program,
+        request.request_id,
+        LinkOutcome {
+            artifact_id: 100,
+            success: true,
+            log: String::new(),
+            layout
+        }
+    ));
+}
+fn uniform_info(
+    name: &str,
+    ty: u32,
+    size: u32,
+    offset: usize,
+    array_stride: usize,
+    matrix_stride: usize,
+) -> UniformInfo {
+    UniformInfo {
+        active: ActiveInfo {
+            name: name.into(),
+            ty,
+            size,
+        },
+        vertex_offset: Some(offset),
+        fragment_offset: Some(offset),
+        array_stride,
+        matrix_stride,
+    }
+}
+
+#[test]
+fn typed_uniforms_preserve_i32_bool_matrix_array_values_and_padding() {
+    let (mut core, program, _, _, _, _) = scene();
+    let mut layout = layout();
+    layout.uniforms = vec![
+        uniform_info("u_int", 0x8b55, 1, 0, 0, 0),
+        uniform_info("u_bool", 0x8b58, 1, 16, 0, 0),
+        uniform_info("u_matrix[0]", 0x8b5b, 2, 32, 48, 16),
+        uniform_info("u_array[0]", FLOAT_VEC2, 3, 128, 16, 0),
+        uniform_info("u_float", FLOAT, 1, 176, 0, 0),
+        uniform_info("u_single_array", FLOAT, 1, 180, 16, 0),
+    ];
+    layout.vertex_bytes = 192;
+    layout.fragment_bytes = 192;
+    install_layout(&mut core, program, layout);
+    let int = handle(core.render_invoke("getUniformLocation", &[h(program), s("u_int")]));
+    let integers = vec![i32::MAX, i32::MIN, 16_777_217, -16_777_217];
+    core.render_invoke("uniform4iv", &[h(int), Argument::Ints(integers.clone())]);
+    let Reply::Ints(values) = core.render_invoke("getUniform", &[h(program), h(int)]) else {
+        panic!()
+    };
+    assert_eq!(values, integers);
+    let boolean = handle(core.render_invoke("getUniformLocation", &[h(program), s("u_bool")]));
+    core.render_invoke(
+        "uniform3fv",
+        &[h(boolean), Argument::Floats(vec![-0.0, f32::NAN, -1.0])],
+    );
+    let Reply::Booleans(values) = core.render_invoke("getUniform", &[h(program), h(boolean)])
+    else {
+        panic!()
+    };
+    assert_eq!(values, [false, true, true]);
+    let matrix = handle(core.render_invoke("getUniformLocation", &[h(program), s("u_matrix")]));
+    core.render_invoke(
+        "uniformMatrix3fv",
+        &[
+            h(matrix),
+            Argument::Boolean(false),
+            Argument::Floats((1..=18).map(|value| value as f32).collect()),
+        ],
+    );
+    let matrix_second =
+        handle(core.render_invoke("getUniformLocation", &[h(program), s("u_matrix[1]")]));
+    let Reply::Floats(values) = core.render_invoke("getUniform", &[h(program), h(matrix_second)])
+    else {
+        panic!()
+    };
+    assert_eq!(
+        values,
+        (10..=18).map(|value| value as f32).collect::<Vec<_>>()
+    );
+    let array = handle(core.render_invoke("getUniformLocation", &[h(program), s("u_array")]));
+    core.render_invoke(
+        "uniform2fv",
+        &[
+            h(array),
+            Argument::Floats((1..=10).map(|value| value as f32).collect()),
+        ],
+    );
+    assert_eq!(core.get_error(), NO_ERROR);
+    let single_array =
+        handle(core.render_invoke("getUniformLocation", &[h(program), s("u_single_array")]));
+    core.render_invoke(
+        "uniform1fv",
+        &[h(single_array), Argument::Floats(vec![4.0, 5.0, 6.0])],
+    );
+    assert_eq!(core.get_error(), NO_ERROR);
+    assert!(matches!(
+        core.render_invoke("getUniform", &[h(program), h(single_array)]),
+        Reply::Number(4.0)
+    ));
+    let Reply::Active(active) = core.render_invoke("getActiveUniform", &[h(program), n(5.0)])
+    else {
+        panic!()
+    };
+    assert_eq!(active.name, "u_single_array[0]");
+    let snapshot = draw(&mut core);
+    let bytes = &snapshot.vertex_uniforms;
+    assert_eq!(
+        i32::from_le_bytes(bytes[0..4].try_into().unwrap()),
+        i32::MAX
+    );
+    assert_eq!(
+        i32::from_le_bytes(bytes[8..12].try_into().unwrap()),
+        16_777_217
+    );
+    assert_eq!(f32::from_le_bytes(bytes[32..36].try_into().unwrap()), 1.0);
+    assert_eq!(f32::from_le_bytes(bytes[48..52].try_into().unwrap()), 4.0);
+    assert_eq!(&bytes[44..48], &[0; 4]);
+    assert_eq!(f32::from_le_bytes(bytes[80..84].try_into().unwrap()), 10.0);
+    assert_eq!(f32::from_le_bytes(bytes[160..164].try_into().unwrap()), 5.0);
+    assert_eq!(&bytes[176..180], &[0; 4]);
+    core.render_invoke(
+        "uniformMatrix3fv",
+        &[
+            h(matrix),
+            Argument::Boolean(true),
+            Argument::Floats(vec![0.0; 9]),
+        ],
+    );
+    assert_eq!(core.get_error(), INVALID_VALUE);
+    core.render_invoke("uniform4fv", &[h(int), Argument::Floats(vec![1.0; 4])]);
+    assert_eq!(core.get_error(), INVALID_OPERATION);
+    core.render_invoke("useProgram", &[Argument::Null]);
+    let Reply::Ints(values) = core.render_invoke("getUniform", &[h(program), h(int)]) else {
+        panic!()
+    };
+    assert_eq!(values, integers);
+}
+
+#[test]
+fn scalar_sampler_units_and_scalar_boolean_getters_use_declared_types() {
+    let (mut core, program, _, _, _, _) = scene();
+    let mut layout = layout();
+    layout.uniforms = vec![uniform_info("u_boolean", 0x8b56, 1, 0, 0, 0)];
+    layout.vertex_bytes = 16;
+    layout.fragment_bytes = 16;
+    layout.samplers = vec![ActiveInfo {
+        name: "u_texture".into(),
+        ty: 0x8b5e,
+        size: 1,
+    }];
+    install_layout(&mut core, program, layout);
+    let boolean = handle(core.render_invoke("getUniformLocation", &[h(program), s("u_boolean")]));
+    core.render_invoke("uniform1f", &[h(boolean), n(f64::NAN)]);
+    assert!(matches!(
+        core.render_invoke("getUniform", &[h(program), h(boolean)]),
+        Reply::Boolean(true)
+    ));
+    let sampler = handle(core.render_invoke("getUniformLocation", &[h(program), s("u_texture")]));
+    core.render_invoke("uniform1i", &[h(sampler), n(7.0)]);
+    assert!(matches!(
+        core.render_invoke("getUniform", &[h(program), h(sampler)]),
+        Reply::Number(7.0)
+    ));
+    core.render_invoke("uniform1iv", &[h(sampler), Argument::Ints(vec![8])]);
+    assert_eq!(core.get_error(), INVALID_VALUE);
+    core.render_invoke("uniform1f", &[h(sampler), n(1.0)]);
+    assert_eq!(core.get_error(), INVALID_OPERATION);
+    assert!(matches!(
+        core.render_invoke("getUniform", &[h(program), h(sampler)]),
+        Reply::Number(7.0)
+    ));
+}
+
+#[test]
+fn raster_snapshots_preserve_state_and_failed_calls_are_atomic() {
+    let (mut core, _, _, _, _, _) = scene();
+    for cap in [0x0be2, 0x0b44, 0x0b71, 0x0c11] {
+        core.render_invoke("enable", &[n(cap as f64)]);
+    }
+    core.render_invoke("scissor", &[n(-1.0), n(2.0), n(8.0), n(9.0)]);
+    core.render_invoke(
+        "colorMask",
+        &[
+            Argument::Boolean(true),
+            Argument::Boolean(false),
+            Argument::Boolean(true),
+            Argument::Boolean(false),
+        ],
+    );
+    core.render_invoke("depthRange", &[n(-1.0), n(2.0)]);
+    core.render_invoke("depthFunc", &[n(0x203 as f64)]);
+    core.render_invoke("depthMask", &[Argument::Boolean(false)]);
+    core.render_invoke("frontFace", &[n(0x900 as f64)]);
+    core.render_invoke(
+        "blendFuncSeparate",
+        &[n(0x302 as f64), n(0x303 as f64), n(1.0), n(0.0)],
+    );
+    let before = draw(&mut core);
+    assert_eq!(before.state.scissor, [-1, 2, 8, 9]);
+    assert_eq!(before.state.color_mask, [true, false, true, false]);
+    assert_eq!(before.state.depth_range, [0.0, 1.0]);
+    assert!(
+        before.state.blend
+            && before.state.cull
+            && before.state.depth_test
+            && before.state.scissor_test
+    );
+    core.render_invoke("scissor", &[n(0.0), n(0.0), n(-1.0), n(1.0)]);
+    assert_eq!(core.get_error(), INVALID_VALUE);
+    core.render_invoke("depthRange", &[n(0.9), n(0.1)]);
+    assert_eq!(core.get_error(), INVALID_OPERATION);
+    core.render_invoke(
+        "blendFuncSeparate",
+        &[n(1.0), n(0.0), n(1.0), n(0x308 as f64)],
+    );
+    assert_eq!(core.get_error(), INVALID_ENUM);
+    assert_eq!(draw(&mut core).state, before.state);
+    core.render_invoke("cullFace", &[n(0x408 as f64)]);
+    assert!(matches!(
+        core.render_invoke("drawArrays", &[n(4.0), n(0.0), n(3.0)]),
+        Reply::Null
+    ));
+    assert_eq!(core.get_error(), NO_ERROR);
+}

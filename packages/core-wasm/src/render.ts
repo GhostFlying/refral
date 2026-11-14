@@ -8,6 +8,7 @@ import type {
   DrawOperation,
   TargetSnapshot,
   LogicalHandle,
+  RasterState,
 } from '@refral/core-api';
 
 const DEFAULT_URL = '/artifacts/core-wasm/refral_core.wasm';
@@ -146,6 +147,31 @@ class Reader {
   }
 }
 
+function readRaster(reader: Reader, width: number, height: number): RasterState {
+  const state = createRasterState(width, height);
+  state.viewport = [reader.i32(), reader.i32(), reader.i32(), reader.i32()];
+  state.scissor = [reader.i32(), reader.i32(), reader.i32(), reader.i32()];
+  state.scissorTest = reader.u32() !== 0;
+  const mask = reader.u32();
+  state.colorMask = [Boolean(mask & 1), Boolean(mask & 2), Boolean(mask & 4), Boolean(mask & 8)];
+  state.depthTest = reader.u32() !== 0;
+  state.depthMask = reader.u32() !== 0;
+  state.depthFunc = reader.u32();
+  state.depthRange = [reader.f32(), reader.f32()];
+  state.blend = reader.u32() !== 0;
+  state.blendColor = [reader.f32(), reader.f32(), reader.f32(), reader.f32()];
+  state.blendSrcRGB = reader.u32();
+  state.blendDstRGB = reader.u32();
+  state.blendSrcAlpha = reader.u32();
+  state.blendDstAlpha = reader.u32();
+  state.blendEquationRGB = reader.u32();
+  state.blendEquationAlpha = reader.u32();
+  state.cull = reader.u32() !== 0;
+  state.cullFace = reader.u32();
+  state.frontFace = reader.u32();
+  return state;
+}
+
 export function createRustDrawingCoreFromModule(
   module: WebAssembly.Module,
   options: DrawingCoreOptions,
@@ -201,10 +227,10 @@ export function createRustDrawingCoreFromModule(
     !(exports.memory instanceof WebAssembly.Memory) ||
     required.some((name) => typeof exports[name] !== 'function')
   ) {
-    throw new Error('Rust drawing module does not expose ABI v2.');
+    throw new Error('Rust drawing module does not expose ABI v3.');
   }
   const abi = exports as unknown as ABI;
-  if (abi.rf_abi_version() !== 2 || abi.rf_init(contextId, maxBufferBytes) !== 1)
+  if (abi.rf_abi_version() !== 3 || abi.rf_init(contextId, maxBufferBytes) !== 1)
     throw new Error('Rust drawing ABI initialization failed.');
 
   function memory(pointer: number, length: number): Uint8Array {
@@ -245,8 +271,12 @@ export function createRustDrawingCoreFromModule(
         const values = Array.from(arg as ArrayLike<number>);
         const bytes = new Uint8Array(values.length * 4);
         const view = new DataView(bytes.buffer);
-        values.forEach((value, index) => view.setFloat32(index * 4, value, true));
-        return { f: [append(bytes), values.length] };
+        const integer = op.endsWith('iv');
+        values.forEach((value, index) => {
+          if (integer) view.setInt32(index * 4, value, true);
+          else view.setFloat32(index * 4, value, true);
+        });
+        return { [integer ? 'i' : 'f']: [append(bytes), values.length] };
       }
       return arg;
     });
@@ -284,14 +314,13 @@ export function createRustDrawingCoreFromModule(
   }
   function executeDraw(bytes: Uint8Array): void {
     const reader = new Reader(bytes);
-    if (reader.u32() !== 0x32444652 || reader.u32() !== 2)
+    if (reader.u32() !== 0x33444652 || reader.u32() !== 3)
       throw new Error('Invalid Rust draw snapshot version.');
     const program = services.compiler.executable(reader.u32());
     reader.skip(12 + 8);
     const width = reader.u32();
     const height = reader.u32();
-    const state = createRasterState(width, height);
-    state.viewport = [reader.i32(), reader.i32(), reader.i32(), reader.i32()];
+    const state = readRaster(reader, width, height);
     const vertexCount = reader.u32();
     const first = reader.u32();
     const count = reader.u32();
@@ -333,6 +362,7 @@ export function createRustDrawingCoreFromModule(
       case 'boolean':
       case 'active':
       case 'object':
+      case 'booleans':
         return reply.value;
       case 'handle':
         return Object.freeze(reply.value as object);
@@ -343,11 +373,17 @@ export function createRustDrawingCoreFromModule(
         return new DataView(binary.buffer, binary.byteOffset, 8).getFloat64(0, true);
       case 'text':
         return utf16(binary);
+      case 'ints':
       case 'floats': {
         if (binary.byteLength % 4) throw new Error('Invalid float reply.');
-        const result = new Float32Array(binary.byteLength / 4);
+        const result =
+          reply.type === 'ints'
+            ? new Int32Array(binary.byteLength / 4)
+            : new Float32Array(binary.byteLength / 4);
         const view = new DataView(binary.buffer, binary.byteOffset, binary.byteLength);
-        for (let index = 0; index < result.length; index++) result[index] = view.getFloat32(index * 4, true);
+        for (let index = 0; index < result.length; index++)
+          result[index] =
+            reply.type === 'ints' ? view.getInt32(index * 4, true) : view.getFloat32(index * 4, true);
         return result;
       }
       case 'draw':
@@ -357,8 +393,7 @@ export function createRustDrawingCoreFromModule(
         const reader = new Reader(binary);
         const width = reader.u32();
         const height = reader.u32();
-        const state = createRasterState(width, height);
-        state.viewport = [reader.i32(), reader.i32(), reader.i32(), reader.i32()];
+        const state = readRaster(reader, width, height);
         const mask = reader.u32();
         const color = [reader.f32(), reader.f32(), reader.f32(), reader.f32()];
         const depth = reader.f32();
@@ -405,7 +440,13 @@ export function createRustDrawingCoreFromModule(
     memory(abi.rf_input_pointer(), bytes.byteLength).set(bytes);
     abi.rf_upload_commit();
   }
-  command('initializeDrawing', [surface.width, surface.height, profile.vertexAttributes]);
+  command('initializeDrawing', [
+    surface.width,
+    surface.height,
+    profile.vertexAttributes,
+    profile.combinedTextureUnits,
+    services.host.limits.maxTextureDimension2D,
+  ]);
   return Object.freeze({
     kind: 'rust' as const,
     contextId,
@@ -456,13 +497,17 @@ export function createRustDrawingCoreFromModule(
     getError: () => abi.rf_get_error() >>> 0,
     markLost() {
       const changed = abi.rf_mark_lost() === 1;
-      if (changed) services.compiler.dispose();
+      if (changed) {
+        services.compiler.dispose();
+        services.resources.dispose();
+      }
       return changed;
     },
     isContextLost: () => abi.rf_is_context_lost() === 1,
     dispose() {
       abi.rf_dispose();
       services.compiler.dispose();
+      services.resources.dispose();
     },
     captureTarget: () => target(),
     invoke(operation: string, args: unknown[]): unknown {

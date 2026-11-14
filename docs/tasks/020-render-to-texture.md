@@ -43,3 +43,13 @@ Baseline checkout and Git identity were verified. No user changes were present. 
 TypeScript passed. The deterministic unit suite passed 75 tests across 12 files, including nine new facade/execution-resource regressions and four JS resource-handle cases. The original complete Chrome suite passed 64 tests in 44.4 seconds against the retained ABI v2 artifact, including the JS render-to-texture demo, shared Buffer/drawing and seven original CTS files. Evidence is in `artifacts/rtt-pr1-type.log`, `artifacts/rtt-pr1-unit.log` and `artifacts/rtt-pr1-chrome.log`.
 
 The four new uniform CTS files are acquired under preparedTests for PR2 activation. Rust ABI v3 development is isolated from the accepted v2 browser artifact during this integration step.
+
+### PR2 compiler dependency correction
+
+The full i32 shared GPU fixture exposed ANGLE emitting `-2147483648i`, whose positive signed literal is rejected by WGSL validation. Preserve the ESSL INT_MIN case and correct the pinned WGSL constant emitter through a recorded idempotent source patch. Add a standalone compiler case and a real pipeline case, rebuild the compiler, then rerun the shared i32 draw and all eleven original CTS files. This bounded correction belongs to PR2's typed uniform acceptance.
+
+### PR2 acceptance
+
+PR #7 rebase-merged the resource contract at 75872b1 after ci/required passed. ABI v3 and typed uniform/raster implementations pass 86 deterministic CPU tests, 30 native Rust tests, TypeScript, formatting/clippy and twelve actual-Wasm tests. Eleven unchanged original CTS files pass 243 assertions on each backend. The four shared uniform/raster scenes, original CTS and compiler GPU test pass six targeted Chrome tests after the INT_MIN source patch. Standalone corpus passes 24 cases and four real shader pairs create GPU pipelines. The patch's second build passes idempotence checking and Ninja reports no work.
+
+PR2 activates four RTT cases in the normal Chrome entry. Texture and framebuffer traces are prepared for activation in their implementation slices. Future draft CPU tests remain outside this PR's source and acceptance. Logs are under `artifacts/rtt-pr2-*`.

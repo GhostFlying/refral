@@ -23,6 +23,12 @@ test("ANGLE Wasm compiles ESSL corpus and WebGPU accepts linked WGSL", async ({ 
       {
         version: 1 as const,
         matrix: false,
+        vertex: 'attribute vec3 position; void main(){gl_Position=vec4(position,1.0);}',
+        fragment: 'precision highp float; precision highp int; uniform int value; void main(){gl_FragColor=vec4(value == (-2147483647 - 1) ? 1.0 : 0.0);}',
+      },
+      {
+        version: 1 as const,
+        matrix: false,
         vertex: "attribute vec3 position; uniform mat4 matrix; varying vec2 uv; void main(){ uv=position.xy; gl_Position=matrix*vec4(position,1.0); }",
         fragment: "precision mediump float; varying vec2 uv; uniform sampler2D image; uniform vec4 color; void main(){ gl_FragColor=texture2D(image,uv)*color; }",
       },

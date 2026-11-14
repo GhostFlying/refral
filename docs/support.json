@@ -2,7 +2,7 @@
   "version": 2,
   "profile": "webgl1-prototype",
   "updated": "2026-11-14",
-  "implementationRevision": "task-013, exact source hashes in artifacts/environment/source.json",
+  "implementationRevision": "task-020 in progress, dated acceptance records identify the tested slice",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
     "chrome-macos-arm64": {
@@ -27,7 +27,11 @@
         "sdk/tests/conformance/uniforms/null-uniform-location.html",
         "sdk/tests/conformance/programs/gl-get-active-attribute.html",
         "sdk/tests/conformance/buffers/buffer-bind-test.html",
-        "sdk/tests/conformance/programs/gl-getshadersource.html"
+        "sdk/tests/conformance/programs/gl-getshadersource.html",
+        "sdk/tests/conformance/uniforms/gl-uniformmatrix4fv.html",
+        "sdk/tests/conformance/uniforms/gl-uniform-arrays.html",
+        "sdk/tests/conformance/uniforms/gl-uniform-bool.html",
+        "sdk/tests/conformance/uniforms/gl-get-uniform-non-current-program.html"
       ]
     },
     "demo": {
@@ -605,26 +609,26 @@
           }
         },
         "rust": {
-          "status": "differential-verified",
-          "coverage": "Float 1..4 f/fv updates and queries, float array packing, independent draw values and relink reset. Non-null integer/sampler and matrix updates remain subsequent Rust parity work. All null uniform setter forms are covered by original CTS.",
+          "status": "cts-verified",
+          "coverage": "Float/int/bool scalar/vector and array updates and typed queries, full i32 precision, scalar sampler2D assignment and validation. Actual texture sampling follows the texture slice.",
           "tests": [
-            "tests/chrome/dual-core-drawing.spec.ts",
-            "tests/chrome/buffers.spec.ts",
+            "tests/chrome/rtt.spec.ts",
+            "tests/chrome/cts.spec.ts",
             "packages/core-wasm/tests/render.integration.ts"
           ],
           "evidence": [
             {
-              "path": "artifacts/dual-core-drawing/",
+              "path": "artifacts/rtt-pr2-verified-chrome.log",
               "passed": true
             },
             {
-              "path": "artifacts/dual-core-drawing-full-chrome.log",
+              "path": "artifacts/cts/results.json",
               "passed": true
             }
           ],
           "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
           "limits": [
-            "Rust non-null setters cover float scalar/vector values. Integer, sampler and matrix updates are pending."
+            "Texture/FBO execution is validated by the following task 020 slices."
           ]
         }
       },
@@ -676,11 +680,27 @@
           }
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "cts-verified",
+          "coverage": "mat2/mat3/mat4 and matrix-array packing follows reflected strides. Transpose/length/null/relink/non-current queries and array truncation passed original CTS and shared drawing tests.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts",
+            "tests/chrome/cts.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/rtt-pr2-verified-chrome.log",
+              "passed": true
+            },
+            {
+              "path": "artifacts/cts/results.json",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "limits": [
+            "Texture/FBO execution is validated by the following task 020 slices."
+          ]
         }
       }
     },
@@ -731,7 +751,7 @@
         },
         "rust": {
           "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "coverage": "This capability group is outside the declared Rust profile.",
           "tests": [],
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
@@ -758,7 +778,7 @@
         },
         "rust": {
           "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "coverage": "This capability group is outside the declared Rust profile.",
           "tests": [],
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
@@ -807,7 +827,7 @@
         },
         "rust": {
           "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "coverage": "This capability group is outside the declared Rust profile.",
           "tests": [],
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
@@ -852,7 +872,7 @@
         },
         "rust": {
           "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "coverage": "This capability group is outside the declared Rust profile.",
           "tests": [],
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
@@ -893,7 +913,7 @@
         },
         "rust": {
           "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "coverage": "This capability group is outside the declared Rust profile.",
           "tests": [],
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
@@ -937,23 +957,26 @@
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "Viewport and default color/depth clear, including ordered regions and canvas resize. Scissor and write-mask updates remain subsequent Rust parity work.",
+          "coverage": "Viewport/scissor, color/depth masks, clear and declared raster-state validation. Shared masked/scissored drawing and clear regions pass native comparison.",
           "tests": [
-            "tests/chrome/dual-core-drawing.spec.ts",
-            "tests/chrome/buffers.spec.ts",
+            "tests/chrome/rtt.spec.ts",
+            "tests/chrome/cts.spec.ts",
             "packages/core-wasm/tests/render.integration.ts"
           ],
           "evidence": [
             {
-              "path": "artifacts/dual-core-drawing/",
+              "path": "artifacts/rtt-pr2-verified-chrome.log",
               "passed": true
             },
             {
-              "path": "artifacts/dual-core-drawing-full-chrome.log",
+              "path": "artifacts/cts/results.json",
               "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics."
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
+          "limits": [
+            "Texture/FBO execution is validated by the following task 020 slices."
+          ]
         }
       }
     },
@@ -985,11 +1008,27 @@
           ]
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "differential-verified",
+          "coverage": "Declared depth test/function/write-mask/range snapshots. Shared depth ordering and mask cases pass native pixel/state comparison.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts",
+            "tests/chrome/cts.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/rtt-pr2-verified-chrome.log",
+              "passed": true
+            },
+            {
+              "path": "artifacts/cts/results.json",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "limits": [
+            "Texture/FBO execution is validated by the following task 020 slices."
+          ]
         }
       }
     },
@@ -1028,11 +1067,27 @@
           ]
         },
         "rust": {
-          "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "status": "differential-verified",
+          "coverage": "Declared blend factors, separate equations and constant color with validated enum combinations. Shared blend/cull/mask fixture and deterministic validators passed.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts",
+            "tests/chrome/cts.spec.ts",
+            "packages/core-wasm/tests/render.integration.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/rtt-pr2-verified-chrome.log",
+              "passed": true
+            },
+            {
+              "path": "artifacts/cts/results.json",
+              "passed": true
+            }
+          ],
+          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "limits": [
+            "Texture/FBO execution is validated by the following task 020 slices."
+          ]
         }
       }
     },
@@ -1069,7 +1124,7 @@
         },
         "rust": {
           "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "coverage": "This capability group is outside the declared Rust profile.",
           "tests": [],
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
@@ -1106,7 +1161,7 @@
         },
         "rust": {
           "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "coverage": "This capability group is outside the declared Rust profile.",
           "tests": [],
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
@@ -1385,7 +1440,7 @@
         },
         "rust": {
           "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "coverage": "This capability group is outside the declared Rust profile.",
           "tests": [],
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
@@ -1408,7 +1463,7 @@
         },
         "rust": {
           "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "coverage": "This capability group is outside the declared Rust profile.",
           "tests": [],
           "evidence": [],
           "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
@@ -1433,7 +1488,7 @@
         },
         "rust": {
           "status": "unimplemented",
-          "coverage": "This capability group is outside the current Rust Buffer profile.",
+          "coverage": "This capability group is outside the declared Rust profile.",
           "tests": [],
           "evidence": [],
           "unsupportedBehavior": "The common factory rejects version 2 with NotSupportedError."
@@ -1727,5 +1782,18 @@
     "mismatchedChannels": 0,
     "evidence": "artifacts/dual-core-drawing/",
     "nativeDeviation": "Chrome 157 attribute query shadow after rejected vertexAttribPointer calls is recorded separately. JS/Rust assert specification-required unchanged state. Errors and rendered pixels are compared across all backends."
+  },
+  "rttStage": {
+    "status": "running",
+    "acceptedSlice": "uniform-raster-abi-v3",
+    "abi": 3,
+    "unitTests": 86,
+    "nativeRustTests": 30,
+    "actualWasmTests": 12,
+    "originalCtsFiles": 11,
+    "assertionsPerBackend": 243,
+    "compilerCorpus": 24,
+    "realPipelines": 4,
+    "task": "docs/tasks/020-render-to-texture.md"
   }
 }

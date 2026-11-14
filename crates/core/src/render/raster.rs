@@ -1,0 +1,246 @@
+use super::*;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RasterState {
+    pub viewport: [i32; 4],
+    pub scissor: [i32; 4],
+    pub scissor_test: bool,
+    pub color_mask: [bool; 4],
+    pub depth_test: bool,
+    pub depth_mask: bool,
+    pub depth_func: u32,
+    pub depth_range: [f32; 2],
+    pub blend: bool,
+    pub blend_color: [f32; 4],
+    pub blend_src_rgb: u32,
+    pub blend_dst_rgb: u32,
+    pub blend_src_alpha: u32,
+    pub blend_dst_alpha: u32,
+    pub blend_equation_rgb: u32,
+    pub blend_equation_alpha: u32,
+    pub cull: bool,
+    pub cull_face: u32,
+    pub front_face: u32,
+}
+impl Default for RasterState {
+    fn default() -> Self {
+        Self {
+            viewport: [0; 4],
+            scissor: [0; 4],
+            scissor_test: false,
+            color_mask: [true; 4],
+            depth_test: false,
+            depth_mask: true,
+            depth_func: 0x201,
+            depth_range: [0.0, 1.0],
+            blend: false,
+            blend_color: [0.0; 4],
+            blend_src_rgb: 1,
+            blend_dst_rgb: 0,
+            blend_src_alpha: 1,
+            blend_dst_alpha: 0,
+            blend_equation_rgb: 0x8006,
+            blend_equation_alpha: 0x8006,
+            cull: false,
+            cull_face: 0x405,
+            front_face: 0x901,
+        }
+    }
+}
+fn clamped(value: f64) -> f32 {
+    if value.is_nan() {
+        0.0
+    } else {
+        (value as f32).clamp(0.0, 1.0)
+    }
+}
+fn factor(value: u32) -> bool {
+    matches!(value,0|1|0x300..=0x308|0x8001..=0x8004)
+}
+fn equation(value: u32) -> bool {
+    matches!(value, 0x8006 | 0x800a | 0x800b)
+}
+
+impl ContextCore {
+    pub(super) fn raster_query(&self, parameter: u32) -> Option<Reply> {
+        let state = &self.render.raster;
+        Some(match parameter {
+            0x0ba2 => Reply::Ints(state.viewport.to_vec()),
+            0x0c10 => Reply::Ints(state.scissor.to_vec()),
+            0x0c22 => Reply::Floats(self.render.clear_color.to_vec()),
+            0x0b73 => Reply::Number(self.render.clear_depth as f64),
+            0x0c23 => Reply::Booleans(state.color_mask.to_vec()),
+            0x0b72 => Reply::Boolean(state.depth_mask),
+            0x0b74 => Reply::Number(state.depth_func as f64),
+            0x0b70 => Reply::Floats(state.depth_range.to_vec()),
+            0x8005 => Reply::Floats(state.blend_color.to_vec()),
+            0x8009 => Reply::Number(state.blend_equation_rgb as f64),
+            0x883d => Reply::Number(state.blend_equation_alpha as f64),
+            0x80c9 => Reply::Number(state.blend_src_rgb as f64),
+            0x80c8 => Reply::Number(state.blend_dst_rgb as f64),
+            0x80cb => Reply::Number(state.blend_src_alpha as f64),
+            0x80ca => Reply::Number(state.blend_dst_alpha as f64),
+            0x0b45 => Reply::Number(state.cull_face as f64),
+            0x0b46 => Reply::Number(state.front_face as f64),
+            0x0be2 | 0x0b44 | 0x0b71 | 0x0c11 | 0x0bd0 | 0x0b90 | 0x8037 => {
+                Reply::Boolean(self.enabled(parameter)?)
+            }
+            _ => return None,
+        })
+    }
+    fn enabled(&self, capability: u32) -> Option<bool> {
+        let state = &self.render.raster;
+        Some(match capability {
+            0x0be2 => state.blend,
+            0x0b44 => state.cull,
+            0x0b71 => state.depth_test,
+            0x0c11 => state.scissor_test,
+            0x0bd0 => self.render.dither,
+            0x0b90 | 0x8037 => false,
+            _ => return None,
+        })
+    }
+    pub(super) fn raster_invoke(&mut self, operation: &str, args: &[Argument]) -> Option<Reply> {
+        let number = |index: usize| args.get(index).map_or(0.0, Argument::number);
+        let boolean = |index: usize| args.get(index).is_some_and(Argument::boolean);
+        match operation {
+            "enable" | "disable" => {
+                let capability = number(0) as u32;
+                let enabled = operation == "enable";
+                match capability {
+                    0x0be2 => self.render.raster.blend = enabled,
+                    0x0b44 => self.render.raster.cull = enabled,
+                    0x0b71 => self.render.raster.depth_test = enabled,
+                    0x0c11 => self.render.raster.scissor_test = enabled,
+                    0x0bd0 => self.render.dither = enabled,
+                    0x0b90 | 0x8037 if enabled => {
+                        return Some(Reply::Unsupported("stencil and polygon offset"))
+                    }
+                    0x0b90 | 0x8037 => {}
+                    _ => self.record_error(INVALID_ENUM),
+                }
+            }
+            "isEnabled" => {
+                return Some(match self.enabled(number(0) as u32) {
+                    Some(value) => Reply::Boolean(value),
+                    None => {
+                        self.record_error(INVALID_ENUM);
+                        Reply::Boolean(false)
+                    }
+                })
+            }
+            "viewport" | "scissor" => {
+                if number(2) < 0.0 || number(3) < 0.0 {
+                    self.record_error(INVALID_VALUE);
+                } else {
+                    let values = [
+                        number(0) as i32,
+                        number(1) as i32,
+                        number(2) as i32,
+                        number(3) as i32,
+                    ];
+                    if operation == "viewport" {
+                        let maximum =
+                            self.render.texture_dimension_limit.min(i32::MAX as u32) as i32;
+                        self.render.raster.viewport = [
+                            values[0],
+                            values[1],
+                            values[2].min(maximum),
+                            values[3].min(maximum),
+                        ];
+                    } else {
+                        self.render.raster.scissor = values;
+                    }
+                }
+            }
+            "colorMask" => self.render.raster.color_mask = std::array::from_fn(boolean),
+            "depthMask" => self.render.raster.depth_mask = boolean(0),
+            "depthFunc" => {
+                let value = number(0) as u32;
+                if (0x200..=0x207).contains(&value) {
+                    self.render.raster.depth_func = value;
+                } else {
+                    self.record_error(INVALID_ENUM);
+                }
+            }
+            "depthRange" => {
+                if number(0) > number(1) {
+                    self.record_error(INVALID_OPERATION);
+                } else {
+                    self.render.raster.depth_range = [clamped(number(0)), clamped(number(1))];
+                }
+            }
+            "clearColor" => {
+                self.render.clear_color = std::array::from_fn(|index| clamped(number(index)))
+            }
+            "clearDepth" => self.render.clear_depth = clamped(number(0)),
+            "blendColor" => {
+                self.render.raster.blend_color = std::array::from_fn(|index| clamped(number(index)))
+            }
+            "cullFace" => {
+                let value = number(0) as u32;
+                if matches!(value, 0x404 | 0x405 | 0x408) {
+                    self.render.raster.cull_face = value;
+                } else {
+                    self.record_error(INVALID_ENUM);
+                }
+            }
+            "frontFace" => {
+                let value = number(0) as u32;
+                if matches!(value, 0x900 | 0x901) {
+                    self.render.raster.front_face = value;
+                } else {
+                    self.record_error(INVALID_ENUM);
+                }
+            }
+            "blendEquation" | "blendEquationSeparate" => {
+                let rgb = number(0) as u32;
+                let alpha = if operation == "blendEquation" {
+                    rgb
+                } else {
+                    number(1) as u32
+                };
+                if !equation(rgb) || !equation(alpha) {
+                    self.record_error(INVALID_ENUM);
+                } else {
+                    self.render.raster.blend_equation_rgb = rgb;
+                    self.render.raster.blend_equation_alpha = alpha;
+                }
+            }
+            "blendFunc" | "blendFuncSeparate" => {
+                let values = if operation == "blendFunc" {
+                    [
+                        number(0) as u32,
+                        number(1) as u32,
+                        number(0) as u32,
+                        number(1) as u32,
+                    ]
+                } else {
+                    std::array::from_fn(|index| number(index) as u32)
+                };
+                if values.iter().any(|value| !factor(*value))
+                    || values[1] == 0x308
+                    || values[3] == 0x308
+                {
+                    self.record_error(INVALID_ENUM);
+                } else if values[..2]
+                    .iter()
+                    .any(|value| matches!(value, 0x8001 | 0x8002))
+                    && values[..2]
+                        .iter()
+                        .any(|value| matches!(value, 0x8003 | 0x8004))
+                {
+                    self.record_error(INVALID_OPERATION);
+                } else {
+                    let state = &mut self.render.raster;
+                    state.blend_src_rgb = values[0];
+                    state.blend_dst_rgb = values[1];
+                    state.blend_src_alpha = values[2];
+                    state.blend_dst_alpha = values[3];
+                }
+            }
+            _ => return None,
+        }
+        Some(Reply::Null)
+    }
+}

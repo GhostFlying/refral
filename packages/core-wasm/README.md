@@ -2,7 +2,7 @@
 
 `createRustBufferCore(options, wasmURL?)` implements the shared Buffer contract with an independent Rust/Wasm instance per context. Its default module URL is `/artifacts/core-wasm/refral_core.wasm`; run `pnpm rust:build` before browser verification.
 
-The `refral-core` crate owns the semantic state and native unit tests. `refral-wasm` exports a private version 2 `rf_*` ABI. The adapter validates exports and ABI version before initialization, shares only the compiled module across contexts, and copies inspection output into owned JavaScript bytes.
+The `refral-core` crate owns the semantic state and native unit tests. `refral-wasm` exports a private version 3 `rf_*` ABI. The adapter validates exports and ABI version before initialization, shares only the compiled module across contexts, and copies inspection output into owned JavaScript bytes.
 
 An upload calls a prepare export, copies its exact view into Rust-owned staging memory, then calls `rf_upload_commit` synchronously. The core validates metadata before staging allocation and validates again when consuming the staged bytes. No export accepts an arbitrary input pointer. Staging and core storage currently each copy the input; measurement must include both copies. Arena views are recreated after prepare/inspection so Wasm memory growth cannot leave the adapter using a detached view. Snapshot storage remains valid independently of later uploads and deletion.
 
@@ -10,13 +10,13 @@ The output of Cargo package `refral-wasm` is `target/wasm32-unknown-unknown/rele
 
 Run `pnpm --filter @refral/core-wasm test:wasm` after building to execute the adapter against the actual binary. These CPU tests use a fetch stub serving the compiled bytes; they instantiate real Wasm exports. They run separately from the fast unit suite and require a built artifact. The shared browser Buffer suite also exercises this adapter in Chrome.
 
-## Private ABI version 2
+## Private ABI version 3
 
-The module exports `memory` and the following functions, with no host imports. Integer arguments/results are Wasm i32 values interpreted as unsigned by Rust; sizes, offsets, host budget, query results, and semantic versions crossing as floating values are f64. The adapter verifies every required function and `rf_abi_version() === 2`.
+The module exports `memory` and the following functions, with no host imports. Integer arguments/results are Wasm i32 values interpreted as unsigned by Rust; sizes, offsets, host budget, query results, and semantic versions crossing as floating values are f64. The adapter verifies every required function and `rf_abi_version() === 3`.
 
 | Export | Arguments and result |
 | --- | --- |
-| `rf_abi_version` | No arguments; returns `2`. |
+| `rf_abi_version` | No arguments; returns `3`. |
 | `rf_init` | `(context_id: u32, max_buffer_bytes: f64) -> u32`; one for successful initialization, zero for invalid options. Context ID must be positive; budget is a nonnegative safe integer. |
 | `rf_create_buffer` | Returns the new slot, or zero. |
 | `rf_result_generation` | Returns the generation associated with the latest successful create/binding-query result, or zero. |
@@ -49,10 +49,10 @@ The full host budget is retained even when it exceeds the Wasm32 address range. 
 
 `rf_command_prepare(metadata_length, binary_length)` reserves owned command arenas. The adapter writes the exact metadata and binary bytes through `rf_command_pointer` and `rf_command_binary_pointer`, then commits with `rf_command_commit`. Metadata is capped at 16 MiB. Binary arena lengths are validated against Wasm32 bounds and allocation availability. The binding validates every descriptor range before reading. No command accepts an arbitrary caller pointer.
 
-`rf_reply_pointer`/`rf_reply_length` expose metadata, and `rf_reply_binary_pointer`/`rf_reply_binary_length` expose binary data. The adapter copies the binary reply before another operation can allocate or overwrite its storage. Numeric arguments use little-endian f64. Uniform/attribute values use little-endian f32. Source and names use explicit UTF16 code units. Cold compiler/reflection metadata uses binding-only pinned serde dependencies.
+`rf_reply_pointer`/`rf_reply_length` expose metadata, and `rf_reply_binary_pointer`/`rf_reply_binary_length` expose binary data. The adapter copies the binary reply before another operation can allocate or overwrite its storage. Numeric arguments use little-endian f64. Float uniform/attribute values use little-endian f32. Integer lists and query results use a distinct little-endian i32 payload. Boolean query values retain their scalar/array return types. Source and names use explicit UTF16 code units. Cold compiler/reflection metadata uses binding-only pinned serde dependencies.
 
 Shader/program requests and commits include a request identifier and typed generational object handle. Core validation rejects a commit after the relevant source, link, object lifetime or context has changed. The common compiler registry keeps artifacts under numeric IDs. Reply metadata drains retired artifact IDs to the registry.
 
-Draw replies start with the RFD2 magic and version 2. They contain executable and program identities, link generation, target size, viewport, draw counts, attributes, constants, optional indices, and uniform bytes. Each copied Buffer section records its handle, storage generation and content version. The decoder bounds-checks every section and rejects trailing bytes. It resolves the shared executable and emits the common DrawOperation to BrowserHost.
+Draw replies start with the RFD3 magic and version 3. They contain executable and program identities, link generation, target size, complete raster state, draw counts, attributes, constants, optional indices, and uniform bytes. Each copied Buffer section records its handle, storage generation and content version. The decoder bounds-checks every section and rejects trailing bytes. It resolves the shared executable and emits the common DrawOperation to BrowserHost.
 
-Automatic microtask submission and explicit flush use the same host. The testing capture target is the current default framebuffer. Texture/FBO, matrix updates and broader raster state remain subsequent Rust parity work. The selected original CTS can still inspect matrix attribute reflection and call unsupported uniform setters with null locations.
+Automatic microtask submission and explicit flush use the same host. The testing capture target is the current default framebuffer. ABI v3 covers matrix/integer/bool updates and the declared depth/cull/blend/scissor/mask raster state. Texture/FBO execution is the next task 020 slice. The selected original CTS can still inspect matrix attribute reflection and call unsupported uniform setters with null locations.

@@ -1,0 +1,13 @@
+--- a/src/compiler/translator/wgsl/TranslatorWGSL.cpp
++++ b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
+@@ -10,0 +11 @@
++#include <limits>
+@@ -415 +416,7 @@
+-            mSink << constUnion->getIConst() << "i";
++            const int value = constUnion->getIConst();
++            if (value == std::numeric_limits<int>::min()) {
++              // WGSL parses unary minus separately from the positive literal.
++              mSink << "(-2147483647i - 1i)";
++            } else {
++              mSink << value << "i";
++            }

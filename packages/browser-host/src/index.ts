@@ -1,4 +1,5 @@
 import { GL, componentCount } from "@refral/core-api";
+import { CanvasReadback } from './canvas-readback.js';
 import type {
   AttributeSnapshot, RasterState, TargetSnapshot, TextureParameters, TextureStorage,
   LinkedProgram, DrawOperation, SemanticHost,
@@ -27,7 +28,7 @@ export interface CapturedPixels {
 }
 
 export interface PreparedHostFactory {
-  (canvas: HTMLCanvasElement, attributes: { alpha: boolean; depth: boolean }, ownsDevice?: boolean): BrowserHost;
+  (canvas: HTMLCanvasElement | OffscreenCanvas, attributes: { alpha: boolean; depth: boolean }, ownsDevice?: boolean): BrowserHost;
   dispose(): void;
 }
 
@@ -113,12 +114,13 @@ export class BrowserHost implements SemanticHost {
   private presentationPipeline: GPURenderPipeline | null = null;
   private blackTexture: GPUTexture | null = null;
   private disposed = false;
+  private canvasReadback: CanvasReadback | null = null;
   private readonly handleError = (event: Event): void => {
     this.errors.push((event as GPUUncapturedErrorEvent).error.message);
   };
 
   private constructor(
-    readonly canvas: HTMLCanvasElement,
+    readonly canvas: HTMLCanvasElement | OffscreenCanvas,
     readonly device: GPUDevice,
     readonly context: GPUCanvasContext,
     readonly format: GPUTextureFormat,
@@ -144,7 +146,7 @@ export class BrowserHost implements SemanticHost {
     device.addEventListener("uncapturederror", this.handleError);
   }
 
-  static async create(canvas: HTMLCanvasElement, attributes: { alpha: boolean; depth: boolean }): Promise<BrowserHost> {
+  static async create(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: { alpha: boolean; depth: boolean }): Promise<BrowserHost> {
     const prepared = await BrowserHost.prepare();
     try {
       return prepared(canvas, attributes, true);
@@ -654,6 +656,25 @@ export class BrowserHost implements SemanticHost {
     }).catch(() => {});
   }
 
+  /** Experimental synchronous host capture; public GL validation is owned by the cores. */
+  captureCanvas(snapshot: TargetSnapshot): CapturedPixels {
+    if (this.disposed) throw new DOMException("The context has been disposed", "InvalidStateError");
+    if (!snapshot.width || !snapshot.height) {
+      return { width: snapshot.width, height: snapshot.height, data: new Uint8Array(0) };
+    }
+    const target = this.resolveTarget(snapshot);
+    this.beginPass(target);
+    this.endPass();
+    this.canvasReadback ??= new CanvasReadback(this.device, this.stats);
+    const data = this.canvasReadback.capture(target.color, target.width, target.height,
+      () => this.getEncoder(), () => this.flush());
+    return { width: target.width, height: target.height, data };
+  }
+
+  get canvasReadbackStats(): Readonly<CanvasReadback['stats']> | null {
+    return this.canvasReadback?.stats ?? null;
+  }
+
   async capture(snapshot: TargetSnapshot): Promise<CapturedPixels> {
     if (this.disposed) throw new DOMException("The context has been disposed", "InvalidStateError");
     if (!snapshot.width || !snapshot.height) {
@@ -688,6 +709,8 @@ export class BrowserHost implements SemanticHost {
     this.flush();
     this.disposed = true;
     await this.device.queue.onSubmittedWorkDone().catch(() => {});
+    this.canvasReadback?.dispose();
+    this.canvasReadback = null;
     for (const buffer of this.buffers) buffer.destroy();
     for (const texture of this.textures) texture.destroy();
     this.context.unconfigure();

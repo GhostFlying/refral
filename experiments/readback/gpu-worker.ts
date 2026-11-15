@@ -90,8 +90,7 @@ async function handle(command: Command): Promise<void> {
     control = new Int32Array(command.shared, 0, 8);
     timing = new Float64Array(command.shared, 32, 4);
     pixels = new Uint8Array(command.shared, HEADER_BYTES);
-    // The existing executor uses width/height/getContext, all available on OffscreenCanvas.
-    host = await BrowserHost.create(canvas as unknown as HTMLCanvasElement, { alpha: false, depth: true });
+    host = await BrowserHost.create(canvas, { alpha: false, depth: true });
     scope.postMessage({
       kind: 'ready',
       environment: host.environment,
@@ -104,6 +103,12 @@ async function handle(command: Command): Promise<void> {
     storages.clear();
     programs.clear();
     scope.postMessage({ kind: 'disposed' });
+    return;
+  }
+  if (command.kind === 'inspect') {
+    host.flush();
+    await host.device.queue.onSubmittedWorkDone();
+    scope.postMessage({ kind: 'inspection', stats: host.stats, errors: host.errors, canvas: null });
     return;
   }
   try {

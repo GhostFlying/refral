@@ -51,6 +51,8 @@ The build produces a standalone `dist` tree containing the browser bundles, comp
 | `pnpm test:buffers` | Shared native/JS/Rust public Buffer, handle, ownership, and loss fixtures |
 | `pnpm test:drawing` | Shared native/JS/Rust drawing, state/error, pixel and minimal-example checks |
 | `pnpm test:readback` | Experimental synchronous readback placements, shared-memory conditions and existing CTS/demo smoke |
+| `pnpm test:readback:compare` | Canvas2D/worker actual-core byte corpus, native reference, tiling and baseline CTS/demo/lifecycle |
+| `pnpm bench:readback` | Matched Canvas2D/worker completed-readback latency and process CPU samples |
 | `pnpm bench:rtt` | Five native/JS/Rust drawing workloads, three rotated rounds and raw CPU samples |
 | `pnpm bench:chrome` | Alias for the independent RTT baseline entry |
 | `pnpm build` | Browser deployment tree |

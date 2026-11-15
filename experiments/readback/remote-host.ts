@@ -8,6 +8,7 @@ import type {
 } from '@refral/core-api';
 import { HEADER_BYTES, HEIGHT, LENGTH, PIXEL_CAPACITY, SEQUENCE, STATUS, WIDTH } from './protocol';
 import type { Command, HostOperation, Ready, WireTarget } from './protocol';
+import type { HostStats } from '@refral/browser-host';
 
 export type WaitMode = 'spin' | 'wait';
 
@@ -24,7 +25,7 @@ export async function createRemoteHost(mode: WaitMode) {
   const programIds = new WeakMap<LinkedProgram, number>();
   const storageIds = new WeakMap<TextureStorage, number>();
 
-  function message(kind: string): Promise<Ready> {
+  function message<T>(kind: string): Promise<T> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => finish(new Error('Worker startup/disposal timed out.')), 15_000);
       const receive = (event: MessageEvent) => {
@@ -32,7 +33,7 @@ export async function createRemoteHost(mode: WaitMode) {
         if (event.data.kind === 'error') finish(new Error(event.data.message));
       };
       const failure = (event: ErrorEvent) => finish(new Error(event.message));
-      function finish(error: Error | null, value?: Ready) {
+      function finish(error: Error | null, value?: T) {
         clearTimeout(timeout);
         worker.removeEventListener('message', receive);
         worker.removeEventListener('error', failure);
@@ -43,7 +44,7 @@ export async function createRemoteHost(mode: WaitMode) {
       worker.addEventListener('error', failure);
     });
   }
-  const initialized = message('ready');
+  const initialized = message<Ready>('ready');
   worker.postMessage({ kind: 'init', shared } satisfies Command);
   let ready: Ready;
   try {
@@ -186,6 +187,12 @@ export async function createRemoteHost(mode: WaitMode) {
     },
     timeout() {
       request({ kind: 'stall', delayMs: 100 }, 5);
+    },
+    async inspect() {
+      if (closed) throw new Error('Readback client is closed.');
+      const reply = message<{ stats: HostStats; errors: string[]; canvas: null }>('inspection');
+      worker.postMessage({ kind: 'inspect' } satisfies Command);
+      return reply;
     },
     async dispose() {
       operations = [];

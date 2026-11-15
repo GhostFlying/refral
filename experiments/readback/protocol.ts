@@ -1,4 +1,22 @@
 import type { DrawOperation, LinkedProgram, RasterState, TargetSnapshot, TextureParameters } from '@refral/core-api';
+import type { SemanticHost } from '@refral/core-api';
+import type { CapturedPixels, HostStats } from '@refral/browser-host';
+
+export interface ReadbackHost {
+  host: SemanticHost;
+  environment: Record<string, unknown>;
+  resize(width: number, height: number): void;
+  capture(target: TargetSnapshot): CapturedPixels & {
+    sequence: number;
+    roundTripMs: number;
+    workerExecutionMs: number;
+    workerCaptureMs: number;
+  };
+  injectFailure(): void;
+  timeout(): void;
+  inspect(): Promise<{ stats: HostStats; errors: string[]; canvas: Readonly<Record<string, number>> | null }>;
+  dispose(): Promise<void>;
+}
 
 export const HEADER_BYTES = 64;
 export const MAX_WIDTH = 320;
@@ -43,6 +61,7 @@ export type Command =
   | { kind: 'capture'; sequence: number; operations: HostOperation[]; target: WireTarget }
   | { kind: 'failure'; sequence: number }
   | { kind: 'stall'; sequence: number; delayMs: number }
+  | { kind: 'inspect' }
   | { kind: 'dispose' };
 
 export interface Ready {

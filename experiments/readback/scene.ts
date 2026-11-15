@@ -14,15 +14,21 @@ import { createRustDrawingCore } from '@refral/core-wasm';
 import { COMPILER_LIMITS, createCompiler, createCompilerRegistry } from '@refral/compiler';
 import { createRemoteHost } from './remote-host';
 import type { WaitMode } from './remote-host';
-import type { ReadbackSample } from './protocol';
+import type { ReadbackHost, ReadbackSample } from './protocol';
 import { probeTimer } from './primitives';
 
 const vertexSource = 'attribute vec2 a_position; void main(){gl_Position=vec4(a_position,0.,1.);}';
 const fragmentSource = 'precision mediump float; uniform vec4 u_color; void main(){gl_FragColor=u_color;}';
+const red = new Float32Array([1, 0, 0, 1]);
+const green = new Float32Array([0, 1, 0, 1]);
 
-export async function createScene(kind: CoreKind, mode: WaitMode) {
+export async function createScene(
+  kind: CoreKind,
+  mode: WaitMode,
+  hostFactory: () => Promise<ReadbackHost> = () => createRemoteHost(mode)
+) {
   const started = performance.now();
-  const remote = await createRemoteHost(mode);
+  const remote = await hostFactory();
   let ownedCompiler: CompilerRegistry | undefined;
   let ownedResources: ExecutionResources | undefined;
   let ownedCore: DrawingCore | undefined;
@@ -87,29 +93,41 @@ export async function createScene(kind: CoreKind, mode: WaitMode) {
     const initializationMs = performance.now() - started;
     let firstResult: Uint8Array | undefined;
     let firstPixel: number[] = [];
+    let lastImage: { width: number; height: number; data: Uint8Array } | undefined;
+    let allocatedWidth = 0;
+    let allocatedHeight = 0;
 
-    function frame(index: number, width: number, height: number, offscreen: boolean): ReadbackSample {
+    function frame(
+      index: number,
+      width: number,
+      height: number,
+      offscreen: boolean,
+      options: { validate?: boolean; reallocate?: boolean } = {}
+    ): ReadbackSample {
+      const validate = options.validate ?? true;
       const frameStarted = performance.now();
       surface.width = width;
       surface.height = height;
       remote.resize(width, height);
       call('bindFramebuffer', [GL.FRAMEBUFFER, offscreen ? framebuffer : null]);
-      if (offscreen) {
+      if (offscreen && ((options.reallocate ?? true) || allocatedWidth !== width || allocatedHeight !== height)) {
         call('texImage2D', [GL.TEXTURE_2D, 0, GL.RGBA, width, height, 0, GL.RGBA, GL.UNSIGNED_BYTE, null]);
         if (call('checkFramebufferStatus', [GL.FRAMEBUFFER]) !== GL.FRAMEBUFFER_COMPLETE)
           throw new Error('Incomplete experimental FBO.');
+        allocatedWidth = width;
+        allocatedHeight = height;
       }
       call('disable', [GL.SCISSOR_TEST]);
       call('clearColor', [0, 0, 0, 1]);
       call('clear', [GL.COLOR_BUFFER_BIT]);
-      const left = index % 2 ? [0, 1, 0, 1] : [1, 0, 0, 1];
-      const right = index % 2 ? [1, 0, 0, 1] : [0, 1, 0, 1];
+      const left = index % 2 ? green : red;
+      const right = index % 2 ? red : green;
       for (const [x, color] of [
         [0, left],
         [width / 2, right],
       ] as const) {
         call('viewport', [x, 0, width / 2, height]);
-        call('uniform4fv', [uniform, new Float32Array(color)]);
+        call('uniform4fv', [uniform, color]);
         call('drawArrays', [GL.TRIANGLES, 0, 6]);
       }
       call('enable', [GL.SCISSOR_TEST]);
@@ -120,23 +138,26 @@ export async function createScene(kind: CoreKind, mode: WaitMode) {
       const captureTarget = core.captureTarget();
       const clientEncodingMs = performance.now() - frameStarted;
       const captured = remote.capture(captureTarget);
+      lastImage = captured;
       if (!(captured.data.buffer instanceof ArrayBuffer)) throw new Error('Readback result has shared ownership.');
-      if (firstResult && firstPixel.some((value, index) => firstResult![index] !== value)) {
+      if (validate && firstResult && firstPixel.some((value, index) => firstResult![index] !== value)) {
         throw new Error('A later command changed the retained readback result.');
       }
-      if (!firstResult) {
+      if (validate && !firstResult) {
         firstResult = captured.data;
         firstPixel = Array.from(firstResult.subarray(0, 4));
       }
-      const query = call('getUniform', [program, uniform]) as Float32Array;
-      if (core.getError() || query[0] !== right[0] || query[1] !== right[1])
-        throw new Error('Local synchronous semantic query failed.');
+      if (validate) {
+        const query = call('getUniform', [program, uniform]) as Float32Array;
+        if (core.getError() || query[0] !== right[0] || query[1] !== right[1])
+          throw new Error('Local synchronous semantic query failed.');
+      }
       if (captured.width !== width || captured.height !== height || captured.data.byteLength !== width * height * 4) {
         throw new Error('Incorrect shared result dimensions.');
       }
       let mismatchedChannels = 0;
       let checksum = 2166136261;
-      for (let y = 0; y < height; y++) {
+      for (let y = 0; validate && y < height; y++) {
         for (let x = 0; x < width; x++) {
           const expected = y === 0 ? [0, index % 2, 1, 1] : x < width / 2 ? left : right;
           const offset = (y * width + x) * 4;
@@ -167,6 +188,16 @@ export async function createScene(kind: CoreKind, mode: WaitMode) {
       selectedCore: core.kind,
       environment: remote.environment,
       initializationMs,
+      core,
+      call,
+      surface,
+      texture,
+      buffer,
+      framebuffer,
+      resize: remote.resize,
+      capture: () => remote.capture(core.captureTarget()),
+      lastImage: () => lastImage,
+      inspect: remote.inspect,
       frame,
       injectFailure: remote.injectFailure,
       timeout: remote.timeout,

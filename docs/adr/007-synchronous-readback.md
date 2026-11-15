@@ -1,6 +1,6 @@
 # ADR 007 — Synchronous readback feasibility
 
-Status is proposed on 2026-11-15 after task025's Chrome experiment.
+Status is proposed on 2026-11-15 after task025's worker experiment and task027's Canvas2D comparison.
 
 ## Evidence and constraints
 
@@ -14,7 +14,11 @@ A worker that blocks while owning the pending GPU map also leaves its completion
 
 ## Proposed integration
 
-Make GPU execution worker-owned for a synchronous readback backend. The selected caller core owns semantic state, validation, wrapper identity and synchronous compiler/query behavior. Transport immutable ordered host operations with complete resource identity and versions. After flushing those operations, publish readback bytes and completion sequence into bounded shared storage. Take an owned result copy before that storage is reused.
+Keep semantic validation and destination layout shared across readback backends. The selected caller core owns semantic state, validation, wrapper identity and synchronous compiler/query behavior. A host-level capture boundary supplies completed owned RGBA8 bytes to the eventual public readPixels implementation.
+
+One candidate keeps GPU execution on the caller thread. A private WebGPU canvas encodes each RGBA8 texel into two opaque sRGB pixels. Canvas2D drawImage/getImageData synchronously returns their bytes, which are decoded into an independent result. Tiling respects the actual GPU dimension limit. Opaque encoding avoids loss from nonopaque alpha conversion. The tested ordinary Chrome page requires no shared-memory deployment headers. [HTML pixel reading](https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-getimagedata), [alpha conversion](https://html.spec.whatwg.org/multipage/canvas.html#premultiplied-alpha-and-the-2d-rendering-context)
+
+The worker candidate transports immutable ordered host operations with complete resource identity and versions. After flushing those operations, it publishes readback bytes and completion sequence into bounded shared storage. The caller takes an owned result copy before that storage is reused.
 
 The Window API placement requires polling during a synchronous read. A worker API placement can use Atomics.wait, with GPU callbacks owned by a separate worker. Deployment of the tested shared-reply paths requires secure context and cross-origin isolation. Any production mode needs explicit capability detection and a documented initialization result when those conditions are unavailable.
 
@@ -26,4 +30,6 @@ Window polling consumes CPU while waiting and blocks that caller's event loop. T
 
 Original pixel CTS helpers additionally inspect the iframe realm's native WebGL context brand. The CTS adapter needs an explicit recorded solution alongside synchronous reads. Task026 maps the exact files and helper paths. The nearest original candidates after these dependencies are implemented are program-handling.html and feedback-loop.html.
 
-The production support matrix continues to describe the existing public context. Task025 records experimental results and the first-stage implementation proposal. The next task should select the deployment/API placement, define the production host contract, then implement and accept the shared readPixels profile through both cores.
+The original worker-only recommendation preceded the Canvas2D investigation and used incomplete candidate coverage. Task027's [comparison report](../validation/2026-11-15-readback-comparison.md) records matched actual-core correctness, repeated latency and process CPU evidence for both candidates. Backend selection should account for deployment requirements, readback frequency, renderer CPU and the full GPU-process cost.
+
+The production support matrix continues to describe the existing public context. The next task should select the backend and deployment/API placement, then implement and accept the shared public readPixels profile through both cores. Context restoration and additional readback formats retain their explicit compatibility tasks.

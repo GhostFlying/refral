@@ -52,6 +52,8 @@ The build produces a standalone `dist` tree containing the browser bundles, comp
 | `pnpm test:drawing` | Shared native/JS/Rust drawing, state/error, pixel and minimal-example checks |
 | `pnpm test:readback` | Experimental synchronous readback placements, shared-memory conditions and existing CTS/demo smoke |
 | `pnpm test:readback:compare` | Canvas2D/worker actual-core byte corpus, native reference, tiling and baseline CTS/demo/lifecycle |
+| `pnpm test:readpixels` | Public synchronous readPixels semantics, packing, destinations, ordering and lifecycle |
+| `pnpm bench:readpixels` | Three-path public clear/read completed-latency samples on an ordinary page |
 | `pnpm bench:readback` | Matched Canvas2D/worker completed-readback latency and process CPU samples |
 | `pnpm bench:rtt` | Five native/JS/Rust drawing workloads, three rotated rounds and raw CPU samples |
 | `pnpm bench:chrome` | Alias for the independent RTT baseline entry |
@@ -59,7 +61,7 @@ The build produces a standalone `dist` tree containing the browser bundles, comp
 | `pnpm test:dist` | Built deployment probe and demo in actual Chrome |
 | `pnpm snapshot` | Source-tree hash and per-file provenance for saved evidence |
 
-Playwright uses the installed `chrome` channel, headed mode, an isolated profile, and one worker. Set `REFRAL_HEADLESS=1` for explicitly recorded headless checks. The primary acceptance path uses headed Chrome. Browser plugin availability for this implementation was absent, so verification uses the approved regular Playwright path.
+Playwright uses the installed `chrome` channel, headless mode by default, an isolated profile, and one worker. Browser tests and deployment checks run in the background. Set `REFRAL_HEADLESS=0` for an explicitly requested visible reproduction. Dated reports record the actual mode and adapter. Browser verification uses repository Playwright entry points.
 
 GitHub Actions uses affected-module checks in `ci/required`. Actual Wasm and compiler verification run through optional manual/daily workflows. See [Actions and PR delivery](docs/ci.md) for commands and integration constraints.
 
@@ -71,6 +73,9 @@ import { createWebGLOnWebGPU } from '@refral/webgl';
 const gl = await createWebGLOnWebGPU(canvas, { version: 1 });
 // Select the Rust semantic core explicitly:
 const rustGl = await createWebGLOnWebGPU(otherCanvas, { version: 1, core: 'rust' });
+
+const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 ```
 
 The asynchronous factory prepares GPU and compiler dependencies and the selected core. JS is the default. Both semantic cores execute the shared Buffer, shader/program, typed uniform/matrix, Texture2D, RGBA/depth framebuffer and raster profile. Supported calls are synchronous. Each core reports valid operations beyond its declared scope through `NotSupportedError`. See `docs/core-api.md` for the shared contract and `docs/support.json` for per-core scope and evidence. The test adapter exposes asynchronous pixel capture separately from the public GL interface.
@@ -89,7 +94,7 @@ The [three-path RTT milestone](docs/validation/2026-11-15-three-path-rtt.md) pas
 
 `pnpm bench:rtt` independently measures five native/JS/Rust drawing workloads in three rotated rounds. The 45 accepted runs retain 5400 CPU samples in ms/logical-frame. Its dedicated server enables COOP/COEP for finer timer resolution. The report records timing boundaries, initial/first-image costs, counters, capacities, hardware, launch flags and build/source hashes. The current Rust path has higher CPU costs than JS in these workloads, with profiling and optimization scheduled as separate work. GPU durations remain unmeasured in this CPU baseline.
 
-The [synchronous readback experiment](docs/validation/2026-11-15-readback-feasibility.md) exercises both semantic cores with an independent GPU worker. An isolated page returns completed pixels through shared memory, using Window polling or a waiting worker client. The proposed ADR records deployment, thread and public API integration work. The production context's readPixels entry remains unimplemented in the support matrix.
+The [synchronous readback experiment](docs/validation/2026-11-15-readback-feasibility.md) exercises both semantic cores with an independent GPU worker. An isolated page returns completed pixels through shared memory, using Window polling or a waiting worker client. ADR 007 accepts the main-thread Canvas2D path for public readPixels. Both actual cores implement RGBA/UNSIGNED_BYTE, fixed Uint8Array/Uint8ClampedArray destinations, PACK_ALIGNMENT and clipped reads through the ordinary factory. The [public readPixels report](docs/validation/2026-11-16-public-readpixels.md) records synchronous behavior, original CTS and performance acceptance.
 
 Raw outputs are under ignored `artifacts/`. They include environment reports, compiler build/corpus results, JS/Rust samples, differential images, CTS assertions, screenshots, and paired performance samples. Validation summaries describe their environment and measurement limits. GPU timestamp results and internal Dawn integration require their own actual implementation and verification.
 

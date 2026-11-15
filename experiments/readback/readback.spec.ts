@@ -53,7 +53,7 @@ async function save(name: string, browserVersion: string, result: unknown) {
       {
         recordedAt: new Date().toISOString(),
         browserVersion,
-        launch: { channel: 'chrome', headless: process.env.REFRAL_HEADLESS === '1', commandLine },
+        launch: { channel: 'chrome', headless: process.env.REFRAL_HEADLESS !== '0', commandLine },
         machine: { platform: platform(), release: release(), architecture: arch(), cpu: cpus()[0]?.model },
         source,
         hashes,

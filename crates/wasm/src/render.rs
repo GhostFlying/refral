@@ -13,6 +13,11 @@ pub extern "C" fn rf_resource_protocol_version() -> u32 {
     2
 }
 
+#[no_mangle]
+pub extern "C" fn rf_readback_protocol_version() -> u32 {
+    1
+}
+
 #[derive(Default)]
 pub(super) struct Transport {
     metadata: Vec<u8>,
@@ -434,6 +439,7 @@ fn reply_capacity(value: &Reply) -> Option<usize> {
         Reply::Ints(values) => values.len().checked_mul(4),
         Reply::Compile(request) => request.source.len().checked_mul(2),
         Reply::Target(target) => Some(crate::resources::target_capacity(target)),
+        Reply::ReadPixelsPlan(plan) => Some(40 + crate::resources::target_capacity(&plan.target)),
         Reply::Clear(snapshot) => Some(140 + crate::resources::target_capacity(&snapshot.target)),
         Reply::Draw(snapshot) => {
             let mut total = 180_usize
@@ -510,6 +516,25 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
         Reply::Target(target) => {
             crate::resources::target(output, target);
             json!({"type":"target"})
+        }
+        Reply::ReadPixelsPlan(plan) => {
+            crate::resources::target(output, plan.target);
+            for value in [
+                plan.source_x,
+                plan.source_y,
+                plan.copy_width,
+                plan.copy_height,
+            ] {
+                u32_value(output, value);
+            }
+            for value in [
+                plan.destination_offset,
+                plan.destination_stride,
+                plan.required_bytes,
+            ] {
+                output.extend_from_slice(&value.to_le_bytes());
+            }
+            json!({"type":"read-pixels"})
         }
         Reply::Clear(snapshot) => {
             crate::resources::target(output, snapshot.target);
@@ -608,6 +633,7 @@ mod tests {
     #[test]
     fn command_transport_preserves_utf16_and_owns_output() {
         assert_eq!(rf_resource_protocol_version(), 2);
+        assert_eq!(rf_readback_protocol_version(), 1);
         assert_eq!(rf_init(7, 4096.0), 1);
         let stage = (refral_core::VERTEX_SHADER as f64).to_le_bytes();
         let created = command("createShader", json!([{"n":0}]), &stage);
@@ -646,6 +672,43 @@ mod tests {
                 bytes.as_slice()
             )
         });
+    }
+
+    #[test]
+    fn readback_reply_serializes_target_then_bounded_copy_plan() {
+        let plan = refral_core::ReadPixelsPlan {
+            target: refral_core::TargetSnapshot {
+                width: 5,
+                height: 3,
+                is_default: true,
+                color: None,
+                depth: None,
+            },
+            source_x: 0,
+            source_y: 1,
+            copy_width: 5,
+            copy_height: 2,
+            destination_offset: 36,
+            destination_stride: 32,
+            required_bytes: 128,
+        };
+        assert_eq!(reply_capacity(&Reply::ReadPixelsPlan(plan)), Some(60));
+        let mut output = Vec::new();
+        assert_eq!(
+            reply(Reply::ReadPixelsPlan(plan), &mut output),
+            json!({"type":"read-pixels"})
+        );
+        assert_eq!(output.len(), 60);
+        let values = output[..36]
+            .chunks_exact(4)
+            .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(values, [5, 3, 1, 0, 0, 0, 1, 5, 2]);
+        let values = output[36..]
+            .chunks_exact(8)
+            .map(|bytes| u64::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(values, [36, 32, 128]);
     }
 
     #[test]

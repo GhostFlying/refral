@@ -43,10 +43,12 @@ if (operation === 'check') {
   const exports = new WebAssembly.Instance(module, {}).exports;
   const abi = exports.rf_abi_version?.();
   const resourceProtocol = exports.rf_resource_protocol_version?.();
-  if (abi !== 3 || resourceProtocol !== 2) throw new Error('The formal Rust module requires ABI v3/resource protocol v2.');
+  const readbackProtocol = exports.rf_readback_protocol_version?.();
+  if (abi !== 3 || resourceProtocol !== 2 || readbackProtocol !== 1)
+    throw new Error('The formal Rust module requires ABI v3/resource v2/readback v1.');
   await writeFile(resolve(dirname(output), 'build.json'), JSON.stringify({
     channel, target: 'wasm32-unknown-unknown', profile: 'release', bytes,
-    sha256: createHash('sha256').update(binary).digest('hex'), abi, resourceProtocol, imports,
+    sha256: createHash('sha256').update(binary).digest('hex'), abi, resourceProtocol, readbackProtocol, imports,
   }, null, 2) + '\n');
   console.log(`Built formal semantic core Wasm (${bytes} bytes).`);
 } else {

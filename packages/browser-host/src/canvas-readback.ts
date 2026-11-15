@@ -1,6 +1,6 @@
 import type { HostStats } from './index.js';
 
-/** Experimental RGBA8 transport through opaque sRGB canvas pixels. */
+/** RGBA8 transport through opaque sRGB canvas pixels. */
 export class CanvasReadback {
   readonly stats = { captures: 0, tiles: 0, imageBytes: 0, decodedBytes: 0, stagingBytes: 0 };
   private readonly canvas = new OffscreenCanvas(1, 1);
@@ -55,7 +55,9 @@ export class CanvasReadback {
     width: number,
     height: number,
     encoder: () => GPUCommandEncoder,
-    submit: () => void
+    submit: () => void,
+    sourceX = 0,
+    sourceY = 0
   ): Uint8Array {
     const output = new Uint8Array(width * height * 4);
     let binding = this.bindings.get(texture);
@@ -80,7 +82,7 @@ export class CanvasReadback {
         if (this.canvas.height !== rows) this.canvas.height = this.sink.height = rows;
         this.cpu.imageSmoothingEnabled = false;
         this.cpu.globalCompositeOperation = 'copy';
-        this.device.queue.writeBuffer(this.parameters, 0, new Uint32Array([x, y, 0, 0]));
+        this.device.queue.writeBuffer(this.parameters, 0, new Uint32Array([sourceX + x, sourceY + y, 0, 0]));
         this.hostStats.uploadedBytes += 16;
         const pass = encoder().beginRenderPass({
           colorAttachments: [

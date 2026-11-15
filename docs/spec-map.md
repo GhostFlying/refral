@@ -1,5 +1,11 @@
 # Specification and verification map
 
+## Public readPixels assertions
+
+Task028 selects the Canvas2D host path for synchronous RGBA/UNSIGNED_BYTE reads. The pinned readPixels clause defines return-time visibility, typed destination compatibility, null/short-buffer errors and current-framebuffer reads. GLES 4.3.1 supplies row order and PACK_ALIGNMENT. The pinned READS_OUTSIDE_FRAMEBUFFER clause leaves corresponding destination bytes untouched, including fully outside rectangles. Row padding and unrelated view bytes are retained. Implementation read format/type getters reject incomplete framebuffers with INVALID_OPERATION. Each semantic core emits the same validated clipped read/packing plan.
+
+Acceptance uses shared public-entry fixtures plus original program-handling, feedback-loop and read-pixels-pack-alignment scripts/assertions. The CTS adapter records iframe-local prototype branding explicitly. [Pinned readPixels](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#L3517), [outside reads](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#L4171)
+
 ## Reference versions
 
 `fixtures.lock.json` fixes the WebGL HTML, IDL, original CTS, and reference tests to commit `39443210f7f81db4773eb104facadfb85d05dfa4`. `node tools/deps-fixtures.mjs` fetches their unmodified bytes into ignored `third_party/cts/` and records the revision and paths in `artifacts/fixtures/manifest.json`.
@@ -48,7 +54,7 @@ The executable original CTS set contains eleven files. The harness prepares the 
 - `uniforms/gl-uniform-bool.html`
 - `uniforms/gl-get-uniform-non-current-program.html`
 
-Original `programs/program-handling.html` requires synchronous `readPixels` through `checkCanvas`. The lock records that capability prerequisite under `cts.deferredTests`, and CTS results record `prerequisite-not-run`. Its original invalidation and shader-removal assertions are preserved in the acquired reference file. [Original program test](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/sdk/tests/conformance/programs/program-handling.html), [upstream readback helper](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/sdk/tests/js/webgl-test-utils.js#L1320)
+Original `programs/program-handling.html` uses synchronous `readPixels` through `checkCanvas`. Task028 activates it in `cts.tests` with the original invalidation and shader-removal assertions and the recorded iframe-realm prototype adapter. [Original program test](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/sdk/tests/conformance/programs/program-handling.html), [upstream readback helper](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/sdk/tests/js/webgl-test-utils.js#L1320)
 
 Project regressions derive state transitions and expected colors from those two original functions. They use deterministic adjacent viewport regions to preserve earlier output and use `getTestingHooks().capture()` for asynchronous JS readback. `program-spec.spec.ts` checks explicit state/error expectations, all pixels in each declared region, and native/JS observation parity. JSON contains shader sources, runtime configuration, adapter information, expected regions, raw pixels, and mismatch counts. PNGs preserve each backend output under `artifacts/program-spec/<case>/`.
 

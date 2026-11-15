@@ -2,6 +2,10 @@
 
 Source audit completed on 2026-11-15 for task026 against the implementation profile at main `67c20c9`. Every upstream reference below uses CTS revision `39443210f7f81db4773eb104facadfb85d05dfa4`. The five deferred HTML files and their locally acquired helpers were read without modification. Additional candidates were read from the same pinned upstream source. Browser execution of these deferred or additional cases remains pending.
 
+## Task028 integration update
+
+Public synchronous RGBA/UNSIGNED_BYTE readPixels and the iframe-local native prototype adapter now activate program-handling, feedback-loop and read-pixels-pack-alignment. Each original file runs its full script and assertions. Inert head shader scripts are preserved by the harness. The remaining dependency lists in fixtures.lock.json remove the resolved readback and context-brand prerequisites. The original audit below describes main 67c20c9. Current acceptance is recorded in the [public readPixels report](../validation/2026-11-16-public-readpixels.md).
+
 ## Immediate findings
 
 All five deferred originals make synchronous pixel observations with `readPixels`, directly or through a helper. Their executed call paths contain no `gl.finish()` call. A valid read must observe earlier GPU commands and populate the supplied view before returning. Incomplete-framebuffer and incompatible-source error paths can be decided from semantic state before GPU access.

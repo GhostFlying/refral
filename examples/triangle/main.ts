@@ -14,7 +14,8 @@ const requested = new URL(location.href).searchParams.get('core') ?? 'js';
 
 declare global {
   interface Window {
-    refralTriangle?: { core: string; selectedCore: string; ready: boolean; width: number; height: number };
+    refralTriangle?: { core: string; selectedCore: string; ready: boolean; width: number; height: number;
+      synchronousPixel: number[] };
   }
 }
 
@@ -60,13 +61,17 @@ async function main() {
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.flush();
+  const synchronousPixel = new Uint8Array(4);
+  gl.readPixels(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1,
+    gl.RGBA, gl.UNSIGNED_BYTE, synchronousPixel);
   if (gl.getError() !== gl.NO_ERROR) throw new Error('Triangle draw reported a GL error');
   if (hooks) {
     await hooks.device.queue.onSubmittedWorkDone();
     if (hooks.errors.length) throw new Error(hooks.errors.join('\n'));
   }
   await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-  window.refralTriangle = { core: requested, selectedCore, ready: true, width: canvas.width, height: canvas.height };
+  window.refralTriangle = { core: requested, selectedCore, ready: true, width: canvas.width, height: canvas.height,
+    synchronousPixel: Array.from(synchronousPixel) };
   status.textContent = `${selectedCore} · rendered`;
   window.addEventListener('pagehide', () => {
     if (hooks) void hooks.dispose();

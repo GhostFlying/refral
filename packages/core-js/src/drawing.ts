@@ -3,6 +3,7 @@ import type {
   CompiledShader, Compiler, CompilerRegistry, DrawingCore, DrawingCoreOptions,
   DrawingCoreServices, LinkedProgram, LogicalHandle, ProgramHandle, ShaderHandle,
   TargetSnapshot, UniformLocationHandle, TextureHandle, RenderbufferHandle, FramebufferHandle,
+  ReadPixelsPlan, ReadPixelsRequest,
 } from "@refral/core-api";
 import { JsBufferCore } from "./buffers.js";
 import { SemanticContext } from "./context.js";
@@ -354,6 +355,10 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
   }
 
   captureTarget(): TargetSnapshot { return this.context.captureTarget(); }
+
+  prepareReadPixels(request: ReadPixelsRequest): ReadPixelsPlan | null {
+    return this.context.prepareReadPixels(request);
+  }
 
   override dispose(): void {
     if (this.drawingDisposed) return;

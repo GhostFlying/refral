@@ -31,7 +31,7 @@ export async function captureEnvironment(browser: Browser, directory: string) {
   }
   return {
     browserVersion: browser.version(),
-    launch: { channel: 'chrome', headless: process.env.REFRAL_HEADLESS === '1', commandLine },
+    launch: { channel: 'chrome', headless: process.env.REFRAL_HEADLESS !== '0', commandLine },
     machine: { platform: platform(), release: release(), architecture: arch(), cpu: cpus()[0]?.model },
     source: { head: source.head, treeSha256: source.treeSha256 },
     hashes,

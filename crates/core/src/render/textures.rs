@@ -83,7 +83,7 @@ pub(super) struct TextureState {
     pub(super) units: [Option<ObjectHandle>; 32],
     pub(super) active: usize,
     unpack_alignment: usize,
-    pack_alignment: usize,
+    pub(super) pack_alignment: usize,
     unpack_flip: bool,
     unpack_premultiply: bool,
     unpack_colorspace: u32,

@@ -69,7 +69,7 @@ test('Canvas tiling, resize, empty capture and map reference', async ({ page }) 
 test('Canvas bytes with the browser native color-profile configuration', async () => {
   const browser = await chromium.launch({
     channel: 'chrome',
-    headless: process.env.REFRAL_HEADLESS === '1',
+    headless: process.env.REFRAL_HEADLESS !== '0',
     ignoreDefaultArgs: ['--force-color-profile=srgb'],
   });
   try {

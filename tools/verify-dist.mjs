@@ -51,7 +51,7 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   if (!ready) throw new Error('Preview did not become available.');
-  browser = await chromium.launch({ channel: 'chrome', headless: process.env.REFRAL_HEADLESS === '1' });
+  browser = await chromium.launch({ channel: 'chrome', headless: process.env.REFRAL_HEADLESS !== '0' });
   const page = await browser.newPage({ viewport: { width: 1000, height: 760 }, deviceScaleFactor: 1 });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -105,6 +105,7 @@ try {
     const call = (name, ...args) => abi[name](...args);
     const version = call('rf_abi_version');
     const resourceProtocol = call('rf_resource_protocol_version');
+    const readbackProtocol = call('rf_readback_protocol_version');
     const initialized = call('rf_init', 1, 16);
     const slot = call('rf_create_buffer');
     const generation = call('rf_result_generation');
@@ -113,9 +114,9 @@ try {
     const byteLength = call('rf_get_buffer_parameter', 0x8892, 0x8764);
     const error = call('rf_get_error');
     call('rf_dispose');
-    return { version, resourceProtocol, initialized, slot, generation, byteLength, error };
+    return { version, resourceProtocol, readbackProtocol, initialized, slot, generation, byteLength, error };
   });
-  assert.deepEqual(rustBuffer, { version: 3, resourceProtocol: 2, initialized: 1, slot: 1, generation: 1, byteLength: 4, error: 0 });
+  assert.deepEqual(rustBuffer, { version: 3, resourceProtocol: 2, readbackProtocol: 1, initialized: 1, slot: 1, generation: 1, byteLength: 4, error: 0 });
   await page.screenshot({ path: 'artifacts/deployment/chrome.png' });
   const triangles = [];
   for (const core of ['native', 'js', 'rust']) {
@@ -124,6 +125,10 @@ try {
     const context = await page.evaluate(() => window.refralTriangle);
     assert.equal(context.selectedCore, core);
     assert.equal(context.ready, true);
+    assert.equal(context.synchronousPixel.length, 4);
+    assert.equal(context.synchronousPixel[3], 255);
+    assert.ok(context.synchronousPixel.slice(0, 3).reduce((sum, value) => sum + value, 0) > 150,
+      `${core} built synchronous readPixels`);
     const screenshot = await page.locator('canvas').screenshot({ path: `artifacts/deployment/triangle-${core}.png` });
     const png = PNG.sync.read(screenshot);
     const center = (Math.floor(png.height / 2) * png.width + Math.floor(png.width / 2)) * 4;
@@ -132,9 +137,9 @@ try {
     triangles.push({ ...context, centerPixel });
   }
   assert.deepEqual(errors, []);
-  const result = { recordedAt: new Date().toISOString(), url: page.url(), browserVersion: browser.version(), headless: process.env.REFRAL_HEADLESS === '1', viewport: page.viewportSize(), probe, demos, demoComparisons, rustBuffer, triangles, pageErrors: errors };
+  const result = { recordedAt: new Date().toISOString(), url: page.url(), browserVersion: browser.version(), headless: process.env.REFRAL_HEADLESS !== '0', viewport: page.viewportSize(), probe, demos, demoComparisons, rustBuffer, triangles, pageErrors: errors };
   await writeFile('artifacts/deployment/result.json', JSON.stringify(result, null, 2) + '\n');
-  console.log('Built deployment passed Chrome probe, three-path render-to-texture and triangle pixels, packaged ABI v3/resource protocol v2 and page-error checks.');
+  console.log('Built deployment passed Chrome probe, three-path RTT and triangle pixels, public readPixels, ABI3/resource2/readback1 and page-error checks.');
 } finally {
   try { await browser?.close(); } finally {
     if (server.exitCode === null) {

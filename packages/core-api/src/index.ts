@@ -2,6 +2,7 @@ export { GL } from './gl.js';
 export type * from './compiler.js';
 export * from './execution.js';
 export type * from './drawing.js';
+export type * from './readback.js';
 export * from './resources.js';
 
 export type CoreKind = 'js' | 'rust';

@@ -56,3 +56,9 @@ Shader/program requests and commits include a request identifier and typed gener
 Draw replies start with the RFD3 magic and version 3. They contain executable and program identities, link generation, target size, complete raster state, draw counts, attributes, constants, optional indices, and uniform bytes. Each copied Buffer section records its handle, storage generation and content version. The decoder bounds-checks every section and rejects trailing bytes. It resolves the shared executable and emits the common DrawOperation to BrowserHost.
 
 Automatic microtask submission and explicit flush use the same host. The testing capture target is the current default framebuffer. ABI v3 covers matrix/integer/bool updates and the declared depth/cull/blend/scissor/mask raster state. Texture/FBO execution is the next task 020 slice. The selected original CTS can still inspect matrix attribute reflection and call unsupported uniform setters with null locations.
+
+## Readback capability v1
+
+The full drawing adapter additionally requires rf_readback_protocol_version() equal to one. Initialization reports stale modules with pnpm rust:build guidance before allocating context state. The prepareReadPixels command receives normalized coordinates, dimensions, enums, nullable view brand and destination byte length. Caller storage remains outside Wasm.
+
+A read-pixels reply contains the existing target encoding, sourceX/sourceY/copyWidth/copyHeight as four u32 values, then destinationOffset/destinationStride/requiredBytes as three u64 values bounded by JavaScript's safe-integer range. The selected Rust core validates state and computes the plan. The common facade performs the completed host capture and destination copy. Actual-Wasm tests exercise clipping, packing, target versions, errors, stale modules, loss and independent result ownership.

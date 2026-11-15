@@ -2,12 +2,14 @@ use super::*;
 
 mod framebuffers;
 mod raster;
+mod readback;
 #[cfg(test)]
 mod texture_tests;
 mod textures;
 pub use framebuffers::{DepthAttachment, TargetSnapshot};
 mod uniforms;
 pub use raster::RasterState;
+pub use readback::ReadPixelsPlan;
 pub use textures::{ResourceOperation, TextureBinding, TextureParameters, TextureVersion};
 
 pub const VERTEX_SHADER: u32 = 0x8b31;
@@ -192,6 +194,7 @@ pub enum Reply {
     Clear(ClearSnapshot),
     Precision(bool),
     Target(TargetSnapshot),
+    ReadPixelsPlan(ReadPixelsPlan),
     Unsupported(&'static str),
 }
 
@@ -752,6 +755,9 @@ impl ContextCore {
                 "getVertexAttribOffset" => Reply::Number(0.0),
                 _ => Reply::Null,
             };
+        }
+        if let Some(reply) = self.readback_invoke(operation, args) {
+            return reply;
         }
         if let Some(reply) = self.raster_invoke(operation, args) {
             return reply;

@@ -5,6 +5,7 @@ import type {
   AttributeSnapshot, RasterState, TargetSnapshot,
   Compiler, CompiledShader, LinkedProgram, ProgramUniform, DrawingSurface,
   ContextAttributes, RuntimeProfile, SemanticHost, ResourceRegistry, TextureVersion, PixelUpload,
+  ReadPixelsPlan, ReadPixelsRequest,
 } from "@refral/core-api";
 import {
   LogicalObject, BufferObject, TextureObject, RenderbufferObject, FramebufferObject,
@@ -1048,6 +1049,13 @@ export class SemanticContext {
 
   getParameter(parameter: number): unknown {
     if (this.lost) return null;
+    if (parameter === GL.IMPLEMENTATION_COLOR_READ_FORMAT || parameter === GL.IMPLEMENTATION_COLOR_READ_TYPE) {
+      if (this.checkFramebufferStatus(GL.FRAMEBUFFER) !== GL.FRAMEBUFFER_COMPLETE) {
+        this.error(GL.INVALID_OPERATION);
+        return null;
+      }
+      return parameter === GL.IMPLEMENTATION_COLOR_READ_FORMAT ? GL.RGBA : GL.UNSIGNED_BYTE;
+    }
     const colorBits = this.framebuffer ? (this.framebuffer.color?.storage ? 8 : 0) : 8;
     const alphaBits = this.framebuffer ? (this.framebuffer.color?.format === GL.RGBA ? colorBits : 0)
       : (this.contextAttributes.alpha ? 8 : 0);
@@ -1099,6 +1107,52 @@ export class SemanticContext {
     const target = this.target();
     if (!target) throw new Error("Cannot capture an incomplete framebuffer");
     return target;
+  }
+
+  prepareReadPixels(request: ReadPixelsRequest): ReadPixelsPlan | null {
+    if (this.lost) return null;
+    if (request.viewType === null) {
+      this.error(GL.INVALID_VALUE);
+      return null;
+    }
+    if (!([GL.ALPHA, GL.RGB, GL.RGBA] as number[]).includes(request.format) ||
+        !([GL.UNSIGNED_BYTE, GL.UNSIGNED_SHORT_5_6_5, GL.UNSIGNED_SHORT_4_4_4_4,
+          GL.UNSIGNED_SHORT_5_5_5_1] as number[]).includes(request.type)) {
+      this.error(GL.INVALID_ENUM);
+      return null;
+    }
+    if (request.width < 0 || request.height < 0) {
+      this.error(GL.INVALID_VALUE);
+      return null;
+    }
+    if (request.format !== GL.RGBA || request.type !== GL.UNSIGNED_BYTE ||
+        (request.viewType !== "Uint8Array" && request.viewType !== "Uint8ClampedArray")) {
+      this.error(GL.INVALID_OPERATION);
+      return null;
+    }
+    const rowBytes = request.width * 4;
+    const destinationStride = Math.ceil(rowBytes / this.packAlignment) * this.packAlignment;
+    const requiredBytes = request.width === 0 || request.height === 0
+      ? 0 : (request.height - 1) * destinationStride + rowBytes;
+    if (!Number.isSafeInteger(requiredBytes) || !Number.isSafeInteger(request.byteLength) ||
+        request.byteLength < requiredBytes) {
+      this.error(GL.INVALID_OPERATION);
+      return null;
+    }
+    const target = this.target();
+    if (!target) return null;
+    const sourceX = Math.min(target.width, Math.max(0, request.x));
+    const sourceY = Math.min(target.height, Math.max(0, request.y));
+    const copyWidth = Math.max(0, Math.min(target.width, request.x + request.width) - sourceX);
+    const copyHeight = Math.max(0, Math.min(target.height, request.y + request.height) - sourceY);
+    const empty = copyWidth === 0 || copyHeight === 0;
+    return {
+      target, sourceX: empty ? 0 : sourceX, sourceY: empty ? 0 : sourceY,
+      copyWidth: empty ? 0 : copyWidth,
+      copyHeight: empty ? 0 : copyHeight,
+      destinationOffset: empty ? 0 : (sourceY - request.y) * destinationStride + (sourceX - request.x) * 4,
+      destinationStride, requiredBytes,
+    };
   }
 
   dispose(): void {

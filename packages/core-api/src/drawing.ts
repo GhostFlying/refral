@@ -4,6 +4,7 @@ import type {
   ContextAttributes, DrawingSurface, RuntimeProfile, SemanticHost, TargetSnapshot,
 } from './execution.js';
 import type { ResourceRegistry } from './resources.js';
+import type { ReadPixelsPlan, ReadPixelsRequest } from './readback.js';
 
 /** Per-context artifacts owned by the shared synchronous compiler service. */
 export interface CompilerRegistry {
@@ -31,4 +32,5 @@ export interface DrawingCoreServices {
 export interface DrawingCore extends BufferCore {
   invoke(operation: string, args: unknown[]): unknown;
   captureTarget(): TargetSnapshot;
+  prepareReadPixels(request: ReadPixelsRequest): ReadPixelsPlan | null;
 }

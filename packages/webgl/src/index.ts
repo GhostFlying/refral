@@ -9,6 +9,7 @@ import type { Compiler } from "@refral/compiler";
 import { createBufferFacade, isBufferBinding, requireArguments, toEnum } from "./buffers.js";
 import { createProgramFacade } from "./programs.js";
 import { createResourceFacade, isResourceBinding } from './resources.js';
+import { readPixels } from './readback.js';
 
 export interface ContextOptions extends WebGLContextAttributes {
   version: 1;
@@ -110,6 +111,7 @@ function wrapContext(canvas: HTMLCanvasElement, host: BrowserHost,
   const invoke = (property: string, args: unknown[]): unknown => {
     if (property === 'getError') return core.getError();
     if (property === 'isContextLost') return core.isContextLost();
+    if (property === 'readPixels') return readPixels(core, host, args);
     if (Object.hasOwn(bufferFacade.methods, property)) return bufferFacade.methods[property]!(...args);
     if (property === 'getParameter') {
       requireArguments(property, args, 1);

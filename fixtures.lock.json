@@ -14,7 +14,10 @@
       "sdk/tests/conformance/uniforms/gl-uniformmatrix4fv.html",
       "sdk/tests/conformance/uniforms/gl-uniform-arrays.html",
       "sdk/tests/conformance/uniforms/gl-uniform-bool.html",
-      "sdk/tests/conformance/uniforms/gl-get-uniform-non-current-program.html"
+      "sdk/tests/conformance/uniforms/gl-get-uniform-non-current-program.html",
+      "sdk/tests/conformance/programs/program-handling.html",
+      "sdk/tests/conformance/renderbuffers/feedback-loop.html",
+      "sdk/tests/conformance/reading/read-pixels-pack-alignment.html"
     ],
     "specifications": [
       "specs/latest/1.0/index.html",
@@ -22,21 +25,8 @@
     ],
     "deferredTests": [
       {
-        "path": "sdk/tests/conformance/programs/program-handling.html",
-        "prerequisites": [
-          "synchronous WebGL readPixels",
-          "iframe-realm WebGL context brand adapter for original pixel helpers"
-        ],
-        "derivedCases": [
-          "failed-current-program-relink",
-          "shader-source-compile-executable",
-          "detached-deleted-shader-executable"
-        ]
-      },
-      {
         "path": "sdk/tests/conformance/textures/misc/tex-image-and-sub-image-2d-with-array-buffer-view.html",
         "prerequisites": [
-          "synchronous WebGL readPixels",
           "TEXTURE_CUBE_MAP",
           "packed RGBA UNSIGNED_SHORT_5_5_5_1 and UNSIGNED_SHORT_4_4_4_4 texture formats"
         ],
@@ -48,11 +38,9 @@
       {
         "path": "sdk/tests/conformance/textures/misc/texture-npot.html",
         "prerequisites": [
-          "synchronous WebGL readPixels",
           "TEXTURE_CUBE_MAP",
           "mipmaps",
           "copyTexImage2D validation for rejected NPOT level",
-          "iframe-realm WebGL context brand adapter for original pixel helpers",
           "HTMLCanvasElement-source texImage2D"
         ],
         "derivedCases": [
@@ -62,26 +50,14 @@
       {
         "path": "sdk/tests/conformance/renderbuffers/framebuffer-object-attachment.html",
         "prerequisites": [
-          "synchronous WebGL readPixels",
           "RGBA4, RGB5_A1, RGB565, STENCIL_INDEX8 and DEPTH_STENCIL renderbuffer formats",
           "copyTexImage2D and copyTexSubImage2D invalid-source validation",
-          "iframe-realm WebGL context brand adapter for original pixel helpers",
           "framebuffer component-bit and attachment-conflict queries"
         ],
         "derivedCases": [
           "fbo-depth-render-sample",
           "fbo-attachment-resize",
           "fbo-deletion-bound-unbound"
-        ]
-      },
-      {
-        "path": "sdk/tests/conformance/renderbuffers/feedback-loop.html",
-        "prerequisites": [
-          "synchronous WebGL readPixels",
-          "iframe-realm WebGL context brand adapter for original pixel helpers"
-        ],
-        "derivedCases": [
-          "fbo-feedback-loop"
         ]
       }
     ]

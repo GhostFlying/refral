@@ -11,6 +11,7 @@ import type {
   SemanticHost,
   ResourceOperation,
   ContextAttributes,
+  ReadPixelsRequest,
 } from '@refral/core-api';
 import { createRustDrawingCoreFromModule } from '../src/render';
 import { runBufferCoreContract } from '../../../tests/core/buffer-contract';
@@ -679,6 +680,44 @@ describe('framebuffer targets and ordered GPU writes', () => {
     expect(core.invoke('checkFramebufferStatus', [GL.FRAMEBUFFER])).toBe(GL.FRAMEBUFFER_COMPLETE);
     return { texture, depth, framebuffer };
   }
+  it('prepares reads against the current canonical FBO version without advancing it', () => {
+    const state = setup();
+    const { core } = state;
+    try {
+      offscreen(core, 5, 3);
+      core.invoke('clearColor', [0.25, 0.5, 0.75, 1]);
+      core.invoke('clear', [GL.COLOR_BUFFER_BIT]);
+      const target = core.captureTarget();
+      const operationCount = state.operations.length;
+      const read = core.prepareReadPixels({
+        x: -1,
+        y: 1,
+        width: 8,
+        height: 4,
+        format: GL.RGBA,
+        type: GL.UNSIGNED_BYTE,
+        viewType: 'Uint8Array',
+        byteLength: 128,
+      })!;
+      expect(read.target.color).toBe(target.color);
+      expect(read.target.depth).toBe(target.depth);
+      expect(read.target).toEqual(target);
+      expect(read).toMatchObject({
+        sourceX: 0,
+        sourceY: 1,
+        copyWidth: 5,
+        copyHeight: 2,
+        destinationOffset: 4,
+        destinationStride: 32,
+        requiredBytes: 128,
+      });
+      expect(state.operations).toHaveLength(operationCount);
+      expect(core.captureTarget()).toEqual(target);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally {
+      core.dispose();
+    }
+  });
   it('encodes the target before advancing its canonical write alias and samples that allocation', () => {
     const state = setup(1, 1024 * 1024, 4096, { alpha: false, depth: false });
     const { core } = state;
@@ -848,5 +887,196 @@ describe('framebuffer targets and ordered GPU writes', () => {
     } finally {
       core.dispose();
     }
+  });
+});
+
+describe('actual Rust readPixels plans', () => {
+  function request(overrides: Partial<ReadPixelsRequest> = {}): ReadPixelsRequest {
+    return {
+      x: 0,
+      y: 0,
+      width: 3,
+      height: 2,
+      format: GL.RGBA,
+      type: GL.UNSIGNED_BYTE,
+      viewType: 'Uint8Array',
+      byteLength: 24,
+      ...overrides,
+    };
+  }
+  it('retains ABI3/resource2 and advertises readback protocol1', () => {
+    const exports = new WebAssembly.Instance(module, {}).exports;
+    expect((exports.rf_abi_version as () => number)()).toBe(3);
+    expect((exports.rf_resource_protocol_version as () => number)()).toBe(2);
+    expect((exports.rf_readback_protocol_version as () => number)()).toBe(1);
+  });
+  it('rejects stale modules with explicit rebuild guidance', () => {
+    const exports = new WebAssembly.Instance(module, {}).exports;
+    const instance = vi.spyOn(WebAssembly, 'Instance').mockImplementation(function () {
+      return { exports: { ...exports, rf_readback_protocol_version: () => 0 } };
+    });
+    try {
+      expect(() => setup()).toThrow('Rust readback protocol mismatch. Rebuild with pnpm rust:build.');
+    } finally {
+      instance.mockRestore();
+    }
+  });
+  it('rejects modules missing the additive readback export', () => {
+    const exports = { ...new WebAssembly.Instance(module, {}).exports };
+    delete exports.rf_readback_protocol_version;
+    const instance = vi.spyOn(WebAssembly, 'Instance').mockImplementation(function () {
+      return { exports };
+    });
+    try {
+      expect(() => setup()).toThrow(
+        'Rust drawing module does not expose resource ABI v3 with readback protocol v1. Rebuild with pnpm rust:build.',
+      );
+    } finally {
+      instance.mockRestore();
+    }
+  });
+  it('decodes owned clipped plans and synchronizes the default surface size', () => {
+    const { core, surface } = setup();
+    try {
+      surface.width = 5;
+      surface.height = 3;
+      const first = core.prepareReadPixels(
+        request({ x: -1, y: -2, width: 8, height: 7, byteLength: 224 }),
+      )!;
+      expect(first).toMatchObject({
+        target: { width: 5, height: 3, isDefault: true },
+        sourceX: 0,
+        sourceY: 0,
+        copyWidth: 5,
+        copyHeight: 3,
+        destinationOffset: 68,
+        destinationStride: 32,
+        requiredBytes: 224,
+      });
+      surface.width = 2;
+      surface.height = 1;
+      expect(core.prepareReadPixels(request())!.target).toMatchObject({ width: 2, height: 1 });
+      expect(core.invoke('getParameter', [GL.IMPLEMENTATION_COLOR_READ_FORMAT])).toBe(GL.RGBA);
+      expect(core.invoke('getParameter', [GL.IMPLEMENTATION_COLOR_READ_TYPE])).toBe(GL.UNSIGNED_BYTE);
+      expect(first.target).toMatchObject({ width: 5, height: 3 });
+      expect(first.destinationOffset).toBe(68);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally {
+      core.dispose();
+    }
+  });
+  it('uses PACK_ALIGNMENT and excludes final-row padding from the required span', () => {
+    const { core } = setup();
+    try {
+      for (const alignment of [1, 2, 4, 8]) {
+        core.invoke('pixelStorei', [GL.PACK_ALIGNMENT, alignment]);
+        const stride = alignment === 8 ? 16 : 12;
+        const byteLength = stride + 12;
+        expect(core.prepareReadPixels(request({ byteLength }))).toMatchObject({
+          destinationStride: stride,
+          requiredBytes: byteLength,
+        });
+        expect(core.prepareReadPixels(request({ byteLength: byteLength - 1 }))).toBeNull();
+        expect(core.getError()).toBe(GL.INVALID_OPERATION);
+        expect(core.invoke('getParameter', [GL.PACK_ALIGNMENT])).toBe(alignment);
+      }
+      expect(
+        core.prepareReadPixels(
+          request({ width: 0x7fffffff, height: 0x7fffffff, byteLength: Number.MAX_SAFE_INTEGER }),
+        ),
+      ).toBeNull();
+      expect(core.getError()).toBe(GL.INVALID_OPERATION);
+    } finally {
+      core.dispose();
+    }
+  });
+  it('emits no destination copy for outside and zero-size rectangles', () => {
+    const { core, surface } = setup();
+    try {
+      surface.width = 5;
+      surface.height = 3;
+      for (const overrides of [
+        { x: -8 },
+        { x: 9 },
+        { y: -8 },
+        { y: 9 },
+        { width: 0, byteLength: 0 },
+        { height: 0, byteLength: 0 },
+        { x: -0x80000000, width: 0x7fffffff, height: 1, byteLength: 0x7fffffff * 4 },
+      ]) {
+        expect(core.prepareReadPixels(request(overrides))).toMatchObject({
+          copyWidth: 0,
+          copyHeight: 0,
+          destinationOffset: 0,
+        });
+      }
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally {
+      core.dispose();
+    }
+  });
+  it('validates destination brands, null, dimensions and unsupported or invalid pairs', () => {
+    const { core } = setup();
+    try {
+      const cases: [Partial<ReadPixelsRequest>, number][] = [
+        [{ viewType: null }, GL.INVALID_VALUE],
+        [{ width: -1 }, GL.INVALID_VALUE],
+        [{ height: -1 }, GL.INVALID_VALUE],
+        [{ viewType: 'Uint16Array' }, GL.INVALID_OPERATION],
+        [{ viewType: 'DataView' }, GL.INVALID_OPERATION],
+        [{ format: GL.ALPHA }, GL.INVALID_OPERATION],
+        [{ format: GL.RGB }, GL.INVALID_OPERATION],
+        [{ type: 0x8363 }, GL.INVALID_OPERATION],
+        [{ type: 0x8033 }, GL.INVALID_OPERATION],
+        [{ type: 0x8034 }, GL.INVALID_OPERATION],
+        [{ format: GL.LUMINANCE }, GL.INVALID_ENUM],
+        [{ format: GL.LUMINANCE_ALPHA }, GL.INVALID_ENUM],
+        [{ type: GL.FLOAT }, GL.INVALID_ENUM],
+        [{ type: GL.UNSIGNED_SHORT }, GL.INVALID_ENUM],
+        [{ format: 0 }, GL.INVALID_ENUM],
+        [{ type: 0 }, GL.INVALID_ENUM],
+        [{ viewType: null, format: 0 }, GL.INVALID_VALUE],
+        [{ width: -1, format: 0 }, GL.INVALID_ENUM],
+        [{ viewType: 'Uint16Array', format: 0 }, GL.INVALID_ENUM],
+      ];
+      for (const [overrides, error] of cases) {
+        expect(core.prepareReadPixels(request(overrides))).toBeNull();
+        expect(core.getError()).toBe(error);
+      }
+      expect(core.prepareReadPixels(request({ viewType: 'Uint8ClampedArray' }))).not.toBeNull();
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally {
+      core.dispose();
+    }
+  });
+  it('checks framebuffer completeness after spans and reports implementation query errors', () => {
+    const { core } = setup();
+    try {
+      const framebuffer = core.invoke('createFramebuffer', []);
+      core.invoke('bindFramebuffer', [GL.FRAMEBUFFER, framebuffer]);
+      expect(core.prepareReadPixels(request({ byteLength: 23 }))).toBeNull();
+      expect(core.getError()).toBe(GL.INVALID_OPERATION);
+      expect(core.prepareReadPixels(request())).toBeNull();
+      expect(core.getError()).toBe(GL.INVALID_FRAMEBUFFER_OPERATION);
+      for (const parameter of [GL.IMPLEMENTATION_COLOR_READ_FORMAT, GL.IMPLEMENTATION_COLOR_READ_TYPE]) {
+        expect(core.invoke('getParameter', [parameter])).toBeNull();
+        expect(core.getError()).toBe(GL.INVALID_OPERATION);
+      }
+      core.invoke('bindFramebuffer', [GL.FRAMEBUFFER, null]);
+      expect(core.prepareReadPixels(request())).not.toBeNull();
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally {
+      core.dispose();
+    }
+  });
+  it('keeps lost and disposed contexts neutral', () => {
+    const { core } = setup();
+    core.markLost();
+    expect(core.getError()).toBe(GL.CONTEXT_LOST_WEBGL);
+    expect(core.prepareReadPixels(request())).toBeNull();
+    expect(core.invoke('getParameter', [GL.IMPLEMENTATION_COLOR_READ_FORMAT])).toBeNull();
+    expect(core.getError()).toBe(GL.NO_ERROR);
+    core.dispose();
+    expect(core.prepareReadPixels(request())).toBeNull();
   });
 });

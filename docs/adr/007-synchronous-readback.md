@@ -1,6 +1,6 @@
 # ADR 007 — Synchronous readback feasibility
 
-Status is proposed on 2026-11-15 after task025's worker experiment and task027's Canvas2D comparison.
+Status is accepted on 2026-11-15. The user selected Canvas2D for the first public synchronous readPixels implementation after task025 and task027 compared the available paths.
 
 ## Evidence and constraints
 
@@ -12,24 +12,24 @@ Both actual semantic cores execute on Window with a GPU worker, returning fresh 
 
 A worker that blocks while owning the pending GPU map also leaves its completion callback pending until its wait times out and the task yields. The GPU callback owner therefore needs an independently progressing event loop in the tested arrangement. Ordinary-page cloning of a Wasm-created shared buffer also produces DataCloneError, recording the shared-memory serialization constraint directly.
 
-## Proposed integration
+## Accepted integration
 
-Keep semantic validation and destination layout shared across readback backends. The selected caller core owns semantic state, validation, wrapper identity and synchronous compiler/query behavior. A host-level capture boundary supplies completed owned RGBA8 bytes to the eventual public readPixels implementation.
+The selected caller core owns semantic state, validation and current-target/packing plans. The facade owns WebIDL conversion and the caller's destination view. BrowserHost supplies completed owned RGBA8 bytes through the Canvas2D capture boundary. Both actual JS and Rust cores implement the same public profile.
 
-One candidate keeps GPU execution on the caller thread. A private WebGPU canvas encodes each RGBA8 texel into two opaque sRGB pixels. Canvas2D drawImage/getImageData synchronously returns their bytes, which are decoded into an independent result. Tiling respects the actual GPU dimension limit. Opaque encoding avoids loss from nonopaque alpha conversion. The tested ordinary Chrome page requires no shared-memory deployment headers. [HTML pixel reading](https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-getimagedata), [alpha conversion](https://html.spec.whatwg.org/multipage/canvas.html#premultiplied-alpha-and-the-2d-rendering-context)
+GPU execution remains on the caller thread. A private WebGPU canvas encodes each RGBA8 texel into two opaque sRGB pixels. Canvas2D drawImage/getImageData synchronously returns their bytes, which are decoded into an independent result. Tiling respects the actual GPU dimension limit. Opaque encoding preserves source alpha independently from canvas alpha conversion. The public path runs on an ordinary Chrome page. [HTML pixel reading](https://html.spec.whatwg.org/multipage/canvas.html#dom-context-2d-getimagedata), [alpha conversion](https://html.spec.whatwg.org/multipage/canvas.html#premultiplied-alpha-and-the-2d-rendering-context)
+
+The public factory remains asynchronous and its supported GL methods remain synchronous. RGBA/UNSIGNED_BYTE reads accept fixed Uint8Array and Uint8ClampedArray views. The facade writes only the framebuffer intersection into the validated PACK_ALIGNMENT layout. It preserves bytes outside the framebuffer, row padding and unrelated destination storage. Empty reads perform semantic validation without capture work. Readback completes pending writes before returning and subsequent draws retain their ordinary ordering.
+
+Rust retains ABI3/resource-protocol2 and adds readback capability v1. Its bounded owned reply carries the target, clipped rectangle, destination offset, stride and required byte span. Caller memory remains in the facade. Missing capabilities fail initialization with rebuild guidance.
 
 The worker candidate transports immutable ordered host operations with complete resource identity and versions. After flushing those operations, it publishes readback bytes and completion sequence into bounded shared storage. The caller takes an owned result copy before that storage is reused.
 
-The Window API placement requires polling during a synchronous read. A worker API placement can use Atomics.wait, with GPU callbacks owned by a separate worker. Deployment of the tested shared-reply paths requires secure context and cross-origin isolation. Any production mode needs explicit capability detection and a documented initialization result when those conditions are unavailable.
+The experimental worker-backed Window placement uses polling during a synchronous read. Its worker caller placement uses Atomics.wait, with GPU callbacks owned by a separate worker. Deployment of those shared-reply experiments requires secure context and cross-origin isolation. Any later integration of that backend needs explicit capability detection and documented initialization behavior.
 
-## Integration work and decision boundary
+## Verification and remaining scope
 
-The experiment establishes feasibility for fresh RGBA8 images from a bounded trace. Production support needs the public readPixels overload/validation order, destination views, clipping, PACK_ALIGNMENT, current-target state, error and device-loss propagation, ordering and retirement, and presentation/resize behavior for the user-owned canvas. The current concrete BrowserHost dependency in the facade/testing hooks also needs an adapter contract.
+Task028 accepts the public profile through shared specification-derived cases, original program-handling, feedback-loop and read-pixels-pack-alignment scripts, existing rendering regressions and built deployment verification. The CTS adapter assigns the facade the native WebGLRenderingContext prototype of the helper iframe. It preserves inert head shader elements and runs original scripts and assertions unchanged. Branding is scoped to the harness.
 
-Window polling consumes CPU while waiting and blocks that caller's event loop. The raw timings include GPU completion and copying. Broader traces and failure policies need their own acceptance before selecting production defaults. The independent worker canvas in this experiment leaves user-canvas presentation integration as a concrete follow-up.
+Task027's [comparison report](../validation/2026-11-15-readback-comparison.md) records matched actual-core correctness, repeated latency and process CPU evidence for both candidates. Task028 records public-entry behavior and completed clear/read latency in the [public readPixels report](../validation/2026-11-16-public-readpixels.md). The selected Canvas path has synchronous Canvas2D transfer and packing costs. The measured Chrome/hardware configuration bounds the current verification.
 
-Original pixel CTS helpers additionally inspect the iframe realm's native WebGL context brand. The CTS adapter needs an explicit recorded solution alongside synchronous reads. Task026 maps the exact files and helper paths. The nearest original candidates after these dependencies are implemented are program-handling.html and feedback-loop.html.
-
-The original worker-only recommendation preceded the Canvas2D investigation and used incomplete candidate coverage. Task027's [comparison report](../validation/2026-11-15-readback-comparison.md) records matched actual-core correctness, repeated latency and process CPU evidence for both candidates. Backend selection should account for deployment requirements, readback frequency, renderer CPU and the full GPU-process cost.
-
-The production support matrix continues to describe the existing public context. The next task should select the backend and deployment/API placement, then implement and accept the shared public readPixels profile through both cores. Context restoration and additional readback formats retain their explicit compatibility tasks.
+The independent worker experiment remains available for later deployment and execution-placement evaluation. Context restoration and additional readback formats retain their compatibility tasks. General GPU completion APIs have independent contracts and support entries.

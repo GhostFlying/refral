@@ -6,9 +6,9 @@ class RefralBuffer {}
 const handles = new WeakMap<object, BufferHandle>();
 const byteLength = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength')!.get!;
 const resizable = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'resizable')?.get;
-const sharedByteLength = typeof SharedArrayBuffer === 'undefined' ? undefined
+let sharedByteLength = typeof SharedArrayBuffer === 'undefined' ? undefined
   : Object.getOwnPropertyDescriptor(SharedArrayBuffer.prototype, 'byteLength')!.get!;
-const growable = typeof SharedArrayBuffer === 'undefined' ? undefined
+let growable = typeof SharedArrayBuffer === 'undefined' ? undefined
   : Object.getOwnPropertyDescriptor(SharedArrayBuffer.prototype, 'growable')?.get;
 const typedArray = Object.getPrototypeOf(Uint8Array.prototype);
 const typedBuffer = Object.getOwnPropertyDescriptor(typedArray, 'buffer')!.get!;
@@ -23,6 +23,15 @@ function storage(value: unknown): { value: ArrayBufferLike; length: number; vari
     const length = byteLength.call(value) as number;
     return { value: value as ArrayBuffer, length, variable: resizable?.call(value) ?? false };
   } catch { /* Try the other AllowSharedBufferSource storage type. */ }
+  if (!sharedByteLength && value !== null && typeof value === 'object') {
+    try {
+      // Ordinary pages can receive Wasm shared storage while its constructor is hidden.
+      const buffer = new WebAssembly.Memory({ initial: 0, maximum: 0, shared: true }).buffer;
+      const prototype = Object.getPrototypeOf(buffer);
+      sharedByteLength = Object.getOwnPropertyDescriptor(prototype, 'byteLength')!.get!;
+      growable = Object.getOwnPropertyDescriptor(prototype, 'growable')?.get;
+    } catch { /* Shared storage is unavailable in this runtime. */ }
+  }
   if (sharedByteLength) {
     try {
       const length = sharedByteLength.call(value) as number;
@@ -47,22 +56,26 @@ function toSize(value: unknown): number {
   return Number.isSafeInteger(integer) ? integer : Number(BigInt.asIntN(64, BigInt(integer)));
 }
 
-export function bufferSourceBytes(value: unknown): Uint8Array {
+export function bufferSourceBytes(value: unknown, detachedAsEmpty = false): Uint8Array {
   if (ArrayBuffer.isView(value)) {
     let buffer: ArrayBufferLike;
+    try { buffer = typedBuffer.call(value); }
+    catch { buffer = viewBuffer.call(value); }
+    const backing = storage(buffer)!;
+    if (backing.variable) throw new TypeError('WebGL buffer sources require fixed-length storage.');
+    if (detachedAsEmpty && backing.length === 0) {
+      try { new Uint8Array(buffer, 0, 0); }
+      catch { return new Uint8Array(0); }
+    }
     let offset: number;
     let length: number;
     try {
-      buffer = typedBuffer.call(value);
       offset = typedOffset.call(value);
       length = typedLength.call(value);
     } catch {
-      buffer = viewBuffer.call(value);
       offset = viewOffset.call(value);
       length = viewLength.call(value);
     }
-    const backing = storage(buffer)!;
-    if (backing.variable) throw new TypeError('WebGL buffer sources require fixed-length storage.');
     return new Uint8Array(buffer, offset, length);
   }
   const backing = storage(value);

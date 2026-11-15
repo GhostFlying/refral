@@ -10,7 +10,7 @@ export default defineConfig({
   reporter: [['list'], ['json', { outputFile: 'artifacts/chrome-results.json' }]],
   use: {
     channel: 'chrome',
-    headless: process.env.REFRAL_HEADLESS === '1',
+    headless: process.env.REFRAL_HEADLESS !== '0',
     baseURL: 'http://127.0.0.1:4173',
     viewport: { width: 1000, height: 760 },
     deviceScaleFactor: 1,

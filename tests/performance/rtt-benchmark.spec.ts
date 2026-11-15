@@ -121,7 +121,7 @@ for (let round = 0; round < orders.length; round++) {
           && result.validationErrors.length === 0 && result.cpuSamplesMs.length === 120;
         await writeFile(`${directory}/${backend}.json`, JSON.stringify({ runStartedAt, status: passed ? 'pass' : 'fail', recordedAt: new Date().toISOString(),
           round: round + 1, backendOrder: orders[round], position, browserVersion: browser.version(),
-          launch: { channel: 'chrome', headless: process.env.REFRAL_HEADLESS === '1', commandLine: launchCommandLine }, machine, source, hashes, result,
+          launch: { channel: 'chrome', headless: process.env.REFRAL_HEADLESS !== '0', commandLine: launchCommandLine }, machine, source, hashes, result,
         }, null, 2) + '\n');
         if ('failure' in result) throw new Error(result.failure);
         expect(result.selectedCore).toBe(backend);

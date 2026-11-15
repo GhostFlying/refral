@@ -51,6 +51,7 @@ export async function runCts(path: string, requestedBackend: CtsBackend) {
             const existing = contexts.find((context) => context.canvas === this);
             if (existing) return existing;
             const context = factory(this, attributes);
+            Object.setPrototypeOf(context, frame.WebGLRenderingContext.prototype);
             contexts.push(context);
             return context;
           }
@@ -61,7 +62,10 @@ export async function runCts(path: string, requestedBackend: CtsBackend) {
     }
     for (const node of [...html.head.children, ...html.body.children]) {
       if (!(node instanceof HTMLScriptElement)) continue;
-      if (node.type && node.type !== 'text/javascript' && node.type !== 'application/javascript') continue;
+      if (node.type && node.type !== 'text/javascript' && node.type !== 'application/javascript') {
+        if (node.parentElement === html.head) doc.head.appendChild(doc.importNode(node, true));
+        continue;
+      }
       const script = doc.createElement('script');
       if (node.hasAttribute('src')) {
         script.src = new URL(node.getAttribute('src')!, testUrl).href;
@@ -98,7 +102,10 @@ export async function runCts(path: string, requestedBackend: CtsBackend) {
       : failed || errors.length || !passed ? 'fail' : 'pass';
     return {
       path, backend, requestedBackend, status, completionStatus, passed, failed, assertions, errors, environments,
-      adaptations: factory ? ['asynchronous compiler/device/core preinitialization', 'iframe-scoped canvas getContext injection', 'original test scripts and assertions executed unchanged'] : [],
+      adaptations: ['inert head shader scripts preserved in the iframe document',
+        ...(factory ? ['asynchronous compiler/device/core preinitialization', 'iframe-scoped canvas getContext injection',
+          'iframe-local native WebGL prototype branding for original context checks'] : []),
+        'original test scripts and assertions executed unchanged'],
     };
   } finally {
     clearTimeout(timer);

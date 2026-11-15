@@ -656,19 +656,20 @@ export class BrowserHost implements SemanticHost {
     }).catch(() => {});
   }
 
-  /** Experimental synchronous host capture; public GL validation is owned by the cores. */
-  captureCanvas(snapshot: TargetSnapshot): CapturedPixels {
+  /** Synchronous RGBA8 capture after public GL validation in the selected core. */
+  captureCanvas(snapshot: TargetSnapshot,
+    region = { x: 0, y: 0, width: snapshot.width, height: snapshot.height }): CapturedPixels {
     if (this.disposed) throw new DOMException("The context has been disposed", "InvalidStateError");
-    if (!snapshot.width || !snapshot.height) {
-      return { width: snapshot.width, height: snapshot.height, data: new Uint8Array(0) };
+    if (!region.width || !region.height) {
+      return { width: region.width, height: region.height, data: new Uint8Array(0) };
     }
     const target = this.resolveTarget(snapshot);
     this.beginPass(target);
     this.endPass();
     this.canvasReadback ??= new CanvasReadback(this.device, this.stats);
-    const data = this.canvasReadback.capture(target.color, target.width, target.height,
-      () => this.getEncoder(), () => this.flush());
-    return { width: target.width, height: target.height, data };
+    const data = this.canvasReadback.capture(target.color, region.width, region.height,
+      () => this.getEncoder(), () => this.flush(), region.x, region.y);
+    return { width: region.width, height: region.height, data };
   }
 
   get canvasReadbackStats(): Readonly<CanvasReadback['stats']> | null {

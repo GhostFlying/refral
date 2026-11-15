@@ -12,6 +12,8 @@ import type {
   TextureVersion,
   TextureBinding,
   PixelUpload,
+  ReadPixelsRequest,
+  ReadPixelsPlan,
 } from '@refral/core-api';
 
 const DEFAULT_URL = '/artifacts/core-wasm/refral_core.wasm';
@@ -23,6 +25,7 @@ interface ABI {
   memory: WebAssembly.Memory;
   rf_abi_version(): number;
   rf_resource_protocol_version(): number;
+  rf_readback_protocol_version(): number;
   rf_init(context: number, limit: number): number;
   rf_create_buffer(): number;
   rf_result_generation(): number;
@@ -199,6 +202,7 @@ export function createRustDrawingCoreFromModule(
   const required: (keyof Omit<ABI, 'memory'>)[] = [
     'rf_abi_version',
     'rf_resource_protocol_version',
+    'rf_readback_protocol_version',
     'rf_init',
     'rf_create_buffer',
     'rf_result_generation',
@@ -237,11 +241,15 @@ export function createRustDrawingCoreFromModule(
     !(exports.memory instanceof WebAssembly.Memory) ||
     required.some((name) => typeof exports[name] !== 'function')
   ) {
-    throw new Error('Rust drawing module does not expose resource ABI v3. Rebuild with pnpm rust:build.');
+    throw new Error(
+      'Rust drawing module does not expose resource ABI v3 with readback protocol v1. Rebuild with pnpm rust:build.',
+    );
   }
   const abi = exports as unknown as ABI;
   if (abi.rf_abi_version() !== 3 || abi.rf_resource_protocol_version() !== 2)
     throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
+  if (abi.rf_readback_protocol_version() !== 1)
+    throw new Error('Rust readback protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_init(contextId, maxBufferBytes) !== 1)
     throw new Error('Rust drawing ABI initialization failed.');
 
@@ -511,6 +519,21 @@ export function createRustDrawingCoreFromModule(
         reader.finish();
         return result;
       }
+      case 'read-pixels': {
+        const reader = new Reader(binary);
+        const result: ReadPixelsPlan = {
+          target: readTarget(reader),
+          sourceX: reader.u32(),
+          sourceY: reader.u32(),
+          copyWidth: reader.u32(),
+          copyHeight: reader.u32(),
+          destinationOffset: reader.u64(),
+          destinationStride: reader.u64(),
+          requiredBytes: reader.u64(),
+        };
+        reader.finish();
+        return result;
+      }
       case 'clear': {
         const reader = new Reader(binary);
         const clearTarget = readTarget(reader);
@@ -637,6 +660,21 @@ export function createRustDrawingCoreFromModule(
       command('setSurfaceSize', [surface.width, surface.height]);
       const result = command('captureTarget', []);
       return decode(result.value, result.binary) as TargetSnapshot;
+    },
+    prepareReadPixels(request: ReadPixelsRequest) {
+      if (abi.rf_is_context_lost()) return null;
+      command('setSurfaceSize', [surface.width, surface.height]);
+      const result = command('prepareReadPixels', [
+        request.x,
+        request.y,
+        request.width,
+        request.height,
+        request.format,
+        request.type,
+        request.viewType,
+        request.byteLength,
+      ]);
+      return decode(result.value, result.binary) as ReadPixelsPlan | null;
     },
     invoke(operation: string, args: unknown[]): unknown {
       if (operation === 'flush') {

@@ -1,8 +1,8 @@
 {
   "version": 2,
   "profile": "webgl1-prototype",
-  "updated": "2026-11-15",
-  "implementationRevision": "task-020 shared render-to-texture acceptance; dated report and delivery handoff identify tested sources",
+  "updated": "2026-11-16",
+  "implementationRevision": "task-028 public Canvas2D readPixels acceptance; source/build hashes and delivery recorded in the dated report",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
     "chrome-macos-arm64": {
@@ -1501,7 +1501,7 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Common BrowserHost asynchronous capture covers default and declared FBO targets through sixteen shared drawing and twenty RTT scenes. Public synchronous readPixels remains future coverage.",
+          "coverage": "Common BrowserHost asynchronous capture covers default and declared FBO targets through sixteen shared drawing and twenty RTT scenes. Public synchronous readPixels has its own verified support entry.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture",
@@ -1529,7 +1529,7 @@
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "Common BrowserHost asynchronous capture covers default and declared FBO targets through sixteen shared drawing and twenty RTT scenes. Public synchronous readPixels remains future coverage.",
+          "coverage": "Common BrowserHost asynchronous capture covers default and declared FBO targets through sixteen shared drawing and twenty RTT scenes. Public synchronous readPixels has its own verified support entry.",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
@@ -1579,25 +1579,83 @@
       }
     },
     {
+      "id": "read-pixels",
+      "api": "readPixels RGBA UNSIGNED_BYTE and implementation read format/type queries",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Public synchronous RGBA/UNSIGNED_BYTE reads use the selected semantic core and common Canvas2D host. Fixed Uint8/Clamped, offset/cross-realm/shared views, detached zero-capacity views, PACK_ALIGNMENT 1/2/4/8, exact final-row span, clipped/empty reads, current default/FBO target, ordering and lifecycle pass shared assertions.",
+          "tests": [
+            "tests/chrome/read-pixels.spec.ts",
+            "tests/fixtures/read-pixels-cases.ts",
+            "sdk/tests/conformance/programs/program-handling.html",
+            "sdk/tests/conformance/renderbuffers/feedback-loop.html",
+            "sdk/tests/conformance/reading/read-pixels-pack-alignment.html"
+          ],
+          "evidence": [
+            "docs/validation/2026-11-16-public-readpixels.md",
+            "artifacts/readpixels/public/",
+            "artifacts/cts/results.json",
+            "artifacts/deployment/result.json"
+          ],
+          "unsupportedBehavior": "Invalid enums produce INVALID_ENUM. Unsupported base pairs, mismatched/short views produce INVALID_OPERATION, null/negative sizes INVALID_VALUE and incomplete targets INVALID_FRAMEBUFFER_OPERATION. Non-view/resizable/growable storage raises TypeError.",
+          "limits": [
+            "Verified through headed Chrome 157 on macOS arm64 hardware adapter.",
+            "RGBA/UNSIGNED_BYTE is also the implementation-selected pair. Other formats and context restoration retain separate compatibility tasks.",
+            "Native extreme-coordinate/span error differences are recorded with exact inputs and specification expectations."
+          ]
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Public synchronous RGBA/UNSIGNED_BYTE reads use the selected semantic core and common Canvas2D host. Fixed Uint8/Clamped, offset/cross-realm/shared views, detached zero-capacity views, PACK_ALIGNMENT 1/2/4/8, exact final-row span, clipped/empty reads, current default/FBO target, ordering and lifecycle pass shared assertions.",
+          "tests": [
+            "tests/chrome/read-pixels.spec.ts",
+            "tests/fixtures/read-pixels-cases.ts",
+            "sdk/tests/conformance/programs/program-handling.html",
+            "sdk/tests/conformance/renderbuffers/feedback-loop.html",
+            "sdk/tests/conformance/reading/read-pixels-pack-alignment.html"
+          ],
+          "evidence": [
+            "docs/validation/2026-11-16-public-readpixels.md",
+            "artifacts/readpixels/public/",
+            "artifacts/cts/results.json",
+            "artifacts/deployment/result.json"
+          ],
+          "unsupportedBehavior": "Invalid enums produce INVALID_ENUM. Unsupported base pairs, mismatched/short views produce INVALID_OPERATION, null/negative sizes INVALID_VALUE and incomplete targets INVALID_FRAMEBUFFER_OPERATION. Non-view/resizable/growable storage raises TypeError.",
+          "limits": [
+            "Verified through headed Chrome 157 on macOS arm64 hardware adapter.",
+            "RGBA/UNSIGNED_BYTE is also the implementation-selected pair. Other formats and context restoration retain separate compatibility tasks.",
+            "Native extreme-coordinate/span error differences are recorded with exact inputs and specification expectations."
+          ]
+        }
+      }
+    },
+    {
       "id": "public-synchronous-gpu-readback",
-      "api": "readPixels, getBufferSubData, finish, sync/query completion APIs",
+      "api": "getBufferSubData, finish, sync/query completion APIs",
       "cores": {
         "js": {
           "status": "unimplemented",
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Synchronous GPU-dependent public APIs remain future coverage.",
+          "coverage": "General completion and additional GPU-dependent public API coverage follows the accepted readPixels slice.",
           "tests": [],
           "evidence": [],
-          "unsupportedBehavior": "finish and missing GPU-dependent API methods throw NotSupportedError. Pixel testing uses the internal asynchronous capture hook."
+          "unsupportedBehavior": "Missing completion methods report NotSupportedError."
         },
         "rust": {
           "status": "unimplemented",
-          "coverage": "This capability group is outside the declared Rust profile.",
+          "coverage": "General completion and additional GPU-dependent public API coverage follows the accepted readPixels slice.",
           "tests": [],
           "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations."
+          "unsupportedBehavior": "Missing completion methods report NotSupportedError."
         }
       }
     },
@@ -1884,7 +1942,7 @@
   },
   "deploymentVerification": {
     "evidence": "artifacts/deployment/result.json",
-    "scope": "Built Chrome probe, three-path RTT and triangle pixels, packaged Rust ABI3/resource-protocol2 and page-error checks."
+    "scope": "Built Chrome probe, three-path RTT/triangle pixels and public readPixels, packaged Rust ABI3/resource2/readback1 and page-error checks."
   },
   "defaultCore": "js",
   "cores": {
@@ -1893,7 +1951,7 @@
       "implementation": "packages/core-js",
       "contract": "packages/core-api",
       "facade": "packages/webgl",
-      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT vertex inputs, typed uniforms/matrices, level-zero five-format Texture2D, RGBA/depth FBO and raster profile."
+      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT vertex inputs, typed uniforms/matrices, level-zero five-format Texture2D, RGBA/depth FBO and raster profile. Public synchronous RGBA/UNSIGNED_BYTE readPixels through Canvas2D."
     },
     "rust": {
       "profile": "webgl1-render-to-texture",
@@ -1901,28 +1959,31 @@
       "binding": "crates/wasm + packages/core-wasm",
       "contract": "packages/core-api",
       "facade": "packages/webgl",
-      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT vertex inputs, typed uniforms/matrices, level-zero five-format Texture2D, RGBA/depth FBO and raster profile."
+      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT vertex inputs, typed uniforms/matrices, level-zero five-format Texture2D, RGBA/depth FBO and raster profile. Public synchronous RGBA/UNSIGNED_BYTE readPixels through Canvas2D."
     }
   },
   "coreVerification": {
-    "report": "docs/validation/2026-11-15-three-path-rtt.md",
+    "report": "docs/validation/2026-11-16-public-readpixels.md",
     "environment": "chrome-macos-arm64",
     "allChromeTests": {
-      "passed": 84,
+      "passed": 92,
       "failed": 0,
       "skipped": 0,
-      "evidence": "artifacts/rtt-final-chrome.log"
+      "evidence": "artifacts/readpixels/chrome-headless.log",
+      "headless": true
     },
     "deterministicChecks": {
       "typescript": "passed",
-      "jsUnitTests": 107,
-      "rustNativeTests": 44,
+      "jsUnitTests": 152,
+      "rustNativeTests": 53,
+      "rustCoreTests": 46,
+      "wasmCrateTests": 7,
       "rustFmt": "passed",
       "rustClippy": "passed",
-      "actualWasmAdapterTests": 20,
+      "actualWasmAdapterTests": 30,
       "evidence": [
-        "artifacts/rtt-final-check.log",
-        "artifacts/rtt-final-wasm.log"
+        "artifacts/readpixels/check.log",
+        "artifacts/readpixels/wasm-tests.log"
       ]
     },
     "js": {
@@ -1930,18 +1991,22 @@
       "bufferSuite": "passed",
       "sharedDrawingScenes": 16,
       "sharedRttScenes": 20,
-      "ctsFiles": 11,
-      "ctsAssertions": 243,
-      "remainingParity": "DOM upload acceptance, mipmaps/CubeMap/packed formats, additional targets, synchronous readback, extensions and restoration."
+      "ctsFiles": 14,
+      "ctsAssertions": 430,
+      "remainingParity": "DOM upload acceptance, mipmaps/CubeMap/packed formats, additional targets/readback formats, extensions and restoration.",
+      "publicReadPixelsCaseGroups": 8,
+      "publicReadPixelsAssertions": 296
     },
     "rust": {
       "profile": "webgl1-render-to-texture",
       "bufferSuite": "passed",
       "sharedDrawingScenes": 16,
       "sharedRttScenes": 20,
-      "ctsFiles": 11,
-      "ctsAssertions": 243,
-      "remainingParity": "DOM upload acceptance, mipmaps/CubeMap/packed formats, additional targets, synchronous readback, extensions and restoration."
+      "ctsFiles": 14,
+      "ctsAssertions": 430,
+      "remainingParity": "DOM upload acceptance, mipmaps/CubeMap/packed formats, additional targets/readback formats, extensions and restoration.",
+      "publicReadPixelsCaseGroups": 8,
+      "publicReadPixelsAssertions": 296
     },
     "sharedCompiler": {
       "corpusCases": 24,
@@ -1953,7 +2018,7 @@
     "deployment": {
       "status": "passed",
       "evidence": "artifacts/deployment/result.json",
-      "scope": "Built Chrome probe, three-path RTT and triangle pixels, packaged Rust ABI3/resource-protocol2 and page-error checks."
+      "scope": "Built Chrome probe, three-path RTT/triangle pixels and public readPixels, packaged Rust ABI3/resource2/readback1 and page-error checks."
     }
   },
   "specifications": {
@@ -1968,11 +2033,11 @@
     "mapping": "docs/spec-map.md"
   },
   "specVerification": {
-    "report": "docs/tasks/020-render-to-texture.md",
+    "report": "docs/validation/2026-11-16-public-readpixels.md",
     "ctsEvidence": "artifacts/cts/results.json",
     "programEvidence": "artifacts/program-spec/",
     "bufferSourceEvidence": "artifacts/buffers/sources.json",
-    "scope": "Eleven unchanged original CTS files pass 243 assertions per backend. Twenty separate source-derived RTT scenes cover the declared asynchronous readback profile.",
+    "scope": "Fourteen unchanged original CTS files pass 430 assertions per backend. Eight shared public readPixels groups complement the earlier drawing/RTT scenes.",
     "rust": "Rust executes all supported semantics in one selected Wasm instance; shared resource/compiler/host behavior follows the common contracts."
   },
   "sharedDrawingVerification": {
@@ -2017,5 +2082,20 @@
     "performanceRuns": 45,
     "performanceSamples": 5400,
     "report": "docs/validation/2026-11-15-three-path-rtt.md"
+  },
+  "readPixelsStage": {
+    "task": "docs/tasks/028-canvas-readpixels.md",
+    "report": "docs/validation/2026-11-16-public-readpixels.md",
+    "backend": "Canvas2D opaque sRGB RGBA packing",
+    "readbackProtocol": 1,
+    "publicGroups": 8,
+    "originalCtsFiles": 14,
+    "assertionsPerBackend": 430,
+    "performanceRuns": 18,
+    "formalPerformanceSamples": 2160,
+    "evidence": "artifacts/readpixels/",
+    "headless": true,
+    "publicAssertionsPerCore": 296,
+    "nativeAssertionRecords": 293
   }
 }

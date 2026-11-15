@@ -27,11 +27,17 @@ The JS implementation lives in `packages/core-js`. Shared contracts cover Buffer
 - Each semantic core owns state, validation, logical resources, and ordered snapshots through the shared contract.
 - `packages/compiler` owns ANGLE Wasm loading, ESSL translation, reflection, and program finalization.
 - `packages/browser-host` owns GPU resources and executes ordered rendering work.
-- The testing harness uses native WebGL references and an internal asynchronous pixel-capture entry.
+- The testing harness uses native WebGL references, the public synchronous readPixels entry and an internal asynchronous pixel-capture entry.
 
 ## Initial execution
 
 Use a single owner thread. Schedule automatic submission at the current task's microtask checkpoint, and submit explicitly on `flush`. Uniform and resource updates preserve the values observed by earlier draws. GPU work holds resource references through submission.
+
+## Synchronous readback
+
+The selected core validates readPixels and returns an immutable plan containing the current target, clipped rectangle and destination layout. The facade converts WebIDL values and checks destination storage before calling the core. BrowserHost ends pending passes and synchronously captures only the intersecting region through a private WebGPU canvas and an opaque sRGB Canvas2D transfer. The facade copies completed RGBA8 rows into the caller view before returning, preserving padding and out-of-framebuffer bytes.
+
+The ordinary Chrome path uses the existing caller thread and public factory. Empty rectangles skip GPU capture. Device loss and disposal are observed by the core before planning. The Rust adapter requires readback capability v1 alongside ABI3/resource-protocol2. ADR 007 records the accepted backend and verified scope.
 
 ## Resource model
 

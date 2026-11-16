@@ -20,7 +20,7 @@ pub extern "C" fn rf_readback_protocol_version() -> u32 {
 
 #[no_mangle]
 pub extern "C" fn rf_dom_upload_protocol_version() -> u32 {
-    1
+    2
 }
 
 #[derive(Default)]
@@ -703,7 +703,7 @@ mod tests {
     fn command_transport_preserves_utf16_and_owns_output() {
         assert_eq!(rf_resource_protocol_version(), 2);
         assert_eq!(rf_readback_protocol_version(), 1);
-        assert_eq!(rf_dom_upload_protocol_version(), 1);
+        assert_eq!(rf_dom_upload_protocol_version(), 2);
         assert_eq!(rf_init(7, 4096.0), 1);
         let stage = (refral_core::VERTEX_SHADER as f64).to_le_bytes();
         let created = command("createShader", json!([{"n":0}]), &stage);

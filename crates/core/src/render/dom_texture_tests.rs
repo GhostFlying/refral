@@ -174,6 +174,75 @@ fn preparation_validates_source_dimensions_before_gl_parameters() {
 }
 
 #[test]
+fn lost_source_preparation_preserves_destination_and_validation_order() {
+    let mut core = context();
+    image(&mut core, 1, 1, RGBA, Argument::Null);
+    let (initial, _) = definition(&mut core);
+    for sub_image in [false, true] {
+        let mut args = request(sub_image, 1, 1, RGBA, true);
+        args.push(Argument::Boolean(true));
+        for target in [TEXTURE_2D, 0xbad] {
+            args[1] = number(target as i64);
+            assert!(matches!(
+                core.render_invoke("prepareDomTextureUpload", &args),
+                Reply::Null
+            ));
+            assert_eq!(core.get_error(), INVALID_OPERATION);
+            assert_eq!(core.texture_version(0), initial);
+            no_operations(&mut core);
+        }
+        args[10] = Argument::Boolean(false);
+        core.render_invoke("prepareDomTextureUpload", &args);
+        assert_eq!(core.get_error(), INVALID_VALUE);
+        args[10] = Argument::Boolean(true);
+        for invalid in INVALID_DOM_DIMENSIONS {
+            args[6] = Argument::Number(invalid);
+            core.render_invoke("prepareDomTextureUpload", &args);
+            assert_eq!(core.get_error(), INVALID_VALUE);
+            assert_eq!(core.texture_version(0), initial);
+            no_operations(&mut core);
+        }
+        args[6] = number(1);
+        args[11] = Argument::Boolean(false);
+        core.render_invoke("prepareDomTextureUpload", &args);
+        assert_eq!(core.get_error(), INVALID_ENUM);
+        args[1] = number(TEXTURE_2D as i64);
+        assert!(matches!(
+            core.render_invoke("prepareDomTextureUpload", &args),
+            Reply::Ints(_)
+        ));
+        args.pop();
+        assert!(matches!(
+            core.render_invoke("prepareDomTextureUpload", &args),
+            Reply::Ints(_)
+        ));
+        assert_eq!(core.get_error(), NO_ERROR);
+        assert_eq!(core.texture_version(0), initial);
+        no_operations(&mut core);
+    }
+    let storage = core.render.textures.slots[0]
+        .value
+        .as_ref()
+        .unwrap()
+        .storage
+        .unwrap();
+    assert_eq!(
+        (storage.width, storage.height, storage.format),
+        (1, 1, RGBA)
+    );
+    core.mark_lost();
+    assert_eq!(core.get_error(), CONTEXT_LOST_WEBGL);
+    let mut args = request(false, 1, 1, RGBA, true);
+    args.push(Argument::Boolean(true));
+    assert!(matches!(
+        core.render_invoke("prepareDomTextureUpload", &args),
+        Reply::Null
+    ));
+    assert_eq!(core.get_error(), NO_ERROR);
+    no_operations(&mut core);
+}
+
+#[test]
 fn dom_commits_reject_invalid_source_dimensions_without_changing_storage() {
     let mut core = context();
     image(&mut core, 1, 1, RGBA, Argument::Null);

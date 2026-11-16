@@ -565,11 +565,15 @@ impl ContextCore {
         Ok(index)
     }
     fn prepare_dom_texture_upload(&mut self, args: &[Argument]) -> Reply {
-        if args.len() != 11 || !matches!(args[0], Argument::Boolean(_)) {
+        if !(11..=12).contains(&args.len()) || !matches!(args[0], Argument::Boolean(_)) {
             self.record_error(INVALID_VALUE);
             return Reply::Null;
         }
         if !self.validate_dom_source(args[6].number(), args[7].number(), args[10].boolean()) {
+            return Reply::Null;
+        }
+        if args.get(11).is_some_and(Argument::boolean) {
+            self.record_error(INVALID_OPERATION);
             return Reply::Null;
         }
         let number = |index: usize| Argument::Number(args[index].number());

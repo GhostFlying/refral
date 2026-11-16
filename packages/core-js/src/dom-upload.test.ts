@@ -37,6 +37,21 @@ const palette = [100, 80, 60, 128, 254, 1, 64, 0, 7, 9, 15, 255, 254, 128, 10, 1
 const premultiplied = [50, 40, 30, 128, 0, 0, 0, 0, 7, 9, 15, 255, 1, 1, 0, 1];
 
 describe("JS DOM texture upload planning", () => {
+  it("rejects a lost source context without changing destination storage or versions", () => {
+    const { core, texture, host } = createContext();
+    core.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, null);
+    const storage = texture.storage;
+    const version = texture.version;
+    const replacements = host.replaceStorage.mock.calls.length;
+    expect(core.prepareDomTextureUpload(request({ sourceContextLost: true, target: 0xbad }))).toBeNull();
+    expect(core.getError()).toBe(GL.INVALID_OPERATION);
+    expect(core.prepareDomTextureUpload(request({ sourceContextLost: true, sourceValid: false }))).toBeNull();
+    expect(core.getError()).toBe(GL.INVALID_VALUE);
+    expect(texture.storage).toBe(storage);
+    expect(texture.version).toBe(version);
+    expect(host.replaceStorage.mock.calls.length).toBe(replacements);
+  });
+
   it("returns unpack flags while retaining binding, storage and versions", () => {
     const { core, texture, host } = createContext();
     core.pixelStorei(GL.UNPACK_ALIGNMENT, 8);

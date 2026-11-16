@@ -11,7 +11,7 @@ function setup(contextId = 1) {
     if (operation === 'createFramebuffer') return { ...texture, kind: 'framebuffer' };
     return undefined;
   });
-  const facade = createResourceFacade({ contextId, invoke, isContextLost: () => false } as unknown as DrawingCore);
+  const facade = createResourceFacade({ contextId, invoke, isContextLost: () => false } as unknown as DrawingCore, () => new Uint8Array(0));
   return { ...facade, invoke, texture };
 }
 

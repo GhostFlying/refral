@@ -246,7 +246,7 @@ export function createRustDrawingCoreFromModule(
     required.some((name) => typeof exports[name] !== 'function')
   ) {
     throw new Error(
-      'Rust drawing module requires ABI3/resource2/readback1/DOM upload1 exports. Rebuild with pnpm rust:build.',
+      'Rust drawing module requires ABI3/resource2/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
     );
   }
   const abi = exports as unknown as ABI;
@@ -254,7 +254,7 @@ export function createRustDrawingCoreFromModule(
     throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_readback_protocol_version() !== 1)
     throw new Error('Rust readback protocol mismatch. Rebuild with pnpm rust:build.');
-  if (abi.rf_dom_upload_protocol_version() !== 1)
+  if (abi.rf_dom_upload_protocol_version() !== 2)
     throw new Error('Rust DOM upload protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_init(contextId, maxBufferBytes) !== 1)
     throw new Error('Rust drawing ABI initialization failed.');
@@ -690,6 +690,7 @@ export function createRustDrawingCoreFromModule(
       const result = command('prepareDomTextureUpload', [
         request.operation === 'texSubImage2D', request.target, request.level, request.internalFormat,
         request.x, request.y, request.width, request.height, request.format, request.type, request.sourceValid,
+        request.sourceContextLost ?? false,
       ]);
       const values = decode(result.value, result.binary);
       if (values === null) return null;

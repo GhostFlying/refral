@@ -18,6 +18,11 @@ pub extern "C" fn rf_readback_protocol_version() -> u32 {
     1
 }
 
+#[no_mangle]
+pub extern "C" fn rf_dom_upload_protocol_version() -> u32 {
+    1
+}
+
 #[derive(Default)]
 pub(super) struct Transport {
     metadata: Vec<u8>,
@@ -173,19 +178,30 @@ fn argument(value: &Value, bytes: &[u8], allocation_failed: &mut bool) -> Option
         ));
     }
     if value.get("p").is_some() {
+        let converted = match value.get("source") {
+            None => None,
+            Some(Value::String(source)) if source == "dom" => Some(false),
+            Some(Value::String(source)) if source == "dom-converted" => Some(true),
+            _ => return None,
+        };
         let input = range(value, "p", bytes, 1)?;
+        let valid_u8 = matches!(
+            value.get("viewType")?.as_str()?,
+            "Uint8Array" | "Uint8ClampedArray"
+        );
         let mut data = Vec::new();
         if data.try_reserve_exact(input.len()).is_err() {
             *allocation_failed = true;
             return None;
         }
         data.extend_from_slice(input);
-        return Some(Argument::Pixels {
-            data,
-            valid_u8: matches!(
-                value.get("viewType")?.as_str()?,
-                "Uint8Array" | "Uint8ClampedArray"
-            ),
+        return Some(match converted {
+            Some(converted) => Argument::DomPixels {
+                data,
+                valid_u8,
+                converted,
+            },
+            None => Argument::Pixels { data, valid_u8 },
         });
     }
     parse_handle(value).map(Argument::Handle)
@@ -611,6 +627,59 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
 mod tests {
     use super::*;
 
+    #[test]
+    fn dom_pixel_descriptors_validate_source_markers_views_and_binary_ranges() {
+        let bytes = [11, 77, 203, 0];
+        let mut allocation_failed = false;
+        for (marker, converted) in [("dom", false), ("dom-converted", true)] {
+            let parsed = argument(
+                &json!({"p":[0,4],"viewType":"Uint8ClampedArray","source":marker}),
+                &bytes,
+                &mut allocation_failed,
+            );
+            let Some(Argument::DomPixels {
+                data,
+                valid_u8,
+                converted: actual,
+            }) = parsed
+            else {
+                panic!()
+            };
+            assert_eq!(data, bytes);
+            assert!(valid_u8);
+            assert_eq!(actual, converted);
+        }
+        assert!(matches!(
+            argument(
+                &json!({"p":[0,4],"viewType":"Uint8Array"}),
+                &bytes,
+                &mut allocation_failed
+            ),
+            Some(Argument::Pixels { valid_u8: true, .. })
+        ));
+        assert!(matches!(
+            argument(
+                &json!({"p":[0,4],"viewType":"Uint16Array","source":"dom"}),
+                &bytes,
+                &mut allocation_failed
+            ),
+            Some(Argument::DomPixels {
+                valid_u8: false,
+                ..
+            })
+        ));
+        for invalid in [
+            json!({"p":[0,4],"viewType":"Uint8Array","source":"unknown"}),
+            json!({"p":[0,4],"viewType":"Uint8Array","source":null}),
+            json!({"p":[1,4],"viewType":"Uint8Array","source":"dom"}),
+            json!({"p":[-1,4],"viewType":"Uint8Array","source":"dom"}),
+            json!({"p":[0,4],"viewType":[],"source":"dom"}),
+        ] {
+            assert!(argument(&invalid, &bytes, &mut allocation_failed).is_none());
+        }
+        assert!(!allocation_failed);
+    }
+
     fn command(op: &str, args: Value, binary: &[u8]) -> Value {
         let metadata = serde_json::to_vec(&json!({"op":op,"args":args})).unwrap();
         assert_eq!(
@@ -634,6 +703,7 @@ mod tests {
     fn command_transport_preserves_utf16_and_owns_output() {
         assert_eq!(rf_resource_protocol_version(), 2);
         assert_eq!(rf_readback_protocol_version(), 1);
+        assert_eq!(rf_dom_upload_protocol_version(), 1);
         assert_eq!(rf_init(7, 4096.0), 1);
         let stage = (refral_core::VERTEX_SHADER as f64).to_le_bytes();
         let created = command("createShader", json!([{"n":0}]), &stage);

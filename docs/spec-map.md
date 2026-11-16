@@ -1,5 +1,13 @@
 # Specification and verification map
 
+## ImageData DOM upload assertions
+
+Task031 uses the pinned DOM source overloads, TEXTURE_UPLOAD_SIZE, PIXEL_STORAGE_PARAMETERS and WebIDL source union. Six/seven-argument DOM calls convert scalar arguments in order before inspecting a genuine platform source. ImageData dimensions/data come from intrinsic getters, including cross-realm sources and objects with shadowing properties. Detached source data produces INVALID_VALUE. The pure core preflight preserves bindings, storage and versions on failure.
+
+Unorm8 sRGB ImageData supplies tightly packed RGBA independently of UNPACK_ALIGNMENT. Each core applies flip and alpha premultiplication once using the source alpha, then maps to RGBA, RGB, ALPHA, LUMINANCE or LUMINANCE_ALPHA. Pixel consumption completes before the upload returns. Palette, two-draw mutation/update, subimage/reallocation, brand/WebIDL, scalar-side-effect, five-format and loss fixtures compare native/JS/Rust with exact bytes through public synchronous readPixels. Additional ImageData encodings report an explicit profile diagnostic. [Pinned DOM uploads](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#TEXTURE_UPLOAD_SIZE), [pixel storage](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#PIXEL_STORAGE_PARAMETERS)
+
+Canvas and HTMLImage fidelity have separate acceptance in task029. The [Chrome external-image investigation](references/chrome-external-image-alpha.md) records the ICC/cICP control, extra alpha premultiplication and pinned Chromium/Skia source explanation.
+
 ## Original state and Buffer CTS expansion
 
 Task030 uses the pinned WebGL/IDL/GLES sources and complete original state/gl-geterror, state/gl-getstring, state/gl-initial-state and buffers/buffer-data-and-buffer-sub-data files. Their assertions cover supported enum/value/operation errors, error draining, required version-string prefixes, initial blend factors, Buffer overload conversion, allocation/update bounds and nullable inputs.

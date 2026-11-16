@@ -8,6 +8,20 @@ const ALPHA: u32 = 0x1906;
 const LUMINANCE: u32 = 0x1909;
 const LUMINANCE_ALPHA: u32 = 0x190a;
 
+enum TextureUploadError {
+    Invalid,
+    Unsupported(&'static str),
+}
+
+impl TextureUploadError {
+    fn reply(self) -> Reply {
+        match self {
+            Self::Invalid => Reply::Null,
+            Self::Unsupported(operation) => Reply::Unsupported(operation),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TextureVersion {
     pub texture: ObjectHandle,
@@ -416,6 +430,7 @@ impl ContextCore {
             }
             "texImage2D" => return Some(self.define_texture(args)),
             "texSubImage2D" => return Some(self.update_texture(args)),
+            "prepareDomTextureUpload" => return Some(self.prepare_dom_texture_upload(args)),
             _ => return None,
         }
         Some(Reply::Null)
@@ -446,6 +461,159 @@ impl ContextCore {
         }
         true
     }
+    fn validate_dom_source(&mut self, width: f64, height: f64, valid: bool) -> bool {
+        if !valid
+            || !width.is_finite()
+            || !height.is_finite()
+            || width <= 0.0
+            || height <= 0.0
+            || width.fract() != 0.0
+            || height.fract() != 0.0
+            || width > MAX_SAFE_VERSION as f64
+            || height > MAX_SAFE_VERSION as f64
+        {
+            self.record_error(INVALID_VALUE);
+            return false;
+        }
+        true
+    }
+    fn validate_texture_definition(
+        &mut self,
+        args: &[Argument],
+    ) -> Result<usize, TextureUploadError> {
+        let number = |index: usize| args[index].number();
+        let Some(index) = self.bound_texture(number(0) as u32) else {
+            return Err(TextureUploadError::Invalid);
+        };
+        let level = number(1);
+        let format = number(6) as u32;
+        let ty = number(7) as u32;
+        if !self.image_dimensions(level, number(3), number(4), number(5))
+            || !self.validate_texture_format(format, ty)
+        {
+            return Err(TextureUploadError::Invalid);
+        }
+        if number(2) as u32 != format {
+            self.record_error(INVALID_OPERATION);
+            return Err(TextureUploadError::Invalid);
+        }
+        if level != 0.0 {
+            return Err(TextureUploadError::Unsupported("texture mip levels"));
+        }
+        if ty != 0x1401 {
+            return Err(TextureUploadError::Unsupported("packed texture formats"));
+        }
+        let texture = self.render.textures.slots[index].value.as_ref().unwrap();
+        if texture.storage_generation == MAX_SAFE_VERSION
+            || texture.content_version == MAX_SAFE_VERSION
+        {
+            self.record_error(OUT_OF_MEMORY);
+            return Err(TextureUploadError::Invalid);
+        }
+        Ok(index)
+    }
+    fn validate_texture_update(&mut self, args: &[Argument]) -> Result<usize, TextureUploadError> {
+        let number = |index: usize| args[index].number();
+        let Some(index) = self.bound_texture(number(0) as u32) else {
+            return Err(TextureUploadError::Invalid);
+        };
+        let Some(storage) = self.render.textures.slots[index]
+            .value
+            .as_ref()
+            .unwrap()
+            .storage
+        else {
+            self.record_error(INVALID_OPERATION);
+            return Err(TextureUploadError::Invalid);
+        };
+        let level = number(1);
+        let x = number(2);
+        let y = number(3);
+        let width = number(4);
+        let height = number(5);
+        let format = number(6) as u32;
+        let ty = number(7) as u32;
+        if !self.image_dimensions(level, width, height, 0.0)
+            || x < 0.0
+            || y < 0.0
+            || x + width > storage.width as f64
+            || y + height > storage.height as f64
+        {
+            self.record_error(INVALID_VALUE);
+            return Err(TextureUploadError::Invalid);
+        }
+        if !self.validate_texture_format(format, ty) {
+            return Err(TextureUploadError::Invalid);
+        }
+        if format != storage.format || ty != 0x1401 {
+            self.record_error(INVALID_OPERATION);
+            return Err(TextureUploadError::Invalid);
+        }
+        if level != 0.0 {
+            return Err(TextureUploadError::Unsupported("texture mip levels"));
+        }
+        if self.render.textures.slots[index]
+            .value
+            .as_ref()
+            .unwrap()
+            .content_version
+            == MAX_SAFE_VERSION
+        {
+            self.record_error(OUT_OF_MEMORY);
+            return Err(TextureUploadError::Invalid);
+        }
+        Ok(index)
+    }
+    fn prepare_dom_texture_upload(&mut self, args: &[Argument]) -> Reply {
+        if args.len() != 11 || !matches!(args[0], Argument::Boolean(_)) {
+            self.record_error(INVALID_VALUE);
+            return Reply::Null;
+        }
+        if !self.validate_dom_source(args[6].number(), args[7].number(), args[10].boolean()) {
+            return Reply::Null;
+        }
+        let number = |index: usize| Argument::Number(args[index].number());
+        let sub_image = args[0].boolean();
+        let parameters = if sub_image {
+            [
+                number(1),
+                number(2),
+                number(4),
+                number(5),
+                number(6),
+                number(7),
+                number(8),
+                number(9),
+                Argument::Null,
+            ]
+        } else {
+            [
+                number(1),
+                number(2),
+                number(3),
+                number(6),
+                number(7),
+                Argument::Number(0.0),
+                number(8),
+                number(9),
+                Argument::Null,
+            ]
+        };
+        let validated = if sub_image {
+            self.validate_texture_update(&parameters)
+        } else {
+            self.validate_texture_definition(&parameters)
+        };
+        if let Err(error) = validated {
+            return error.reply();
+        }
+        let state = &self.render.textures;
+        Reply::Ints(vec![
+            i32::from(state.unpack_flip),
+            i32::from(state.unpack_premultiply),
+            state.unpack_colorspace as i32,
+        ])
+    }
     fn unpack_pixels(
         &mut self,
         width: u32,
@@ -454,13 +622,29 @@ impl ContextCore {
         source: &Argument,
         allow_null: bool,
     ) -> Option<Vec<u8>> {
-        let channels = match format {
-            RGBA => 4,
-            RGB => 3,
-            LUMINANCE_ALPHA => 2,
-            _ => 1,
+        let dom = matches!(source, Argument::DomPixels { .. });
+        let converted = matches!(
+            source,
+            Argument::DomPixels {
+                converted: true,
+                ..
+            }
+        );
+        let channels = if dom {
+            4
+        } else {
+            match format {
+                RGBA => 4,
+                RGB => 3,
+                LUMINANCE_ALPHA => 2,
+                _ => 1,
+            }
         };
-        let alignment = self.render.textures.unpack_alignment;
+        let alignment = if dom {
+            1
+        } else {
+            self.render.textures.unpack_alignment
+        };
         let layout = (|| {
             let row = (width as usize).checked_mul(channels)?;
             let stride = row
@@ -486,7 +670,7 @@ impl ContextCore {
                 self.record_error(INVALID_VALUE);
                 return None;
             }
-            Argument::Pixels { data, valid_u8 } => {
+            Argument::Pixels { data, valid_u8 } | Argument::DomPixels { data, valid_u8, .. } => {
                 if !valid_u8 || data.len() < required {
                     self.record_error(INVALID_OPERATION);
                     return None;
@@ -511,7 +695,7 @@ impl ContextCore {
         };
         for y in 0..height as usize {
             for x in 0..width as usize {
-                let source_y = if self.render.textures.unpack_flip {
+                let source_y = if self.render.textures.unpack_flip && !converted {
                     height as usize - 1 - y
                 } else {
                     y
@@ -519,7 +703,7 @@ impl ContextCore {
                 let offset = source_y * stride + x * channels;
                 let (mut r, mut g, mut b, a) = if let Some(bytes) = source {
                     let first = bytes[offset];
-                    match format {
+                    match if dom { RGBA } else { format } {
                         RGBA => (
                             first,
                             bytes[offset + 1],
@@ -543,12 +727,36 @@ impl ContextCore {
                         },
                     )
                 };
-                if self.render.textures.unpack_premultiply {
+                if self.render.textures.unpack_premultiply && !converted {
                     let multiply = |channel: u8| ((channel as u32 * a as u32 + 127) / 255) as u8;
                     r = multiply(r);
                     g = multiply(g);
                     b = multiply(b);
                 }
+                let a = if dom {
+                    match format {
+                        RGB => 255,
+                        ALPHA => {
+                            r = 0;
+                            g = 0;
+                            b = 0;
+                            a
+                        }
+                        LUMINANCE => {
+                            g = r;
+                            b = r;
+                            255
+                        }
+                        LUMINANCE_ALPHA => {
+                            g = r;
+                            b = r;
+                            a
+                        }
+                        _ => a,
+                    }
+                } else {
+                    a
+                };
                 let destination = (y * width as usize + x) * 4;
                 pixels[destination..destination + 4].copy_from_slice(&[r, g, b, a]);
             }
@@ -559,37 +767,19 @@ impl ContextCore {
         if args.len() != 9 {
             return Reply::Unsupported("DOM texture sources");
         }
-        let number = |index: usize| args[index].number();
-        let Some(index) = self.bound_texture(number(0) as u32) else {
+        if matches!(args[8], Argument::DomPixels { .. })
+            && !self.validate_dom_source(args[3].number(), args[4].number(), true)
+        {
             return Reply::Null;
+        }
+        let index = match self.validate_texture_definition(args) {
+            Ok(index) => index,
+            Err(error) => return error.reply(),
         };
-        let level = number(1);
+        let number = |index: usize| args[index].number();
         let width = number(3);
         let height = number(4);
         let format = number(6) as u32;
-        let ty = number(7) as u32;
-        if !self.image_dimensions(level, width, height, number(5))
-            || !self.validate_texture_format(format, ty)
-        {
-            return Reply::Null;
-        }
-        if number(2) as u32 != format {
-            self.record_error(INVALID_OPERATION);
-            return Reply::Null;
-        }
-        if level != 0.0 {
-            return Reply::Unsupported("texture mip levels");
-        }
-        if ty != 0x1401 {
-            return Reply::Unsupported("packed texture formats");
-        }
-        let texture = self.render.textures.slots[index].value.as_ref().unwrap();
-        if texture.storage_generation == MAX_SAFE_VERSION
-            || texture.content_version == MAX_SAFE_VERSION
-        {
-            self.record_error(OUT_OF_MEMORY);
-            return Reply::Null;
-        }
         let Some(data) = self.unpack_pixels(width as u32, height as u32, format, &args[8], true)
         else {
             return Reply::Null;
@@ -621,55 +811,21 @@ impl ContextCore {
         if args.len() != 9 {
             return Reply::Unsupported("DOM texture sources");
         }
+        if matches!(args[8], Argument::DomPixels { .. })
+            && !self.validate_dom_source(args[4].number(), args[5].number(), true)
+        {
+            return Reply::Null;
+        }
+        let index = match self.validate_texture_update(args) {
+            Ok(index) => index,
+            Err(error) => return error.reply(),
+        };
         let number = |index: usize| args[index].number();
-        let Some(index) = self.bound_texture(number(0) as u32) else {
-            return Reply::Null;
-        };
-        let Some(storage) = self.render.textures.slots[index]
-            .value
-            .as_ref()
-            .unwrap()
-            .storage
-        else {
-            self.record_error(INVALID_OPERATION);
-            return Reply::Null;
-        };
-        let level = number(1);
         let x = number(2);
         let y = number(3);
         let width = number(4);
         let height = number(5);
         let format = number(6) as u32;
-        let ty = number(7) as u32;
-        if !self.image_dimensions(level, width, height, 0.0)
-            || x < 0.0
-            || y < 0.0
-            || x + width > storage.width as f64
-            || y + height > storage.height as f64
-        {
-            self.record_error(INVALID_VALUE);
-            return Reply::Null;
-        }
-        if !self.validate_texture_format(format, ty) {
-            return Reply::Null;
-        }
-        if format != storage.format || ty != 0x1401 {
-            self.record_error(INVALID_OPERATION);
-            return Reply::Null;
-        }
-        if level != 0.0 {
-            return Reply::Unsupported("texture mip levels");
-        }
-        if self.render.textures.slots[index]
-            .value
-            .as_ref()
-            .unwrap()
-            .content_version
-            == MAX_SAFE_VERSION
-        {
-            self.record_error(OUT_OF_MEMORY);
-            return Reply::Null;
-        }
         let Some(data) = self.unpack_pixels(width as u32, height as u32, format, &args[8], false)
         else {
             return Reply::Null;

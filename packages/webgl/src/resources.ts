@@ -3,6 +3,7 @@ import type {
   DrawingCore, FramebufferHandle, LogicalHandle, PixelUpload, RenderbufferHandle, TextureHandle,
 } from '@refral/core-api';
 import { bufferSourceBytes, requireArguments, toEnum } from './buffers.js';
+import { uploadDomTexture } from './dom-upload.js';
 
 type ResourceHandle = TextureHandle | RenderbufferHandle | FramebufferHandle;
 type ResourceKind = ResourceHandle['kind'];
@@ -81,20 +82,32 @@ export function createResourceFacade(core: DrawingCore) {
   method('texParameterf', 3, args => [toEnum(args[0]), toEnum(args[1]), float(args[2])]);
   method('pixelStorei', 2, args => [toEnum(args[0]), integer(args[1])]);
   method('getTexParameter', 2, args => [toEnum(args[0]), toEnum(args[1])]);
-  method('texImage2D', 6, args => {
-    if (args.length === 6) return [toEnum(args[0]), integer(args[1]), integer(args[2]),
-      toEnum(args[3]), toEnum(args[4]), args[5]];
+  methods.texImage2D = (...args) => {
+    requireArguments('texImage2D', args, 6);
+    if (args.length === 6) return uploadDomTexture(core, {
+      operation: 'texImage2D', target: toEnum(args[0]), level: integer(args[1]), internalFormat: integer(args[2]),
+      x: 0, y: 0, format: toEnum(args[3]), type: toEnum(args[4]),
+    }, args[5]);
     requireArguments('texImage2D', args, 9);
-    return [toEnum(args[0]), integer(args[1]), integer(args[2]), integer(args[3]), integer(args[4]),
-      integer(args[5]), toEnum(args[6]), toEnum(args[7]), pixels(args[8])];
-  });
-  method('texSubImage2D', 7, args => {
-    if (args.length === 7) return [toEnum(args[0]), integer(args[1]), integer(args[2]), integer(args[3]),
-      toEnum(args[4]), toEnum(args[5]), args[6]];
+    return core.invoke('texImage2D', [toEnum(args[0]), integer(args[1]), integer(args[2]), integer(args[3]), integer(args[4]),
+      integer(args[5]), toEnum(args[6]), toEnum(args[7]), pixels(args[8])]);
+  };
+  methods.texSubImage2D = (...args) => {
+    requireArguments('texSubImage2D', args, 7);
+    if (args.length === 7) {
+      const target = toEnum(args[0]);
+      const level = integer(args[1]);
+      const x = integer(args[2]);
+      const y = integer(args[3]);
+      const format = toEnum(args[4]);
+      const type = toEnum(args[5]);
+      return uploadDomTexture(core, { operation: 'texSubImage2D', target, level,
+        internalFormat: format, x, y, format, type }, args[6]);
+    }
     requireArguments('texSubImage2D', args, 9);
-    return [toEnum(args[0]), integer(args[1]), integer(args[2]), integer(args[3]), integer(args[4]),
-      integer(args[5]), toEnum(args[6]), toEnum(args[7]), pixels(args[8])];
-  });
+    return core.invoke('texSubImage2D', [toEnum(args[0]), integer(args[1]), integer(args[2]), integer(args[3]), integer(args[4]),
+      integer(args[5]), toEnum(args[6]), toEnum(args[7]), pixels(args[8])]);
+  };
   method('framebufferTexture2D', 5, args => [toEnum(args[0]), toEnum(args[1]), toEnum(args[2]),
     unwrap(args[3], 'texture'), integer(args[4])]);
   method('framebufferRenderbuffer', 4, args => [toEnum(args[0]), toEnum(args[1]), toEnum(args[2]),

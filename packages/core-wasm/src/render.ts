@@ -14,6 +14,8 @@ import type {
   PixelUpload,
   ReadPixelsRequest,
   ReadPixelsPlan,
+  DomTextureUploadRequest,
+  DomTextureUploadPlan,
 } from '@refral/core-api';
 
 const DEFAULT_URL = '/artifacts/core-wasm/refral_core.wasm';
@@ -26,6 +28,7 @@ interface ABI {
   rf_abi_version(): number;
   rf_resource_protocol_version(): number;
   rf_readback_protocol_version(): number;
+  rf_dom_upload_protocol_version(): number;
   rf_init(context: number, limit: number): number;
   rf_create_buffer(): number;
   rf_result_generation(): number;
@@ -203,6 +206,7 @@ export function createRustDrawingCoreFromModule(
     'rf_abi_version',
     'rf_resource_protocol_version',
     'rf_readback_protocol_version',
+    'rf_dom_upload_protocol_version',
     'rf_init',
     'rf_create_buffer',
     'rf_result_generation',
@@ -242,7 +246,7 @@ export function createRustDrawingCoreFromModule(
     required.some((name) => typeof exports[name] !== 'function')
   ) {
     throw new Error(
-      'Rust drawing module does not expose resource ABI v3 with readback protocol v1. Rebuild with pnpm rust:build.',
+      'Rust drawing module requires ABI3/resource2/readback1/DOM upload1 exports. Rebuild with pnpm rust:build.',
     );
   }
   const abi = exports as unknown as ABI;
@@ -250,6 +254,8 @@ export function createRustDrawingCoreFromModule(
     throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_readback_protocol_version() !== 1)
     throw new Error('Rust readback protocol mismatch. Rebuild with pnpm rust:build.');
+  if (abi.rf_dom_upload_protocol_version() !== 1)
+    throw new Error('Rust DOM upload protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_init(contextId, maxBufferBytes) !== 1)
     throw new Error('Rust drawing ABI initialization failed.');
 
@@ -289,11 +295,14 @@ export function createRustDrawingCoreFromModule(
       }
       if (arg && typeof arg === 'object' && 'bytes' in arg && 'viewType' in arg) {
         const upload = arg as PixelUpload;
+        if (upload.source !== undefined && upload.source !== 'dom' && upload.source !== 'dom-converted') {
+          throw new TypeError('Invalid texture upload source marker.');
+        }
         const bytes =
           upload.viewType === 'Uint8Array' || upload.viewType === 'Uint8ClampedArray'
             ? upload.bytes
             : new Uint8Array();
-        return { p: [append(bytes), bytes.byteLength], viewType: upload.viewType };
+        return { p: [append(bytes), bytes.byteLength], viewType: upload.viewType, source: upload.source };
       }
       if (Array.isArray(arg) || ArrayBuffer.isView(arg)) {
         const values = Array.from(arg as ArrayLike<number>);
@@ -675,6 +684,19 @@ export function createRustDrawingCoreFromModule(
         request.byteLength,
       ]);
       return decode(result.value, result.binary) as ReadPixelsPlan | null;
+    },
+    prepareDomTextureUpload(request: DomTextureUploadRequest): DomTextureUploadPlan | null {
+      if (abi.rf_is_context_lost()) return null;
+      const result = command('prepareDomTextureUpload', [
+        request.operation === 'texSubImage2D', request.target, request.level, request.internalFormat,
+        request.x, request.y, request.width, request.height, request.format, request.type, request.sourceValid,
+      ]);
+      const values = decode(result.value, result.binary);
+      if (values === null) return null;
+      if (!(values instanceof Int32Array) || values.length !== 3) {
+        throw new Error('Invalid Rust DOM texture upload plan.');
+      }
+      return { flipY: values[0] === 1, premultiplyAlpha: values[1] === 1, colorSpaceConversion: values[2]! };
     },
     invoke(operation: string, args: unknown[]): unknown {
       if (operation === 'flush') {

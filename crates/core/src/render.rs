@@ -1,5 +1,7 @@
 use super::*;
 
+#[cfg(test)]
+mod dom_texture_tests;
 mod framebuffers;
 mod raster;
 mod readback;
@@ -59,7 +61,15 @@ pub enum Argument {
     Text(Vec<u16>),
     Floats(Vec<f32>),
     Ints(Vec<i32>),
-    Pixels { data: Vec<u8>, valid_u8: bool },
+    Pixels {
+        data: Vec<u8>,
+        valid_u8: bool,
+    },
+    DomPixels {
+        data: Vec<u8>,
+        valid_u8: bool,
+        converted: bool,
+    },
 }
 impl Argument {
     fn number(&self) -> f64 {

@@ -5,7 +5,7 @@ import type {
   AttributeSnapshot, RasterState, TargetSnapshot,
   Compiler, CompiledShader, LinkedProgram, ProgramUniform, DrawingSurface,
   ContextAttributes, RuntimeProfile, SemanticHost, ResourceRegistry, TextureVersion, PixelUpload,
-  ReadPixelsPlan, ReadPixelsRequest,
+  ReadPixelsPlan, ReadPixelsRequest, DomTextureUploadPlan, DomTextureUploadRequest,
 } from "@refral/core-api";
 import {
   LogicalObject, BufferObject, TextureObject, RenderbufferObject, FramebufferObject,
@@ -707,6 +707,9 @@ export class SemanticContext {
     const upload = source && typeof source === "object" && "bytes" in source && "viewType" in source
       ? source as PixelUpload : null;
     const typedSource = ArrayBuffer.isView(source) || upload !== null;
+    const domSource = upload?.source === "dom" || upload?.source === "dom-converted";
+    const converted = upload?.source === "dom-converted";
+    const sourceComponents = domSource ? 4 : components;
     if (source === null) {
       const pixels = this.allocatePixels(width, height); if (!pixels) return null;
       if (format === GL.RGB || format === GL.LUMINANCE) {
@@ -720,40 +723,92 @@ export class SemanticContext {
         this.error(GL.INVALID_OPERATION); return null;
       }
       bytes = upload?.bytes ?? bytesOf(source as ArrayBufferView);
-      stride = Math.ceil(width * components / this.unpackAlignment) * this.unpackAlignment;
-      if (bytes.byteLength < Math.max(0, (height - 1) * stride + width * components)) {
+      stride = domSource ? width * 4
+        : Math.ceil(width * components / this.unpackAlignment) * this.unpackAlignment;
+      if (bytes.byteLength < Math.max(0, (height - 1) * stride + width * sourceComponents)) {
         this.error(GL.INVALID_OPERATION); return null;
       }
     } else {
       this.error(GL.INVALID_VALUE); return null;
     }
     const pixels = this.allocatePixels(width, height); if (!pixels) return null;
-    const sourceComponents = typedSource ? components : 4;
     for (let y = 0; y < height; y++) {
-      const sourceY = this.unpackFlipY ? height - 1 - y : y;
+      const sourceY = this.unpackFlipY && !converted ? height - 1 - y : y;
       for (let x = 0; x < width; x++) {
         const offset = sourceY * stride + x * sourceComponents;
         const destination = (y * width + x) * 4;
         let r = bytes[offset] ?? 0; let g = bytes[offset + 1] ?? 0;
         let b = bytes[offset + 2] ?? 0; let a = bytes[offset + 3] ?? 255;
-        if (sourceComponents !== 4 || typedSource) {
-          if (format === GL.RGB) a = 255;
-          if (format === GL.ALPHA) { a = r; r = g = b = 0; }
-          if (format === GL.LUMINANCE || format === GL.LUMINANCE_ALPHA) {
-            a = format === GL.LUMINANCE_ALPHA ? g : 255; g = b = r;
-          }
+        const sourceAlpha = a;
+        if (format === GL.RGB) a = 255;
+        if (format === GL.ALPHA) {
+          if (!domSource) a = r;
+          r = g = b = 0;
         }
-        const factor = this.unpackPremultiply ? a / 255 : 1;
+        if (format === GL.LUMINANCE) { a = 255; g = b = r; }
+        if (format === GL.LUMINANCE_ALPHA) {
+          if (!domSource) a = g;
+          g = b = r;
+        }
+        const alpha = domSource ? sourceAlpha : a;
+        const factor = this.unpackPremultiply && !converted ? alpha / 255 : 1;
         pixels[destination] = Math.round(r * factor); pixels[destination + 1] = Math.round(g * factor);
         pixels[destination + 2] = Math.round(b * factor); pixels[destination + 3] = a;
       }
     }
     return pixels;
   }
+  private validateDomSource(width: number, height: number, sourceValid: boolean): boolean {
+    if (!sourceValid || !Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
+        width <= 0 || height <= 0) {
+      this.error(GL.INVALID_VALUE);
+      return false;
+    }
+    return true;
+  }
+  private validateTextureImage(target: number, level: number, internalFormat: number,
+    width: number, height: number, border: number, format: number, type: number): TextureObject | null {
+    const texture = this.boundTexture(target);
+    if (texture === undefined) return null;
+    if (!texture) { this.error(GL.INVALID_OPERATION); return null; }
+    if (level < 0 || width < 0 || height < 0 || !Number.isInteger(width) || !Number.isInteger(height) ||
+        width > this.host.limits.maxTextureDimension2D || height > this.host.limits.maxTextureDimension2D || border !== 0) {
+      this.error(GL.INVALID_VALUE); return null;
+    }
+    if (level !== 0) return unsupported("texture mip levels");
+    if (![GL.RGBA, GL.RGB, GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA].includes(format as 0x1908) ||
+        type !== GL.UNSIGNED_BYTE) { this.error(GL.INVALID_ENUM); return null; }
+    if (internalFormat !== format) { this.error(GL.INVALID_OPERATION); return null; }
+    return texture;
+  }
+  private validateTextureSubImage(target: number, level: number, x: number, y: number,
+    width: number, height: number, format: number, type: number): TextureObject | null {
+    const texture = this.boundTexture(target);
+    if (texture === undefined) return null;
+    if (!texture?.storage) { this.error(GL.INVALID_OPERATION); return null; }
+    if (level < 0) { this.error(GL.INVALID_VALUE); return null; }
+    if (level !== 0) return unsupported("texture mip levels");
+    if (x < 0 || y < 0 || width < 0 || height < 0 || !Number.isInteger(width) || !Number.isInteger(height) ||
+        x + width > texture.storage.width || y + height > texture.storage.height) {
+      this.error(GL.INVALID_VALUE); return null;
+    }
+    if (![GL.RGBA, GL.RGB, GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA].includes(format as 0x1908) ||
+        type !== GL.UNSIGNED_BYTE) { this.error(GL.INVALID_ENUM); return null; }
+    if (format !== texture.format) { this.error(GL.INVALID_OPERATION); return null; }
+    return texture;
+  }
+  prepareDomTextureUpload(request: DomTextureUploadRequest): DomTextureUploadPlan | null {
+    if (this.lost || !this.validateDomSource(request.width, request.height, request.sourceValid)) return null;
+    const texture = request.operation === "texSubImage2D"
+      ? this.validateTextureSubImage(request.target, request.level, request.x, request.y,
+        request.width, request.height, request.format, request.type)
+      : this.validateTextureImage(request.target, request.level, request.internalFormat,
+        request.width, request.height, 0, request.format, request.type);
+    return texture ? { flipY: this.unpackFlipY, premultiplyAlpha: this.unpackPremultiply,
+      colorSpaceConversion: this.unpackColorSpace } : null;
+  }
   texImage2D(...arguments_: unknown[]): void {
     const [target, level, internalFormat] = arguments_ as number[];
-    const texture = this.boundTexture(target!); if (texture === undefined) return;
-    if (!texture) return this.error(GL.INVALID_OPERATION);
     const dimensions = arguments_.length === 9;
     const source = arguments_[dimensions ? 8 : 5];
     const image = source as { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number; videoWidth?: number; videoHeight?: number } | null;
@@ -762,12 +817,11 @@ export class SemanticContext {
     const border = dimensions ? Number(arguments_[5]) : 0;
     const format = Number(arguments_[dimensions ? 6 : 3]);
     const type = Number(arguments_[dimensions ? 7 : 4]);
-    if (level! < 0 || width < 0 || height < 0 || !Number.isInteger(width) || !Number.isInteger(height) ||
-        width > this.host.limits.maxTextureDimension2D || height > this.host.limits.maxTextureDimension2D || border !== 0) return this.error(GL.INVALID_VALUE);
-    if (level !== 0) return unsupported("texture mip levels");
-    if (![GL.RGBA, GL.RGB, GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA].includes(format as 0x1908) ||
-        type !== GL.UNSIGNED_BYTE) return this.error(GL.INVALID_ENUM);
-    if (internalFormat !== format) return this.error(GL.INVALID_OPERATION);
+    const upload = source && typeof source === "object" && "bytes" in source && "viewType" in source
+      ? source as PixelUpload : null;
+    if (upload?.source && !this.validateDomSource(width, height, true)) return;
+    const texture = this.validateTextureImage(target!, level!, internalFormat!, width, height, border, format, type);
+    if (!texture) return;
     const data = this.pixelData(width, height, format, source); if (!data) return;
     const previous = texture.storage;
     texture.generation++; texture.version++; texture.format = format;
@@ -783,8 +837,6 @@ export class SemanticContext {
   }
   texSubImage2D(...arguments_: unknown[]): void {
     const [target, level, x, y] = arguments_ as number[];
-    const texture = this.boundTexture(target!); if (texture === undefined) return;
-    if (!texture?.storage) return this.error(GL.INVALID_OPERATION);
     const dimensions = arguments_.length === 9;
     const source = arguments_[dimensions ? 8 : 6];
     const image = source as { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number } | null;
@@ -792,17 +844,15 @@ export class SemanticContext {
     const height = Number(dimensions ? arguments_[5] : image?.naturalHeight ?? image?.height);
     const format = Number(arguments_[dimensions ? 6 : 4]);
     const type = Number(arguments_[dimensions ? 7 : 5]);
-    if (level! < 0) return this.error(GL.INVALID_VALUE);
-    if (level !== 0) return unsupported("texture mip levels");
-    if (x! < 0 || y! < 0 || width < 0 || height < 0 || !Number.isInteger(width) || !Number.isInteger(height) || x! + width > texture.storage.width ||
-        y! + height > texture.storage.height) return this.error(GL.INVALID_VALUE);
-    if (![GL.RGBA, GL.RGB, GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA].includes(format as 0x1908) ||
-        type !== GL.UNSIGNED_BYTE) return this.error(GL.INVALID_ENUM);
-    if (format !== texture.format || type !== GL.UNSIGNED_BYTE) return this.error(GL.INVALID_OPERATION);
+    const upload = source && typeof source === "object" && "bytes" in source && "viewType" in source
+      ? source as PixelUpload : null;
+    if (upload?.source && !this.validateDomSource(width, height, true)) return;
+    const texture = this.validateTextureSubImage(target!, level!, x!, y!, width, height, format, type);
+    if (!texture) return;
     if (source === null) return this.error(GL.INVALID_VALUE);
     const data = this.pixelData(width, height, format, source); if (!data) return;
     if (width === 0 || height === 0) return;
-    const previous = texture.storage;
+    const previous = texture.storage!;
     const previousVersion = this.resources ? this.textureVersion(texture) : null;
     texture.version++;
     if (this.resources) {

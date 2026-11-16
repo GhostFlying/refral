@@ -12,6 +12,8 @@ import type {
   ResourceOperation,
   ContextAttributes,
   ReadPixelsRequest,
+  DomTextureUploadRequest,
+  PixelUpload,
 } from '@refral/core-api';
 import { createRustDrawingCoreFromModule } from '../src/render';
 import { runBufferCoreContract } from '../../../tests/core/buffer-contract';
@@ -929,7 +931,7 @@ describe('actual Rust readPixels plans', () => {
     });
     try {
       expect(() => setup()).toThrow(
-        'Rust drawing module does not expose resource ABI v3 with readback protocol v1. Rebuild with pnpm rust:build.',
+        'Rust drawing module requires ABI3/resource2/readback1/DOM upload1 exports. Rebuild with pnpm rust:build.',
       );
     } finally {
       instance.mockRestore();
@@ -1078,5 +1080,168 @@ describe('actual Rust readPixels plans', () => {
     expect(core.getError()).toBe(GL.NO_ERROR);
     core.dispose();
     expect(core.prepareReadPixels(request())).toBeNull();
+  });
+});
+
+describe('DOM texture source protocol', () => {
+  function request(overrides: Partial<DomTextureUploadRequest> = {}): DomTextureUploadRequest {
+    return { operation: 'texImage2D', target: GL.TEXTURE_2D, level: 0, internalFormat: GL.RGBA,
+      x: 0, y: 0, width: 1, height: 2, format: GL.RGBA, type: GL.UNSIGNED_BYTE, sourceValid: true,
+      ...overrides };
+  }
+  function bind(core: DrawingCore) {
+    core.invoke('bindTexture', [GL.TEXTURE_2D, core.invoke('createTexture', [])]);
+  }
+  function upload(bytes: Uint8Array, source: PixelUpload['source'] = 'dom', viewType = 'Uint8Array'): PixelUpload {
+    return { bytes, viewType, source };
+  }
+  function define(core: DrawingCore, width: number, height: number, data: PixelUpload | null, format: number = GL.RGBA) {
+    core.invoke('texImage2D', [GL.TEXTURE_2D, 0, format, width, height, 0, format, GL.UNSIGNED_BYTE, data]);
+  }
+  it('requires the additive DOM upload capability before initializing context state', () => {
+    const exports = new WebAssembly.Instance(module, {}).exports;
+    expect((exports.rf_dom_upload_protocol_version as () => number)()).toBe(1);
+    const instance = vi.spyOn(WebAssembly, 'Instance').mockImplementation(function () {
+      return { exports: { ...exports, rf_dom_upload_protocol_version: () => 0 } };
+    });
+    try {
+      expect(() => setup()).toThrow('Rust DOM upload protocol mismatch. Rebuild with pnpm rust:build.');
+    } finally { instance.mockRestore(); }
+  });
+  it('rejects older modules missing DOM upload exports with rebuild guidance', () => {
+    const exports = { ...new WebAssembly.Instance(module, {}).exports };
+    delete exports.rf_dom_upload_protocol_version;
+    const instance = vi.spyOn(WebAssembly, 'Instance').mockImplementation(function () { return { exports }; });
+    try {
+      expect(() => setup()).toThrow('Rust drawing module requires ABI3/resource2/readback1/DOM upload1 exports. Rebuild with pnpm rust:build.');
+    } finally { instance.mockRestore(); }
+  });
+  it('prepares owned unpack flags without changing storage or emitting resource operations', () => {
+    const { core, operations } = setup();
+    try {
+      bind(core);
+      core.invoke('pixelStorei', [GL.UNPACK_FLIP_Y_WEBGL, 1]);
+      core.invoke('pixelStorei', [GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1]);
+      core.invoke('pixelStorei', [GL.UNPACK_COLORSPACE_CONVERSION_WEBGL, GL.NONE]);
+      const plan = core.prepareDomTextureUpload(request());
+      expect(plan).toEqual({ flipY: true, premultiplyAlpha: true, colorSpaceConversion: GL.NONE });
+      expect(operations).toEqual([]);
+      core.invoke('pixelStorei', [GL.UNPACK_FLIP_Y_WEBGL, 0]);
+      core.invoke('pixelStorei', [GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0]);
+      define(core, 1, 1, upload(new Uint8Array([11, 77, 203, 0])));
+      const operation = operations.at(-1)!;
+      expect(operation.kind).toBe('define-texture');
+      if (operation.kind === 'define-texture') {
+        expect(operation.version).toMatchObject({ storageGeneration: 1, contentVersion: 1 });
+        expect([...operation.data]).toEqual([11, 77, 203, 0]);
+      }
+      expect(plan).toEqual({ flipY: true, premultiplyAlpha: true, colorSpaceConversion: GL.NONE });
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally { core.dispose(); }
+  });
+  it('validates source facts before GL parameters and preserves failed preparation state', () => {
+    const { core, operations } = setup();
+    try {
+      expect(core.prepareDomTextureUpload(request({ sourceValid: false, target: 0xbad, width: -1 }))).toBeNull();
+      expect(core.getError()).toBe(GL.INVALID_VALUE);
+      expect(core.prepareDomTextureUpload(request({ target: 0xbad }))).toBeNull();
+      expect(core.getError()).toBe(GL.INVALID_ENUM);
+      expect(core.prepareDomTextureUpload(request())).toBeNull();
+      expect(core.getError()).toBe(GL.INVALID_OPERATION);
+      bind(core);
+      for (const [overrides, error] of [
+        [{ level: -1 }, GL.INVALID_VALUE], [{ width: 4097 }, GL.INVALID_VALUE],
+        [{ internalFormat: GL.RGB }, GL.INVALID_OPERATION], [{ format: 0xbad }, GL.INVALID_ENUM],
+        [{ type: GL.FLOAT }, GL.INVALID_ENUM], [{ operation: 'texSubImage2D' }, GL.INVALID_OPERATION],
+      ] as [Partial<DomTextureUploadRequest>, number][]) {
+        expect(core.prepareDomTextureUpload(request(overrides))).toBeNull();
+        expect(core.getError()).toBe(error);
+      }
+      expect(operations).toEqual([]);
+      expect(core.prepareDomTextureUpload(request())).toEqual({ flipY: false, premultiplyAlpha: false,
+        colorSpaceConversion: GL.BROWSER_DEFAULT_WEBGL });
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally { core.dispose(); }
+  });
+  it('consumes tight DOM rows for every unpack alignment and retains legacy padded rows', () => {
+    const { core, operations } = setup();
+    try {
+      bind(core);
+      for (const alignment of [1, 2, 4, 8]) {
+        core.invoke('pixelStorei', [GL.UNPACK_ALIGNMENT, alignment]);
+        const bytes = new Uint8Array([11, 77, 203, 0, 201, 109, 19, 1]);
+        define(core, 1, 2, upload(bytes, 'dom', 'Uint8ClampedArray'));
+        bytes.fill(0);
+        const operation = operations.at(-1)!;
+        if (operation.kind !== 'define-texture') throw new Error('Missing DOM texture definition.');
+        expect([...operation.data]).toEqual([11, 77, 203, 0, 201, 109, 19, 1]);
+        expect(core.getError()).toBe(GL.NO_ERROR);
+      }
+      const count = operations.length;
+      define(core, 1, 2, { bytes: new Uint8Array(8), viewType: 'Uint8Array' });
+      expect(core.getError()).toBe(GL.INVALID_OPERATION);
+      expect(operations).toHaveLength(count);
+      define(core, 1, 2, { bytes: new Uint8Array(12), viewType: 'Uint8Array' });
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      expect(operations).toHaveLength(count + 1);
+    } finally { core.dispose(); }
+  });
+  it('applies DOM premultiplication before five-format conversion and skips converted inputs', () => {
+    const { core, operations } = setup();
+    try {
+      bind(core);
+      core.invoke('pixelStorei', [GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1]);
+      for (const [format, expected] of [
+        [GL.RGBA, [100, 50, 25, 128]], [GL.RGB, [100, 50, 25, 255]],
+        [GL.ALPHA, [0, 0, 0, 128]], [GL.LUMINANCE, [100, 100, 100, 255]],
+        [GL.LUMINANCE_ALPHA, [100, 100, 100, 128]],
+      ] as const) {
+        define(core, 1, 1, upload(new Uint8Array([200, 100, 50, 128])), format);
+        const operation = operations.at(-1)!;
+        if (operation.kind !== 'define-texture') throw new Error('Missing DOM definition.');
+        expect([...operation.data]).toEqual(expected);
+        expect(core.getError()).toBe(GL.NO_ERROR);
+      }
+      core.invoke('pixelStorei', [GL.UNPACK_FLIP_Y_WEBGL, 1]);
+      define(core, 1, 2, upload(new Uint8Array([11, 77, 203, 0, 200, 100, 50, 128])));
+      const operation = operations.at(-1)!;
+      if (operation.kind !== 'define-texture') throw new Error('Missing DOM flip definition.');
+      expect([...operation.data]).toEqual([100, 50, 25, 128, 0, 0, 0, 0]);
+      define(core, 1, 2, upload(operation.data, 'dom-converted'));
+      const converted = operations.at(-1)!;
+      if (converted.kind !== 'define-texture') throw new Error('Missing converted DOM definition.');
+      expect([...converted.data]).toEqual([...operation.data]);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally { core.dispose(); }
+  });
+  it('updates DOM content versions and rejects malformed payloads without resource mutation', () => {
+    const { core, operations } = setup();
+    try {
+      bind(core);
+      define(core, 2, 2, null);
+      expect(core.prepareDomTextureUpload(request({ operation: 'texSubImage2D', x: 1 }))).not.toBeNull();
+      const bytes = new Uint8Array([11, 77, 203, 0, 201, 109, 19, 1]);
+      core.invoke('pixelStorei', [GL.UNPACK_ALIGNMENT, 8]);
+      core.invoke('texSubImage2D', [GL.TEXTURE_2D, 0, 1, 0, 1, 2, GL.RGBA, GL.UNSIGNED_BYTE, upload(bytes)]);
+      bytes.fill(0);
+      const operation = operations.at(-1)!;
+      if (operation.kind !== 'update-texture') throw new Error('Missing DOM update.');
+      expect(operation.version).toMatchObject({ storageGeneration: 1, contentVersion: 2 });
+      expect([...operation.data]).toEqual([11, 77, 203, 0, 201, 109, 19, 1]);
+      const count = operations.length;
+      for (const data of [upload(new Uint8Array(7)), upload(new Uint8Array(8), 'dom', 'Float32Array')]) {
+        core.invoke('texSubImage2D', [GL.TEXTURE_2D, 0, 1, 0, 1, 2, GL.RGBA, GL.UNSIGNED_BYTE, data]);
+        expect(core.getError()).toBe(GL.INVALID_OPERATION);
+        expect(operations).toHaveLength(count);
+      }
+      expect(() => core.invoke('texImage2D', [GL.TEXTURE_2D, 0, GL.RGBA, 1, 1, 0, GL.RGBA,
+        GL.UNSIGNED_BYTE, { bytes: new Uint8Array(4), viewType: 'Uint8Array', source: 'unknown' }])).toThrow(TypeError);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      expect(operations).toHaveLength(count);
+      core.markLost();
+      expect(core.getError()).toBe(GL.CONTEXT_LOST_WEBGL);
+      expect(core.prepareDomTextureUpload(request({ sourceValid: false }))).toBeNull();
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally { core.dispose(); }
   });
 });

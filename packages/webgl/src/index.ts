@@ -48,46 +48,6 @@ function unsupported(operation: string): never {
   throw new DOMException(`${operation} is outside the implemented WebGL1 profile`, "NotSupportedError");
 }
 
-/** Convert DOM image inputs at the facade boundary. Core input remains numeric bytes. */
-function normalizeImageInput(arguments_: unknown[], subImage: boolean, alignment: number): unknown[] {
-  const shortLength = subImage ? 7 : 6;
-  if (arguments_.length !== shortLength) return arguments_;
-  const source = arguments_[shortLength - 1];
-  const image = source as { width?: number; height?: number; naturalWidth?: number;
-    naturalHeight?: number; videoWidth?: number; videoHeight?: number; data?: Uint8ClampedArray };
-  const width = Number(image?.naturalWidth ?? image?.videoWidth ?? image?.width);
-  const height = Number(image?.naturalHeight ?? image?.videoHeight ?? image?.height);
-  if (!width || !height) return arguments_;
-  let rgba: Uint8ClampedArray;
-  if (Object.prototype.toString.call(source) === "[object ImageData]") rgba = image.data!;
-  else {
-    const canvas = new OffscreenCanvas(width, height);
-    const context = canvas.getContext("2d")!;
-    context.drawImage(source as CanvasImageSource, 0, 0, width, height);
-    rgba = context.getImageData(0, 0, width, height).data;
-  }
-  const format = Number(arguments_[subImage ? 4 : 3]);
-  const components = format === GL.RGBA ? 4 : format === GL.RGB ? 3 : format === GL.LUMINANCE_ALPHA ? 2 : 1;
-  const stride = Math.ceil(width * components / alignment) * alignment;
-  const pixels = new Uint8Array(stride * height);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const from = (y * width + x) * 4;
-      const to = y * stride + x * components;
-      if (format === GL.ALPHA) pixels[to] = rgba[from + 3]!;
-      else {
-        pixels[to] = rgba[from]!;
-        if (format === GL.LUMINANCE_ALPHA) pixels[to + 1] = rgba[from + 3]!;
-        else for (let component = 1; component < components; component++) pixels[to + component] = rgba[from + component]!;
-      }
-    }
-  }
-  if (subImage) return [arguments_[0], arguments_[1], arguments_[2], arguments_[3], width, height,
-    arguments_[4], arguments_[5], pixels];
-  return [arguments_[0], arguments_[1], arguments_[2], width, height, 0,
-    arguments_[3], arguments_[4], pixels];
-}
-
 /** A structural WebGL API facade. Runtime identity is provided by Refral wrappers. */
 export type WebGL1PrototypeContext = WebGLRenderingContext;
 
@@ -124,11 +84,6 @@ function wrapContext(canvas: HTMLCanvasElement, host: BrowserHost,
     if (property === 'getContextAttributes') return core.isContextLost() ? null : { ...attributes };
     if (property === 'getSupportedExtensions') return core.isContextLost() ? null : [];
     if (property === 'getExtension') return null;
-    if (property === 'texImage2D' || property === 'texSubImage2D') {
-      if (core.isContextLost()) return core.invoke(property, args);
-      args = normalizeImageInput(args, property === 'texSubImage2D',
-        core.invoke('getParameter', [GL.UNPACK_ALIGNMENT]) as number);
-    }
     const facadeMethod = programFacade.methods[property] ?? resourceFacade.methods[property];
     const result = facadeMethod ? facadeMethod(...args) : core.invoke(property, args);
     if (property === 'getVertexAttrib' && toEnum(args[1]) === GL.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) {

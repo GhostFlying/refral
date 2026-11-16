@@ -11,6 +11,7 @@ export interface TextureVersion {
 export interface PixelUpload {
   readonly bytes: Uint8Array;
   readonly viewType: string;
+  readonly source?: 'dom' | 'dom-converted';
 }
 
 export type ResourceOperation =

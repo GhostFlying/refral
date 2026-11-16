@@ -37,7 +37,8 @@
     "snapshot": "node tools/snapshot.mjs",
     "bench:chrome": "playwright test -c benchmarks/playwright.config.ts rtt-benchmark.spec.ts",
     "bench:rtt": "playwright test -c benchmarks/playwright.config.ts rtt-benchmark.spec.ts",
-    "check": "pnpm typecheck && pnpm test:unit && pnpm rust:check && pnpm rust:test && node tools/check-support.mjs"
+    "check": "pnpm typecheck && pnpm test:unit && pnpm rust:check && pnpm rust:test && node tools/check-support.mjs",
+    "bench:dom": "playwright test -c benchmarks/dom-upload.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.65.0",

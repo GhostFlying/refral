@@ -55,10 +55,11 @@ The build produces a standalone `dist` tree containing the browser bundles, comp
 | `pnpm test:readpixels` | Public synchronous readPixels semantics, packing, destinations, ordering and lifecycle |
 | `pnpm bench:readpixels` | Three-path public clear/read completed-latency samples on an ordinary page |
 | `pnpm bench:readback` | Matched Canvas2D/worker completed-readback latency and process CPU samples |
+| `pnpm bench:dom` | Three-source native/JS/Rust DOM upload/draw call intervals, three rounds and raw samples |
 | `pnpm bench:rtt` | Five native/JS/Rust drawing workloads, three rotated rounds and raw CPU samples |
 | `pnpm bench:chrome` | Alias for the independent RTT baseline entry |
 | `pnpm build` | Browser deployment tree |
-| `pnpm test:dist` | Built deployment probe and demo in actual Chrome |
+| `pnpm test:dist` | Built probe, three-path RTT/triangles, readPixels, DOM uploads and packaged Wasm hashes in headless Chrome |
 | `pnpm snapshot` | Source-tree hash and per-file provenance for saved evidence |
 
 Playwright uses the installed `chrome` channel, headless mode by default, an isolated profile, and one worker. Browser tests and deployment checks run in the background. Set `REFRAL_HEADLESS=0` for an explicitly requested visible reproduction. Dated reports record the actual mode and adapter. Browser verification uses repository Playwright entry points.
@@ -80,6 +81,8 @@ gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixe
 
 The asynchronous factory prepares GPU and compiler dependencies and the selected core. JS is the default. Both semantic cores execute the shared Buffer, shader/program, typed uniform/matrix, Texture2D, RGBA/depth framebuffer and raster profile. Supported calls are synchronous. Each core reports valid operations beyond its declared scope through `NotSupportedError`. See `docs/core-api.md` for the shared contract and `docs/support.json` for per-core scope and evidence. The test adapter exposes asynchronous pixel capture separately from the public GL interface.
 
+The accepted DOM overloads include unorm8 sRGB ImageData, sRGB Canvas/OffscreenCanvas and decoded HTMLImageElement. After the context is initialized, texImage2D/texSubImage2D consume their source synchronously. HTMLImage extraction uses a lazy private native WebGL context at runtime for ICC/alpha fidelity. Canvas transfer uses WebGPU external copy and the opaque Canvas2D readback transport. The [DOM extraction decision](docs/adr/008-dom-image-extraction.md) records ownership, source-context coordination and accepted limits.
+
 ## Development and evidence
 
 Start with `AGENTS.md`, the documentation map in `docs/README.md`, and the relevant file under `docs/tasks`. Architecture and current decisions live under `docs/architecture.md` and `docs/adr`.
@@ -95,6 +98,8 @@ The [three-path RTT milestone](docs/validation/2026-11-15-three-path-rtt.md) pas
 `pnpm bench:rtt` independently measures five native/JS/Rust drawing workloads in three rotated rounds. The 45 accepted runs retain 5400 CPU samples in ms/logical-frame. Its dedicated server enables COOP/COEP for finer timer resolution. The report records timing boundaries, initial/first-image costs, counters, capacities, hardware, launch flags and build/source hashes. The current Rust path has higher CPU costs than JS in these workloads, with profiling and optimization scheduled as separate work. GPU durations remain unmeasured in this CPU baseline.
 
 The [synchronous readback experiment](docs/validation/2026-11-15-readback-feasibility.md) exercises both semantic cores with an independent GPU worker. An isolated page returns completed pixels through shared memory, using Window polling or a waiting worker client. ADR 007 accepts the main-thread Canvas2D path for public readPixels. Both actual cores implement RGBA/UNSIGNED_BYTE, fixed Uint8Array/Uint8ClampedArray destinations, PACK_ALIGNMENT and clipped reads through the ordinary factory. The [public readPixels report](docs/validation/2026-11-16-public-readpixels.md) records synchronous behavior, original CTS and performance acceptance.
+
+The [DOM upload milestone](docs/validation/2026-11-16-dom-uploads.md) passes110 headless Chrome tests,201 CPU tests,66 native Rust tests and38 actual-Wasm tests. Eighteen complete original CTS files pass515 assertions per backend. Seventeen DOM semantic groups record282 exact captures per backend. Built deployment checks all four source brands, while pnpm bench:dom retains3240 formal call-interval samples with explicit ms/logical-frame units and source-extraction costs.
 
 Raw outputs are under ignored `artifacts/`. They include environment reports, compiler build/corpus results, JS/Rust samples, differential images, CTS assertions, screenshots, and paired performance samples. Validation summaries describe their environment and measurement limits. GPU timestamp results and internal Dawn integration require their own actual implementation and verification.
 

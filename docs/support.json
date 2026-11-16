@@ -2,7 +2,7 @@
   "version": 2,
   "profile": "webgl1-prototype",
   "updated": "2026-11-16",
-  "implementationRevision": "task-032 Canvas and HTMLImage acceptance from main efe0415; delivery identifies integrated heads",
+  "implementationRevision": "task-033 DOM stage closure from main3861a65; final delivery identifies integrated heads",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
     "chrome-macos-arm64": {
@@ -2124,8 +2124,8 @@
     "note": "The shared eight-attribute profile and boundary corpus pass Node and Chrome. Four shader pairs create real pipelines, including the patched INT_MIN WGSL regression."
   },
   "deploymentVerification": {
-    "evidence": "artifacts/deployment/result.json",
-    "scope": "Built Chrome probe, three-path RTT/triangle pixels and public readPixels, packaged Rust ABI3/resource2/readback1/DOM upload2 and page-error checks."
+    "evidence": "artifacts/dom-input/pr4/dist-result.json",
+    "scope": "Built Chrome probe, three-path RTT/triangle pixels and public readPixels,16 DOM captures per backend, matching packaged hashes and ABI3/resource2/readback1/DOM upload2."
   },
   "defaultCore": "js",
   "cores": {
@@ -2146,13 +2146,13 @@
     }
   },
   "coreVerification": {
-    "report": "docs/tasks/032-canvas-image-upload.md",
+    "report": "docs/validation/2026-11-16-dom-uploads.md",
     "environment": "chrome-macos-arm64",
     "allChromeTests": {
       "passed": 110,
       "failed": 0,
       "skipped": 0,
-      "evidence": "artifacts/dom-input/pr3/chrome.log",
+      "evidence": "artifacts/dom-input/pr4/chrome.log",
       "headless": true
     },
     "deterministicChecks": {
@@ -2165,8 +2165,8 @@
       "rustClippy": "passed",
       "actualWasmAdapterTests": 38,
       "evidence": [
-        "artifacts/dom-input/pr3/check.log",
-        "artifacts/dom-input/pr3/wasm-tests.log"
+        "artifacts/dom-input/pr4/check.log",
+        "artifacts/dom-input/pr4/wasm-tests.log"
       ]
     },
     "js": {
@@ -2320,5 +2320,25 @@
     "imageExtraction": "private native WebGL",
     "canvasExtraction": "WebGPU external copy and opaque Canvas2D readback",
     "sourceLossScope": "same-module registered Refral source"
+  },
+  "domStage": {
+    "task": "docs/tasks/029-dom-texture-stage.md",
+    "report": "docs/validation/2026-11-16-dom-uploads.md",
+    "headless": true,
+    "publicGroups": 17,
+    "capturesPerBackend": 282,
+    "originalCtsFiles": 18,
+    "ctsAssertionsPerBackend": 515,
+    "performance": {
+      "command": "pnpm bench:dom",
+      "runs": 27,
+      "formalSamples": 3240,
+      "formalLogicalFrames": 25920,
+      "units": "ms/logical-frame call-interval wall time",
+      "evidence": "artifacts/dom-input/pr4/performance/summary.json",
+      "gpuTimestamps": "device feature disabled for the call-interval baseline"
+    },
+    "deploymentDomCapturesPerBackend": 16,
+    "evidence": "artifacts/dom-input/pr4/"
   }
 }

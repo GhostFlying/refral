@@ -37,5 +37,6 @@ export default defineConfig({
     validation: path('./examples/index.html'),
     selection: path('./experiments/core-selection/index.html'),
     triangle: path('./examples/triangle/index.html'),
+    domDeployment: path('./tests/fixtures/dom-deployment.html'),
   } } },
 });

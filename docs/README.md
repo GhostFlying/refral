@@ -21,6 +21,7 @@ Current direction is parallel JS/TypeScript and Rust/Wasm semantic cores sharing
 | [Canvas2D and worker comparison](validation/2026-11-15-readback-comparison.md) | Actual-core RGBA/ordering corpus, ordinary-page Canvas capture and matched latency/process CPU evidence |
 | [Public synchronous readPixels](validation/2026-11-16-public-readpixels.md) | Accepted Canvas2D public path, per-core semantics, original CTS, deployment and completed-read timings |
 | [Chrome external-image alpha investigation](references/chrome-external-image-alpha.md) | Headless ICC/cICP controls, source-derived alpha mismatch and synchronous HTMLImage extraction implications |
+| [DOM upload stage validation](validation/2026-11-16-dom-uploads.md) | Current ImageData/Canvas/image acceptance, eighteen original CTS files, built DOM verification and repeated call-interval samples |
 | [CTS readback dependencies](references/cts-readback-dependencies.md) | Pinned original pixel helper, context-brand, texture/input and state/query prerequisites |
 
 ADR 003 records the current [parallel-core direction](adr/003-parallel-cores.md). ADR 001 records the earlier [small-core experiment and initial JS implementation choice](adr/001-runtime-core.md). ADR 002 documents the [ANGLE Wasm compiler](adr/002-compiler.md).

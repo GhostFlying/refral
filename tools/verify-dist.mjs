@@ -1,6 +1,7 @@
 import { chromium } from '@playwright/test';
-import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { spawn, execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
@@ -52,6 +53,21 @@ try {
   }
   if (!ready) throw new Error('Preview did not become available.');
   browser = await chromium.launch({ channel: 'chrome', headless: process.env.REFRAL_HEADLESS !== '0' });
+  const session = await browser.newBrowserCDPSession();
+  let launchCommandLine;
+  try {
+    const { processInfo } = await session.send('SystemInfo.getProcessInfo');
+    const process = processInfo.find(info => info.type === 'browser');
+    if (!process) throw new Error('Built Chrome process information is unavailable.');
+    launchCommandLine = execFileSync('ps', ['-ww', '-p', String(process.id), '-o', 'command='], { encoding: 'utf8' }).trim();
+  } finally { await session.detach(); }
+  const builds = {};
+  for (const [name, path] of [['rustWasm', 'artifacts/core-wasm/refral_core.wasm'], ['compilerWasm', 'artifacts/compiler/compiler.wasm']]) {
+    const source = createHash('sha256').update(await readFile(path)).digest('hex');
+    const packaged = createHash('sha256').update(await readFile(`dist/${path}`)).digest('hex');
+    assert.equal(packaged, source, `Packaged ${name} hash`);
+    builds[name] = packaged;
+  }
   const page = await browser.newPage({ viewport: { width: 1000, height: 760 }, deviceScaleFactor: 1 });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -137,10 +153,31 @@ try {
     assert.ok(centerPixel[0] + centerPixel[1] + centerPixel[2] > 150, `${core} triangle pixels`);
     triangles.push({ ...context, centerPixel });
   }
+  const domPalette = [11, 77, 203, 0, 253, 111, 17, 1, 35, 221, 92, 127, 192, 64, 255, 255,
+    229, 35, 109, 255, 193, 107, 41, 127, 67, 203, 149, 1, 155, 19, 231, 0];
+  const domPng = new PNG({ width: 4, height: 2 }); domPng.data.set(domPalette);
+  const domFixture = { width: 4, height: 2, pixels: domPalette,
+    png: 'data:image/png;base64,' + PNG.sync.write(domPng).toString('base64') };
+  const domUploads = [];
+  await page.goto('http://127.0.0.1:4174/tests/fixtures/dom-deployment.html');
+  await page.waitForFunction(() => typeof window.runDomDeployment === 'function');
+  for (const backend of ['native', 'js', 'rust']) {
+    const result = await page.evaluate(({ backend, fixture }) => window.runDomDeployment(backend, fixture),
+      { backend, fixture: domFixture });
+    assert.equal(result.selectedCore, backend);
+    assert.equal(result.captures.length, 16);
+    assert.deepEqual(result.validationErrors, []);
+    for (const capture of result.captures) {
+      assert.equal(capture.error, 0, `${backend} built ${capture.source} GL error`);
+      assert.equal(capture.framebufferStatus, 0x8cd5);
+      assert.deepEqual(capture.pixels, capture.expected, `${backend} built ${capture.source} pixels`);
+    }
+    domUploads.push(result);
+  }
   assert.deepEqual(errors, []);
-  const result = { recordedAt: new Date().toISOString(), url: page.url(), browserVersion: browser.version(), headless: process.env.REFRAL_HEADLESS !== '0', viewport: page.viewportSize(), probe, demos, demoComparisons, rustBuffer, triangles, pageErrors: errors };
+  const result = { recordedAt: new Date().toISOString(), url: page.url(), browserVersion: browser.version(), launchCommandLine, builds, headless: process.env.REFRAL_HEADLESS !== '0', viewport: page.viewportSize(), probe, demos, demoComparisons, rustBuffer, triangles, domUploads, pageErrors: errors };
   await writeFile('artifacts/deployment/result.json', JSON.stringify(result, null, 2) + '\n');
-  console.log('Built deployment passed Chrome probe, three-path RTT and triangle pixels, public readPixels, ABI3/resource2/readback1/DOM upload2 and page-error checks.');
+  console.log('Built deployment passed Chrome probe, three-path RTT and triangle pixels, public readPixels and DOM uploads, ABI3/resource2/readback1/DOM upload2 and page-error checks.');
 } finally {
   try { await browser?.close(); } finally {
     if (server.exitCode === null) {

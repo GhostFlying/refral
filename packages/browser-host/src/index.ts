@@ -2,7 +2,7 @@ import { GL, componentCount } from "@refral/core-api";
 import { CanvasReadback } from './canvas-readback.js';
 import type {
   AttributeSnapshot, RasterState, TargetSnapshot, TextureParameters, TextureStorage,
-  LinkedProgram, DrawOperation, SemanticHost,
+  LinkedProgram, DrawOperation, SemanticHost, DomTextureUploadPlan,
 } from "@refral/core-api";
 
 export type { TextureBinding, DrawOperation } from "@refral/core-api";
@@ -625,6 +625,16 @@ export class BrowserHost implements SemanticHost {
     this.defaultDirty = false;
   }
 
+  /** Publish the current default drawing buffer before this canvas is used as a DOM source. */
+  prepareCanvasSource(): void {
+    if (this.disposed || !this.canvas.width || !this.canvas.height) return;
+    const target = this.resolveTarget({ color: null, depth: null, depthGeneration: 0,
+      width: this.canvas.width, height: this.canvas.height, isDefault: true });
+    this.beginPass(target);
+    this.defaultDirty = true;
+    this.flush();
+  }
+
   flush(): void {
     if (this.disposed) return;
     this.endPass();
@@ -654,6 +664,26 @@ export class BrowserHost implements SemanticHost {
         texture.destroy();
       }
     }).catch(() => {});
+  }
+
+  /** Preserve canvas alpha bytes through external copy and the opaque Canvas2D readback transport. */
+  captureDomCanvas(source: HTMLCanvasElement | OffscreenCanvas, width: number, height: number,
+    plan: DomTextureUploadPlan): Uint8Array {
+    if (this.disposed) throw new DOMException('The context has been disposed.', 'InvalidStateError');
+    this.endPass();
+    const texture = this.createTexture(width, height, 'rgba8unorm');
+    try {
+      this.device.queue.copyExternalImageToTexture({ source, flipY: plan.flipY },
+        { texture, colorSpace: 'srgb', premultipliedAlpha: plan.premultiplyAlpha }, { width, height });
+      this.stats.copies++;
+      this.stats.uploadedBytes += width * height * 4;
+      this.canvasReadback ??= new CanvasReadback(this.device, this.stats);
+      return this.canvasReadback.capture(texture, width, height, () => this.getEncoder(), () => this.flush());
+    } finally {
+      this.textures.delete(texture);
+      this.stats.allocatedTextureBytes -= width * height * 4;
+      texture.destroy();
+    }
   }
 
   /** Synchronous RGBA8 capture after public GL validation in the selected core. */

@@ -1,5 +1,13 @@
 # Specification and verification map
 
+## Canvas and HTMLImage upload assertions
+
+Task032 extends the same pinned DOM overloads and pixel-store rules to sRGB Canvas/OffscreenCanvas and decoded HTMLImage. Source dimensions, intrinsic brands, CORS/origin-clean checks, return-time consumption, NONE source encoding and current default drawing-buffer selection precede destination mutation. Generic Canvas origin checks use discarded1×1 reads. Destination preflight precedes full capture. A known lost source produces INVALID_OPERATION after source availability checks. Tests retain the native broken-image/bad-target error order separately from the cores' source-first order for that multiple-invalid combination.
+
+Nine public groups retain explicit expected bytes and native/JS/Rust captures. They cover alpha0/1/127/255, flip/PMA, upload/subimage, source mutation and resize, default versus bound FBO, same-context canvas source, source loss, PNG/SVG/srcset sizing, brands/realms, taint/CORS and ICC NONE/default. Browser-default ICC conversion records native policy. The private native image helper verifies actual framebuffer extent, preserving SVG element sizing and raster density behavior. The [DOM extraction ADR](adr/008-dom-image-extraction.md) records source snapshots, dimension probes, source registrations and the accepted runtime dependency.
+
+The headless canvas GL alpha probe observes Canvas2D losing alpha-zero RGB and changing premultiplied low-alpha values. WebGPU external copy plus opaque Canvas2D readback matches the native source transfer. Evidence is in artifacts/dom-input/probes/canvas-gl-alpha.json. Source-context ordering/loss acceptance currently uses same-module Refral sources. Independent realm/module Refral coordination and unregistered native-source loss retain explicit follow-up coverage.
+
 ## ImageData DOM upload assertions
 
 Task031 uses the pinned DOM source overloads, TEXTURE_UPLOAD_SIZE, PIXEL_STORAGE_PARAMETERS and WebIDL source union. Six/seven-argument DOM calls convert scalar arguments in order before inspecting a genuine platform source. ImageData dimensions/data come from intrinsic getters, including cross-realm sources and objects with shadowing properties. Detached source data produces INVALID_VALUE. The pure core preflight preserves bindings, storage and versions on failure.

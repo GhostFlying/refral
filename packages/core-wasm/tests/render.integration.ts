@@ -931,7 +931,7 @@ describe('actual Rust readPixels plans', () => {
     });
     try {
       expect(() => setup()).toThrow(
-        'Rust drawing module requires ABI3/resource2/readback1/DOM upload1 exports. Rebuild with pnpm rust:build.',
+        'Rust drawing module requires ABI3/resource2/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
       );
     } finally {
       instance.mockRestore();
@@ -1100,20 +1100,24 @@ describe('DOM texture source protocol', () => {
   }
   it('requires the additive DOM upload capability before initializing context state', () => {
     const exports = new WebAssembly.Instance(module, {}).exports;
-    expect((exports.rf_dom_upload_protocol_version as () => number)()).toBe(1);
-    const instance = vi.spyOn(WebAssembly, 'Instance').mockImplementation(function () {
-      return { exports: { ...exports, rf_dom_upload_protocol_version: () => 0 } };
-    });
-    try {
-      expect(() => setup()).toThrow('Rust DOM upload protocol mismatch. Rebuild with pnpm rust:build.');
-    } finally { instance.mockRestore(); }
+    expect((exports.rf_dom_upload_protocol_version as () => number)()).toBe(2);
+    for (const version of [0, 1]) {
+      const initialize = vi.fn();
+      const instance = vi.spyOn(WebAssembly, 'Instance').mockImplementation(function () {
+        return { exports: { ...exports, rf_dom_upload_protocol_version: () => version, rf_init: initialize } };
+      });
+      try {
+        expect(() => setup()).toThrow('Rust DOM upload protocol mismatch. Rebuild with pnpm rust:build.');
+        expect(initialize).not.toHaveBeenCalled();
+      } finally { instance.mockRestore(); }
+    }
   });
   it('rejects older modules missing DOM upload exports with rebuild guidance', () => {
     const exports = { ...new WebAssembly.Instance(module, {}).exports };
     delete exports.rf_dom_upload_protocol_version;
     const instance = vi.spyOn(WebAssembly, 'Instance').mockImplementation(function () { return { exports }; });
     try {
-      expect(() => setup()).toThrow('Rust drawing module requires ABI3/resource2/readback1/DOM upload1 exports. Rebuild with pnpm rust:build.');
+      expect(() => setup()).toThrow('Rust drawing module requires ABI3/resource2/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.');
     } finally { instance.mockRestore(); }
   });
   it('prepares owned unpack flags without changing storage or emitting resource operations', () => {
@@ -1160,6 +1164,44 @@ describe('DOM texture source protocol', () => {
       expect(operations).toEqual([]);
       expect(core.prepareDomTextureUpload(request())).toEqual({ flipY: false, premultiplyAlpha: false,
         colorSpaceConversion: GL.BROWSER_DEFAULT_WEBGL });
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally { core.dispose(); }
+  });
+  it('rejects lost sources after availability and dimensions without changing destination versions', () => {
+    const { core, operations } = setup();
+    try {
+      bind(core);
+      define(core, 2, 2, null);
+      for (const operation of ['texImage2D', 'texSubImage2D'] as const) {
+        const lost = request({ operation, sourceContextLost: true });
+        for (const target of [GL.TEXTURE_2D, 0xbad]) {
+          expect(core.prepareDomTextureUpload({ ...lost, target })).toBeNull();
+          expect(core.getError()).toBe(GL.INVALID_OPERATION);
+          expect(operations).toHaveLength(1);
+        }
+        for (const overrides of [{ sourceValid: false }, { width: 0 }, { height: Number.NaN }]) {
+          expect(core.prepareDomTextureUpload({ ...lost, ...overrides, target: 0xbad })).toBeNull();
+          expect(core.getError()).toBe(GL.INVALID_VALUE);
+          expect(operations).toHaveLength(1);
+        }
+        expect(core.prepareDomTextureUpload({ ...lost, sourceContextLost: false, target: 0xbad })).toBeNull();
+        expect(core.getError()).toBe(GL.INVALID_ENUM);
+        expect(core.prepareDomTextureUpload(request({ operation }))).not.toBeNull();
+        expect(core.prepareDomTextureUpload({ ...lost, sourceContextLost: false })).not.toBeNull();
+        expect(core.getError()).toBe(GL.NO_ERROR);
+        expect(operations).toHaveLength(1);
+      }
+      core.invoke('texSubImage2D', [GL.TEXTURE_2D, 0, 0, 0, 1, 2, GL.RGBA, GL.UNSIGNED_BYTE,
+        upload(new Uint8Array(8))]);
+      const update = operations.at(-1)!;
+      if (update.kind !== 'update-texture') throw new Error('Missing destination update.');
+      expect(update.previous).toMatchObject({ storageGeneration: 1, contentVersion: 1 });
+      expect(update.version).toMatchObject({ storageGeneration: 1, contentVersion: 2 });
+      expect(operations).toHaveLength(2);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      core.markLost();
+      expect(core.getError()).toBe(GL.CONTEXT_LOST_WEBGL);
+      expect(core.prepareDomTextureUpload(request({ sourceContextLost: true }))).toBeNull();
       expect(core.getError()).toBe(GL.NO_ERROR);
     } finally { core.dispose(); }
   });

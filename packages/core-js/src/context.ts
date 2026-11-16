@@ -799,6 +799,7 @@ export class SemanticContext {
   }
   prepareDomTextureUpload(request: DomTextureUploadRequest): DomTextureUploadPlan | null {
     if (this.lost || !this.validateDomSource(request.width, request.height, request.sourceValid)) return null;
+    if (request.sourceContextLost) { this.error(GL.INVALID_OPERATION); return null; }
     const texture = request.operation === "texSubImage2D"
       ? this.validateTextureSubImage(request.target, request.level, request.x, request.y,
         request.width, request.height, request.format, request.type)

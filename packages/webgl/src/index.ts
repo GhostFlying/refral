@@ -10,6 +10,7 @@ import { createBufferFacade, isBufferBinding, requireArguments, toEnum } from ".
 import { createProgramFacade } from "./programs.js";
 import { createResourceFacade, isResourceBinding } from './resources.js';
 import { readPixels } from './readback.js';
+import { registerCanvasSource } from './dom-upload.js';
 
 export interface ContextOptions extends WebGLContextAttributes {
   version: 1;
@@ -61,7 +62,11 @@ function wrapContext(canvas: HTMLCanvasElement, host: BrowserHost,
   disposeCompiler: () => void): WebGL1PrototypeContext {
   const bufferFacade = createBufferFacade(core);
   const programFacade = createProgramFacade(core);
-  const resourceFacade = createResourceFacade(core);
+  const resourceFacade = createResourceFacade(core,
+    (source, width, height, plan) => host.captureDomCanvas(source, width, height, plan));
+  const unregisterSource = registerCanvasSource(canvas, {
+    prepare: () => host.prepareCanvasSource(), isLost: () => core.isContextLost(),
+  });
   void host.device.lost.then(info => {
     if (core.markLost()) canvas.dispatchEvent(new WebGLContextEvent("webglcontextlost", {
       cancelable: true, statusMessage: info.message,
@@ -110,6 +115,7 @@ function wrapContext(canvas: HTMLCanvasElement, host: BrowserHost,
     capture: () => host.capture(core.captureTarget()),
     stats: host.stats, environment: host.environment, errors: host.errors, device: host.device,
     dispose: async () => {
+      unregisterSource();
       core.dispose();
       bufferFacade.dispose();
       programFacade.dispose();

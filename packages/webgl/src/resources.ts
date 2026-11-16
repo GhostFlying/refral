@@ -3,7 +3,8 @@ import type {
   DrawingCore, FramebufferHandle, LogicalHandle, PixelUpload, RenderbufferHandle, TextureHandle,
 } from '@refral/core-api';
 import { bufferSourceBytes, requireArguments, toEnum } from './buffers.js';
-import { uploadDomTexture } from './dom-upload.js';
+import { createDomTextureUploads } from './dom-upload.js';
+import type { CanvasCapture } from './dom-upload.js';
 
 type ResourceHandle = TextureHandle | RenderbufferHandle | FramebufferHandle;
 type ResourceKind = ResourceHandle['kind'];
@@ -36,8 +37,9 @@ export function isResourceBinding(parameter: number): boolean {
 }
 
 /** New resource wrappers and pixel-view conversion stay at the shared facade. */
-export function createResourceFacade(core: DrawingCore) {
+export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCapture) {
   const wrappers = new Map<string, object>();
+  const domUploads = createDomTextureUploads(core, captureCanvas);
   function wrap(value: unknown): object | null {
     if (value === null || value === undefined) return null;
     const handle = value as LogicalHandle;
@@ -84,7 +86,7 @@ export function createResourceFacade(core: DrawingCore) {
   method('getTexParameter', 2, args => [toEnum(args[0]), toEnum(args[1])]);
   methods.texImage2D = (...args) => {
     requireArguments('texImage2D', args, 6);
-    if (args.length === 6) return uploadDomTexture(core, {
+    if (args.length === 6) return domUploads.upload({
       operation: 'texImage2D', target: toEnum(args[0]), level: integer(args[1]), internalFormat: integer(args[2]),
       x: 0, y: 0, format: toEnum(args[3]), type: toEnum(args[4]),
     }, args[5]);
@@ -101,7 +103,7 @@ export function createResourceFacade(core: DrawingCore) {
       const y = integer(args[3]);
       const format = toEnum(args[4]);
       const type = toEnum(args[5]);
-      return uploadDomTexture(core, { operation: 'texSubImage2D', target, level,
+      return domUploads.upload({ operation: 'texSubImage2D', target, level,
         internalFormat: format, x, y, format, type }, args[6]);
     }
     requireArguments('texSubImage2D', args, 9);
@@ -131,6 +133,6 @@ export function createResourceFacade(core: DrawingCore) {
   return {
     methods,
     binding: (parameter: number) => wrap(core.invoke('getParameter', [parameter])),
-    dispose: () => wrappers.clear(),
+    dispose: () => { wrappers.clear(); domUploads.dispose(); },
   };
 }

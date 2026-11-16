@@ -11,6 +11,7 @@ export interface DomTextureUploadRequest {
   readonly format: number;
   readonly type: number;
   readonly sourceValid: boolean;
+  readonly sourceContextLost?: boolean;
 }
 
 /** Preparation validates without changing texture storage or versions. */

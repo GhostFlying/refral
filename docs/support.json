@@ -2,7 +2,7 @@
   "version": 2,
   "profile": "webgl1-prototype",
   "updated": "2026-11-16",
-  "implementationRevision": "task-031 ImageData DOM upload from main e6dc095; task delivery identifies integrated heads",
+  "implementationRevision": "task-032 Canvas and HTMLImage acceptance from main efe0415; delivery identifies integrated heads",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
     "chrome-macos-arm64": {
@@ -761,7 +761,7 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records ImageData acceptance. Canvas/image acceptance, mipmaps, CubeMap, packed types and additional formats follow their scoped tasks."
+            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records DOM acceptance. Mipmaps, CubeMap, packed types and additional formats follow their compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -806,7 +806,7 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records ImageData acceptance. Canvas/image acceptance, mipmaps, CubeMap, packed types and additional formats follow their scoped tasks."
+            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records DOM acceptance. Mipmaps, CubeMap, packed types and additional formats follow their compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -821,10 +821,11 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Unorm8 sRGB ImageData texImage2D/texSubImage2D with intrinsic/cross-realm source validation, WebIDL scalar ordering, tight rows, flip/PMA, five output formats, synchronous snapshots, updates and failed-state preservation.",
+          "coverage": "Unorm8 sRGB ImageData with five output formats plus sRGB Canvas/OffscreenCanvas and decoded HTMLImage RGBA uploads/subimages. Intrinsic/cross-realm brands, WebIDL order, flip/PMA, source snapshots, current default-buffer ordering, registered-source loss, CORS/security, actual image dimensions and ICC NONE/default are verified.",
           "tests": [
             "tests/chrome/dom-imagedata.spec.ts",
-            "packages/core-js/src/dom-upload.test.ts"
+            "packages/core-js/src/dom-upload.test.ts",
+            "tests/chrome/dom-canvas-image.spec.ts"
           ],
           "evidence": [
             {
@@ -858,23 +859,62 @@
             {
               "path": "artifacts/dom-input/pr2/public/context-loss/result.json",
               "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/canvas-pixel-store/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/canvas-snapshot-update-resize/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/source-context-ordering/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/source-context-alpha-and-loss/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/png-palette-transforms/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/image-dimensions/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/intrinsic-and-cross-realm/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/invalid-and-security-sources/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/icc-color-space/result.json",
+              "passed": true
             }
           ],
           "limits": [
-            "The accepted ImageData profile is unorm8 sRGB with level-zero UNSIGNED_BYTE output.",
-            "Canvas/OffscreenCanvas and HTMLImage source extraction have separate pending acceptance. ICC image precision findings are recorded in docs/references/chrome-external-image-alpha.md."
+            "HTMLImage extraction requires a private native WebGL context at runtime, accepted in ADR008.",
+            "ImageData acceptance is unorm8 sRGB with five UNSIGNED_BYTE formats. Canvas/image acceptance is RGBA/UNSIGNED_BYTE level zero, with sRGB Canvas encoding.",
+            "Refral source ordering/loss coordination uses the same loaded facade module. Independent module/realm Refral sources and unregistered native WebGL source loss have pending acceptance.",
+            "Wide-gamut/HDR Canvas, additional ImageData encodings, ImageBitmap/video, mipmaps, CubeMap and packed formats retain compatibility tasks."
           ],
-          "unsupportedBehavior": "Invalid implemented inputs produce WebIDL exceptions or GL errors at their owning boundary. Valid ImageData encodings outside this profile report NotSupportedError after source/GL preflight."
+          "unsupportedBehavior": "Invalid supported inputs produce WebIDL exceptions, SecurityError or core GL errors before destination mutation. Additional ImageData encodings and unavailable native image extraction report explicit capability errors. Other unaccepted source combinations are scoped by these limits."
         },
         "rust": {
           "status": "differential-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Unorm8 sRGB ImageData texImage2D/texSubImage2D with intrinsic/cross-realm source validation, WebIDL scalar ordering, tight rows, flip/PMA, five output formats, synchronous snapshots, updates and failed-state preservation.",
+          "coverage": "Unorm8 sRGB ImageData with five output formats plus sRGB Canvas/OffscreenCanvas and decoded HTMLImage RGBA uploads/subimages. Intrinsic/cross-realm brands, WebIDL order, flip/PMA, source snapshots, current default-buffer ordering, registered-source loss, CORS/security, actual image dimensions and ICC NONE/default are verified.",
           "tests": [
             "tests/chrome/dom-imagedata.spec.ts",
-            "crates/core/src/render/dom_texture_tests.rs"
+            "crates/core/src/render/dom_texture_tests.rs",
+            "tests/chrome/dom-canvas-image.spec.ts"
           ],
           "evidence": [
             {
@@ -908,13 +948,51 @@
             {
               "path": "artifacts/dom-input/pr2/public/context-loss/result.json",
               "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/canvas-pixel-store/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/canvas-snapshot-update-resize/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/source-context-ordering/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/source-context-alpha-and-loss/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/png-palette-transforms/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/image-dimensions/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/intrinsic-and-cross-realm/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/invalid-and-security-sources/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/dom-input/pr3/public/icc-color-space/result.json",
+              "passed": true
             }
           ],
           "limits": [
-            "The accepted ImageData profile is unorm8 sRGB with level-zero UNSIGNED_BYTE output.",
-            "Canvas/OffscreenCanvas and HTMLImage source extraction have separate pending acceptance. ICC image precision findings are recorded in docs/references/chrome-external-image-alpha.md."
+            "HTMLImage extraction requires a private native WebGL context at runtime, accepted in ADR008.",
+            "ImageData acceptance is unorm8 sRGB with five UNSIGNED_BYTE formats. Canvas/image acceptance is RGBA/UNSIGNED_BYTE level zero, with sRGB Canvas encoding.",
+            "Refral source ordering/loss coordination uses the same loaded facade module. Independent module/realm Refral sources and unregistered native WebGL source loss have pending acceptance.",
+            "Wide-gamut/HDR Canvas, additional ImageData encodings, ImageBitmap/video, mipmaps, CubeMap and packed formats retain compatibility tasks."
           ],
-          "unsupportedBehavior": "Invalid implemented inputs produce WebIDL exceptions or GL errors at their owning boundary. Valid ImageData encodings outside this profile report NotSupportedError after source/GL preflight."
+          "unsupportedBehavior": "Invalid supported inputs produce WebIDL exceptions, SecurityError or core GL errors before destination mutation. Additional ImageData encodings and unavailable native image extraction report explicit capability errors. Other unaccepted source combinations are scoped by these limits."
         }
       }
     },
@@ -948,7 +1026,7 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records ImageData acceptance. Canvas/image acceptance, mipmaps, CubeMap, packed types and additional formats follow their scoped tasks."
+            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records DOM acceptance. Mipmaps, CubeMap, packed types and additional formats follow their compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -978,7 +1056,7 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records ImageData acceptance. Canvas/image acceptance, mipmaps, CubeMap, packed types and additional formats follow their scoped tasks."
+            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records DOM acceptance. Mipmaps, CubeMap, packed types and additional formats follow their compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -1009,7 +1087,7 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records ImageData acceptance. Canvas/image acceptance, mipmaps, CubeMap, packed types and additional formats follow their scoped tasks."
+            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records DOM acceptance. Mipmaps, CubeMap, packed types and additional formats follow their compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -1034,7 +1112,7 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records ImageData acceptance. Canvas/image acceptance, mipmaps, CubeMap, packed types and additional formats follow their scoped tasks."
+            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records DOM acceptance. Mipmaps, CubeMap, packed types and additional formats follow their compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -2047,7 +2125,7 @@
   },
   "deploymentVerification": {
     "evidence": "artifacts/deployment/result.json",
-    "scope": "Built Chrome probe, three-path RTT/triangle pixels and public readPixels, packaged Rust ABI3/resource2/readback1/DOM upload1 and page-error checks."
+    "scope": "Built Chrome probe, three-path RTT/triangle pixels and public readPixels, packaged Rust ABI3/resource2/readback1/DOM upload2 and page-error checks."
   },
   "defaultCore": "js",
   "cores": {
@@ -2068,27 +2146,27 @@
     }
   },
   "coreVerification": {
-    "report": "docs/tasks/031-imagedata-upload.md",
+    "report": "docs/tasks/032-canvas-image-upload.md",
     "environment": "chrome-macos-arm64",
     "allChromeTests": {
-      "passed": 101,
+      "passed": 110,
       "failed": 0,
       "skipped": 0,
-      "evidence": "artifacts/dom-input/pr2/chrome.log",
+      "evidence": "artifacts/dom-input/pr3/chrome.log",
       "headless": true
     },
     "deterministicChecks": {
       "typescript": "passed",
-      "jsUnitTests": 200,
-      "rustNativeTests": 65,
-      "rustCoreTests": 57,
+      "jsUnitTests": 201,
+      "rustNativeTests": 66,
+      "rustCoreTests": 58,
       "wasmCrateTests": 8,
       "rustFmt": "passed",
       "rustClippy": "passed",
-      "actualWasmAdapterTests": 37,
+      "actualWasmAdapterTests": 38,
       "evidence": [
-        "artifacts/dom-input/pr2/check.log",
-        "artifacts/dom-input/pr2/wasm-tests.log"
+        "artifacts/dom-input/pr3/check.log",
+        "artifacts/dom-input/pr3/wasm-tests.log"
       ]
     },
     "js": {
@@ -2098,11 +2176,13 @@
       "sharedRttScenes": 20,
       "ctsFiles": 18,
       "ctsAssertions": 515,
-      "remainingParity": "Canvas/HTMLImage acceptance, additional ImageData encodings, mipmaps/CubeMap/packed formats, additional targets/readback formats, extensions and restoration.",
+      "remainingParity": "Additional DOM encodings and source-context combinations, mipmaps/CubeMap/packed formats, additional targets/readback formats, extensions and restoration.",
       "publicReadPixelsCaseGroups": 8,
       "publicReadPixelsAssertions": 296,
       "publicImageDataGroups": 8,
-      "publicImageDataAssertions": 871
+      "publicImageDataAssertions": 871,
+      "publicCanvasImageGroups": 9,
+      "publicCanvasImageAssertions": 700
     },
     "rust": {
       "profile": "webgl1-render-to-texture",
@@ -2111,11 +2191,13 @@
       "sharedRttScenes": 20,
       "ctsFiles": 18,
       "ctsAssertions": 515,
-      "remainingParity": "Canvas/HTMLImage acceptance, additional ImageData encodings, mipmaps/CubeMap/packed formats, additional targets/readback formats, extensions and restoration.",
+      "remainingParity": "Additional DOM encodings and source-context combinations, mipmaps/CubeMap/packed formats, additional targets/readback formats, extensions and restoration.",
       "publicReadPixelsCaseGroups": 8,
       "publicReadPixelsAssertions": 296,
       "publicImageDataGroups": 8,
-      "publicImageDataAssertions": 871
+      "publicImageDataAssertions": 871,
+      "publicCanvasImageGroups": 9,
+      "publicCanvasImageAssertions": 700
     },
     "sharedCompiler": {
       "corpusCases": 24,
@@ -2221,5 +2303,22 @@
     "evidence": "artifacts/dom-input/pr2/",
     "sourceEncoding": "unorm8 sRGB",
     "originalCtsFiles": 18
+  },
+  "domCanvasImageStage": {
+    "task": "docs/tasks/032-canvas-image-upload.md",
+    "adr": "docs/adr/008-dom-image-extraction.md",
+    "headless": true,
+    "groups": 9,
+    "capturesPerBackend": 162,
+    "assertions": {
+      "native": 670,
+      "js": 700,
+      "rust": 700
+    },
+    "domUploadProtocol": 2,
+    "evidence": "artifacts/dom-input/pr3/",
+    "imageExtraction": "private native WebGL",
+    "canvasExtraction": "WebGPU external copy and opaque Canvas2D readback",
+    "sourceLossScope": "same-module registered Refral source"
   }
 }

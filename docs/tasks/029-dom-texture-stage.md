@@ -1,6 +1,6 @@
 # DOM texture inputs and CTS expansion
 
-Status is running from main 68f8912 on 2026-11-16. The user authorized PR1 through PR4 and requires headless browser execution throughout.
+Implementation and local acceptance are complete on 2026-11-16 from initial main68f8912. The user authorized PR1 through PR4 and requires headless browser execution throughout.
 
 ## Goal and scope
 
@@ -28,3 +28,11 @@ Keep required Actions lightweight. Run actual Wasm, GPU/CTS, deployment and perf
 PR1 targets eighteen complete original CTS files with per-backend actual assertion counts and branch observations. PR2/PR3 use native/JS/Rust public calls, fixed expected state/errors/pixels, mutable-source snapshots, two-draw updates, alpha/pixel-store/origin rules, target changes, lifecycle and current-frame source-canvas contents. Retain existing drawing/readback regressions.
 
 PR4 records context/resource preparation, first completed upload/draw, steady-state CPU p50/p95 with units and sample boundaries, upload/creation/submission counters, raw samples and source/build/browser/adapter provenance. Save artifacts under artifacts/dom-input. A dated report and delivery.json record the four PRs and integrated heads.
+
+## Stage result
+
+PR1 delivered through PR16, PR2 through PR17 and PR3 through PR18 with current-head required checks and rebase merges. PR4 closes the benchmark/deployment/report task through the same flow. Delivery receipts live under artifacts/dom-input/pr1–pr4 and the final stage delivery.json.
+
+Both actual cores now accept the bounded ImageData/Canvas/HTMLImage profile. Eighteen original CTS files pass515 assertions per backend. Full acceptance passes110 headless browser tests,201 CPU tests,66 native Rust tests and38 actual-Wasm tests. Seventeen public DOM groups retain282 exact captures per backend. Built DOM checks add16 captures per backend and verify packaged hashes/capabilities.
+
+The user approved private native WebGL HTMLImage extraction after the ICC investigation. Canvas fidelity required WebGPU external copy plus the existing opaque Canvas2D transport. ADR008 records these decisions and source/lifecycle boundaries. The dated DOM validation report records27 performance runs and3240 formal samples, measured in ms/logical-frame with synchronous extraction included. Compatibility and measurement limits remain explicit there and in support.json.

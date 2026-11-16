@@ -43,23 +43,24 @@ export async function runCts(path: string, requestedBackend: CtsBackend) {
   });
   const timer = setTimeout(() => finish('timeout'), 30_000);
   try {
-    if (factory) {
-      const original = frame.HTMLCanvasElement.prototype.getContext;
-      Object.defineProperty(frame.HTMLCanvasElement.prototype, 'getContext', {
-        value(this: HTMLCanvasElement, kind: string, attributes?: WebGLContextAttributes) {
-          if (kind === 'webgl' || kind === 'experimental-webgl') {
-            const existing = contexts.find((context) => context.canvas === this);
-            if (existing) return existing;
-            const context = factory(this, attributes);
-            Object.setPrototypeOf(context, frame.WebGLRenderingContext.prototype);
-            contexts.push(context);
-            return context;
-          }
+    const original = frame.HTMLCanvasElement.prototype.getContext;
+    Object.defineProperty(frame.HTMLCanvasElement.prototype, 'getContext', {
+      value(this: HTMLCanvasElement, kind: string, attributes?: WebGLContextAttributes) {
+        if (kind !== 'webgl' && kind !== 'experimental-webgl') {
           return Reflect.apply(original, this, [kind, attributes]);
-        },
-        configurable: true,
-      });
-    }
+        }
+        const existing = contexts.find((context) => context.canvas === this);
+        if (existing) return existing;
+        const context = factory ? factory(this, attributes)
+          : Reflect.apply(original, this, [kind, attributes]) as WebGLRenderingContext | null;
+        if (context) {
+          if (factory) Object.setPrototypeOf(context, frame.WebGLRenderingContext.prototype);
+          contexts.push(context);
+        }
+        return context;
+      },
+      configurable: true,
+    });
     for (const node of [...html.head.children, ...html.body.children]) {
       if (!(node instanceof HTMLScriptElement)) continue;
       if (node.type && node.type !== 'text/javascript' && node.type !== 'application/javascript') {
@@ -82,18 +83,21 @@ export async function runCts(path: string, requestedBackend: CtsBackend) {
     }
     const completionStatus = await completion;
     const environments: Record<string, unknown>[] = contexts.map(context => {
+      const canvasInDocument = context.canvas instanceof frame.HTMLCanvasElement && doc.contains(context.canvas);
+      if (!factory) return { core: 'native', userAgent: frame.navigator.userAgent,
+        version: context.getParameter(context.VERSION), renderer: context.getParameter(context.RENDERER),
+        attributes: context.getContextAttributes(), canvasInDocument };
       const hooks = getTestingHooks(context);
       if (hooks.core !== backend) errors.push({ name: 'CoreSelectionError',
         message: `Requested ${backend}, received ${hooks.core}` });
-      return { core: hooks.core, ...hooks.environment, attributes: context.getContextAttributes() };
+      return { core: hooks.core, ...hooks.environment, attributes: context.getContextAttributes(),
+        canvasInDocument };
     });
-    if (!factory) {
-      for (const canvas of doc.querySelectorAll('canvas')) {
-        const context = canvas.getContext('webgl');
-        if (context) environments.push({ core: 'native', userAgent: frame.navigator.userAgent,
-          version: context.getParameter(context.VERSION), renderer: context.getParameter(context.RENDERER),
-          attributes: context.getContextAttributes() });
-      }
+    const observations: Record<string, unknown> = {};
+    if (path.endsWith('/state/gl-geterror.html')) {
+      const values = [1, 2, 3, 4, 5, 6].map(index => Reflect.get(frame, `err${index}`));
+      observations.errorCollection = values[1] === 0 ? 'first-error' : 'multiple-errors';
+      observations.errorValues = values;
     }
     const failed = assertions.filter((assertion) => !assertion.success && !assertion.skipped).length;
     const passed = assertions.filter((assertion) => assertion.success && !assertion.skipped).length;
@@ -102,7 +106,10 @@ export async function runCts(path: string, requestedBackend: CtsBackend) {
       : failed || errors.length || !passed ? 'fail' : 'pass';
     return {
       path, backend, requestedBackend, status, completionStatus, passed, failed, assertions, errors, environments,
+      crossOriginIsolated: frame.crossOriginIsolated,
+      sharedArrayBufferAvailable: typeof frame.SharedArrayBuffer !== 'undefined', observations,
       adaptations: ['inert head shader scripts preserved in the iframe document',
+        'iframe-scoped canvas getContext capture including detached helper canvases',
         ...(factory ? ['asynchronous compiler/device/core preinitialization', 'iframe-scoped canvas getContext injection',
           'iframe-local native WebGL prototype branding for original context checks'] : []),
         'original test scripts and assertions executed unchanged'],
@@ -110,6 +117,9 @@ export async function runCts(path: string, requestedBackend: CtsBackend) {
   } finally {
     clearTimeout(timer);
     await factory?.dispose();
+    if (!factory) {
+      for (const context of contexts) context.getExtension('WEBGL_lose_context')?.loseContext();
+    }
     globals.webglTestHarness = previous;
     iframe.remove();
   }

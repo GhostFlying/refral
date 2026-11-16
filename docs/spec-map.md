@@ -1,5 +1,11 @@
 # Specification and verification map
 
+## Original state and Buffer CTS expansion
+
+Task030 uses the pinned WebGL/IDL/GLES sources and complete original state/gl-geterror, state/gl-getstring, state/gl-initial-state and buffers/buffer-data-and-buffer-sub-data files. Their assertions cover supported enum/value/operation errors, error draining, required version-string prefixes, initial blend factors, Buffer overload conversion, allocation/update bounds and nullable inputs.
+
+The original getError script permits first-error or multiple-error implementations. Results record its branch and actual assertion count independently. The Buffer script also runs on an isolated page with fixed shared storage exposed, preserving its original optional assertions. Native contexts created on detached helper canvases are captured in environment evidence. Task030 records actual run counts and the headless configuration.
+
 ## Public readPixels assertions
 
 Task028 selects the Canvas2D host path for synchronous RGBA/UNSIGNED_BYTE reads. The pinned readPixels clause defines return-time visibility, typed destination compatibility, null/short-buffer errors and current-framebuffer reads. GLES 4.3.1 supplies row order and PACK_ALIGNMENT. The pinned READS_OUTSIDE_FRAMEBUFFER clause leaves corresponding destination bytes untouched, including fully outside rectangles. Row padding and unrelated view bytes are retained. Implementation read format/type getters reject incomplete framebuffers with INVALID_OPERATION. Each semantic core emits the same validated clipped read/packing plan.

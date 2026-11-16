@@ -17,7 +17,11 @@
       "sdk/tests/conformance/uniforms/gl-get-uniform-non-current-program.html",
       "sdk/tests/conformance/programs/program-handling.html",
       "sdk/tests/conformance/renderbuffers/feedback-loop.html",
-      "sdk/tests/conformance/reading/read-pixels-pack-alignment.html"
+      "sdk/tests/conformance/reading/read-pixels-pack-alignment.html",
+      "sdk/tests/conformance/state/gl-geterror.html",
+      "sdk/tests/conformance/state/gl-getstring.html",
+      "sdk/tests/conformance/state/gl-initial-state.html",
+      "sdk/tests/conformance/buffers/buffer-data-and-buffer-sub-data.html"
     ],
     "specifications": [
       "specs/latest/1.0/index.html",

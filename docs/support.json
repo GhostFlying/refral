@@ -2,7 +2,7 @@
   "version": 2,
   "profile": "webgl1-prototype",
   "updated": "2026-11-16",
-  "implementationRevision": "task-028 public Canvas2D readPixels acceptance; source/build hashes and delivery recorded in the dated report",
+  "implementationRevision": "task-030 original state/Buffer CTS expansion from main 68f8912; delivery identifies integrated heads",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
     "chrome-macos-arm64": {
@@ -108,7 +108,7 @@
       "api": "getError, getParameter, isEnabled, buffer/attribute/program getters",
       "cores": {
         "js": {
-          "status": "differential-verified",
+          "status": "cts-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
@@ -116,7 +116,10 @@
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential error-state",
             "tests/chrome/differential.spec.ts::WebGL1 differential resource-ownership",
-            "tests/chrome/dual-core-drawing.spec.ts"
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "sdk/tests/conformance/state/gl-geterror.html",
+            "sdk/tests/conformance/state/gl-getstring.html",
+            "sdk/tests/conformance/state/gl-initial-state.html"
           ],
           "evidence": [
             {
@@ -130,7 +133,10 @@
               "passed": true,
               "maxDifference": 0,
               "mismatchedChannels": 0
-            }
+            },
+            "docs/tasks/030-state-cts.md",
+            "artifacts/cts/results.json",
+            "artifacts/cts/shared-buffer-results.json"
           ],
           "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "limits": [
@@ -139,12 +145,15 @@
           ]
         },
         "rust": {
-          "status": "differential-verified",
+          "status": "cts-verified",
           "coverage": "Shared Buffer, shader/program, typed uniform, vertex, texture, pixel-store, framebuffer and raster validation. Rejected supported calls preserve prior state. Retained deletion, relink and resource versions follow the pinned specification fixtures.",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
-            "packages/core-wasm/tests/render.integration.ts"
+            "packages/core-wasm/tests/render.integration.ts",
+            "sdk/tests/conformance/state/gl-geterror.html",
+            "sdk/tests/conformance/state/gl-getstring.html",
+            "sdk/tests/conformance/state/gl-initial-state.html"
           ],
           "evidence": [
             {
@@ -154,7 +163,10 @@
             {
               "path": "artifacts/dual-core-drawing-full-chrome.log",
               "passed": true
-            }
+            },
+            "docs/tasks/030-state-cts.md",
+            "artifacts/cts/results.json",
+            "artifacts/cts/shared-buffer-results.json"
           ],
           "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
           "limits": [
@@ -334,7 +346,7 @@
       "api": "bufferData, bufferSubData, bindBuffer, getBufferParameter",
       "cores": {
         "js": {
-          "status": "differential-verified",
+          "status": "cts-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
@@ -343,7 +355,8 @@
             "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update",
             "tests/chrome/differential.spec.ts::WebGL1 differential upload-snapshot",
             "tests/chrome/differential.spec.ts::WebGL1 differential storage-replacement",
-            "tests/chrome/dual-core-drawing.spec.ts"
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "sdk/tests/conformance/buffers/buffer-data-and-buffer-sub-data.html"
           ],
           "evidence": [
             {
@@ -363,7 +376,10 @@
               "passed": true,
               "maxDifference": 0,
               "mismatchedChannels": 0
-            }
+            },
+            "docs/tasks/030-state-cts.md",
+            "artifacts/cts/results.json",
+            "artifacts/cts/shared-buffer-results.json"
           ],
           "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "overloads": [
@@ -373,12 +389,13 @@
           ]
         },
         "rust": {
-          "status": "differential-verified",
+          "status": "cts-verified",
           "coverage": "Draw-time owned Buffer snapshots preserve bytes across vertex/index updates, upload-view caller mutation, reallocation and deletion. Storage generation and content version remain independent.",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
-            "packages/core-wasm/tests/render.integration.ts"
+            "packages/core-wasm/tests/render.integration.ts",
+            "sdk/tests/conformance/buffers/buffer-data-and-buffer-sub-data.html"
           ],
           "evidence": [
             {
@@ -388,7 +405,10 @@
             {
               "path": "artifacts/dual-core-drawing-full-chrome.log",
               "passed": true
-            }
+            },
+            "docs/tasks/030-state-cts.md",
+            "artifacts/cts/results.json",
+            "artifacts/cts/shared-buffer-results.json"
           ],
           "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
           "limits": [
@@ -410,7 +430,7 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "FLOAT attributes with sizes 1-4, aligned offsets and strides, and constant attributes. Pixel differential currently exercises enabled vec2 FLOAT data.",
+          "coverage": "FLOAT attributes with sizes 1-4, aligned offsets/strides and constant attributes. Shared three-path fixtures verify enabled vec2 inputs and constant vec4 values, caller snapshots, layout and queries.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update",
@@ -434,7 +454,6 @@
           "limits": [
             "Maximum 8 attribute locations, matching the initial host buffer slots",
             "Non-FLOAT vertexAttribPointer raises NotSupportedError",
-            "Constant attributes are implemented with generated vertex data and remain separately unverified",
             "Matrix attributes support compilation/linking/reflection; drawing them raises NotSupportedError in the initial runtime profile."
           ],
           "overloadStates": {
@@ -639,11 +658,11 @@
       "api": "uniformMatrix2fv, uniformMatrix3fv, uniformMatrix4fv, uniform arrays",
       "cores": {
         "js": {
-          "status": "differential-verified",
+          "status": "cts-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "The fixed-revision 320x240 render-to-texture demo exercises mat4 uniforms and matches native output within its recorded tolerance. Compiler corpus also verifies reflected mat4 and vec4 array packing.",
+          "coverage": "mat2/mat3/mat4 and matrix-array packing follows reflected strides. Original uniform CTS and shared three-path pixels verify transpose/length/null/relink/non-current queries, array elements and partial updates.",
           "tests": [
             "tests/chrome/demo.spec.ts::pinned render-to-texture demo renders through both backends",
             "tools/compiler-test.mjs"
@@ -666,8 +685,7 @@
           ],
           "limits": [
             "Transpose=true reports INVALID_VALUE",
-            "Struct uniform layouts return link diagnostics",
-            "Runtime mat2/mat3 and uniform-array pixel cases remain pending"
+            "Struct uniform layouts return link diagnostics"
           ],
           "overloadStates": {
             "uniformMatrix4fv": "differential-verified",
@@ -1603,7 +1621,7 @@
           ],
           "unsupportedBehavior": "Invalid enums produce INVALID_ENUM. Unsupported base pairs, mismatched/short views produce INVALID_OPERATION, null/negative sizes INVALID_VALUE and incomplete targets INVALID_FRAMEBUFFER_OPERATION. Non-view/resizable/growable storage raises TypeError.",
           "limits": [
-            "Verified through headed Chrome 157 on macOS arm64 hardware adapter.",
+            "Verified through headed and headless Chrome 157 on macOS arm64 hardware adapter. Headless mode is the current verification default.",
             "RGBA/UNSIGNED_BYTE is also the implementation-selected pair. Other formats and context restoration retain separate compatibility tasks.",
             "Native extreme-coordinate/span error differences are recorded with exact inputs and specification expectations."
           ]
@@ -1629,7 +1647,7 @@
           ],
           "unsupportedBehavior": "Invalid enums produce INVALID_ENUM. Unsupported base pairs, mismatched/short views produce INVALID_OPERATION, null/negative sizes INVALID_VALUE and incomplete targets INVALID_FRAMEBUFFER_OPERATION. Non-view/resizable/growable storage raises TypeError.",
           "limits": [
-            "Verified through headed Chrome 157 on macOS arm64 hardware adapter.",
+            "Verified through headed and headless Chrome 157 on macOS arm64 hardware adapter. Headless mode is the current verification default.",
             "RGBA/UNSIGNED_BYTE is also the implementation-selected pair. Other formats and context restoration retain separate compatibility tasks.",
             "Native extreme-coordinate/span error differences are recorded with exact inputs and specification expectations."
           ]
@@ -1712,7 +1730,7 @@
       "api": "createBuffer, bindBuffer, bufferData, bufferSubData, getBufferParameter, Buffer binding getParameter, deleteBuffer, isBuffer, getError, context loss",
       "cores": {
         "js": {
-          "status": "differential-verified",
+          "status": "cts-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
@@ -1722,7 +1740,8 @@
             "tests/chrome/buffers.spec.ts::foreign buffers are rejected across JS and Rust cores",
             "tests/chrome/buffers.spec.ts::js shared logical Buffer contract",
             "tests/chrome/buffers.spec.ts::js Buffer context loss",
-            "tests/chrome/buffer-sources.spec.ts"
+            "tests/chrome/buffer-sources.spec.ts",
+            "sdk/tests/conformance/buffers/buffer-data-and-buffer-sub-data.html"
           ],
           "evidence": [
             {
@@ -1748,7 +1767,10 @@
               "checks": 20,
               "reference": "artifacts/buffers/loss-native.json",
               "nativeChecks": 18
-            }
+            },
+            "docs/tasks/030-state-cts.md",
+            "artifacts/cts/results.json",
+            "artifacts/cts/shared-buffer-results.json"
           ],
           "limits": [
             "Buffer-only common contract; draw snapshot parity is tracked by the rendering groups.",
@@ -1759,7 +1781,7 @@
           "unsupportedBehavior": "Invalid supported inputs produce GL errors; invalid JS overloads produce TypeError in the shared facade. Errors preserve existing valid state."
         },
         "rust": {
-          "status": "differential-verified",
+          "status": "cts-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
@@ -1769,7 +1791,8 @@
             "tests/chrome/buffers.spec.ts::foreign buffers are rejected across JS and Rust cores",
             "tests/chrome/buffers.spec.ts::rust shared logical Buffer contract",
             "tests/chrome/buffers.spec.ts::rust Buffer context loss",
-            "tests/chrome/buffer-sources.spec.ts"
+            "tests/chrome/buffer-sources.spec.ts",
+            "sdk/tests/conformance/buffers/buffer-data-and-buffer-sub-data.html"
           ],
           "evidence": [
             {
@@ -1795,7 +1818,10 @@
               "checks": 20,
               "reference": "artifacts/buffers/loss-native.json",
               "nativeChecks": 18
-            }
+            },
+            "docs/tasks/030-state-cts.md",
+            "artifacts/cts/results.json",
+            "artifacts/cts/shared-buffer-results.json"
           ],
           "limits": [
             "Buffer-only common contract; draw snapshot parity is tracked by the rendering groups.",
@@ -1963,13 +1989,13 @@
     }
   },
   "coreVerification": {
-    "report": "docs/validation/2026-11-16-public-readpixels.md",
+    "report": "docs/tasks/030-state-cts.md",
     "environment": "chrome-macos-arm64",
     "allChromeTests": {
-      "passed": 92,
+      "passed": 93,
       "failed": 0,
       "skipped": 0,
-      "evidence": "artifacts/readpixels/chrome-headless.log",
+      "evidence": "artifacts/dom-input/pr1/chrome.log",
       "headless": true
     },
     "deterministicChecks": {
@@ -1991,8 +2017,8 @@
       "bufferSuite": "passed",
       "sharedDrawingScenes": 16,
       "sharedRttScenes": 20,
-      "ctsFiles": 14,
-      "ctsAssertions": 430,
+      "ctsFiles": 18,
+      "ctsAssertions": 515,
       "remainingParity": "DOM upload acceptance, mipmaps/CubeMap/packed formats, additional targets/readback formats, extensions and restoration.",
       "publicReadPixelsCaseGroups": 8,
       "publicReadPixelsAssertions": 296
@@ -2002,8 +2028,8 @@
       "bufferSuite": "passed",
       "sharedDrawingScenes": 16,
       "sharedRttScenes": 20,
-      "ctsFiles": 14,
-      "ctsAssertions": 430,
+      "ctsFiles": 18,
+      "ctsAssertions": 515,
       "remainingParity": "DOM upload acceptance, mipmaps/CubeMap/packed formats, additional targets/readback formats, extensions and restoration.",
       "publicReadPixelsCaseGroups": 8,
       "publicReadPixelsAssertions": 296
@@ -2033,11 +2059,11 @@
     "mapping": "docs/spec-map.md"
   },
   "specVerification": {
-    "report": "docs/validation/2026-11-16-public-readpixels.md",
+    "report": "docs/tasks/030-state-cts.md",
     "ctsEvidence": "artifacts/cts/results.json",
     "programEvidence": "artifacts/program-spec/",
     "bufferSourceEvidence": "artifacts/buffers/sources.json",
-    "scope": "Fourteen unchanged original CTS files pass 430 assertions per backend. Eight shared public readPixels groups complement the earlier drawing/RTT scenes.",
+    "scope": "Eighteen unchanged original CTS files pass 515 assertions per backend on ordinary pages. The original Buffer file additionally executes 74 assertions in isolation, including fixed shared storage. Upstream getError branch counts are recorded independently.",
     "rust": "Rust executes all supported semantics in one selected Wasm instance; shared resource/compiler/host behavior follows the common contracts."
   },
   "sharedDrawingVerification": {

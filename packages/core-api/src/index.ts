@@ -3,6 +3,7 @@ export type * from './compiler.js';
 export * from './execution.js';
 export type * from './drawing.js';
 export type * from './readback.js';
+export type * from './dom-upload.js';
 export * from './resources.js';
 
 export type CoreKind = 'js' | 'rust';

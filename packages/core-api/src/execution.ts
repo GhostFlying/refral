@@ -24,7 +24,7 @@ export interface RuntimeProfile {
   combinedTextureUnits: number;
 }
 export interface TextureStorage {
-  readonly reference?: TextureVersion;
+  reference?: TextureVersion;
   width: number;
   height: number;
   generation: number;
@@ -116,6 +116,10 @@ export function componentCount(type: number): number {
 export interface TextureBinding {
   storage: TextureStorage | null;
   parameters: TextureParameters;
+  /** Missing dimension retains the legacy 2D binding. Cube faces use +X,-X,+Y,-Y,+Z,-Z. */
+  dimension?: '2d' | 'cube';
+  /** A complete cube contains six canonical image records. Missing faces denote incomplete sampling. */
+  cubeFaces?: readonly TextureStorage[];
 }
 
 export interface DrawOperation {

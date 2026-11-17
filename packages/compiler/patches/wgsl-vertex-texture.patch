@@ -1,0 +1,37 @@
+--- a/src/compiler/translator/wgsl/TranslatorWGSL.cpp
++++ b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
+@@ -154 +154,2 @@
+-                        WGSLProgramPrelude *prelude);
++                        WGSLProgramPrelude *prelude,
++                        GLenum shaderType);
+@@ -230,0 +232 @@
++    const GLenum mShaderType;
+@@ -244 +246,2 @@
+-    WGSLProgramPrelude *prelude)
++    WGSLProgramPrelude *prelude,
++    GLenum shaderType)
+@@ -251 +254,2 @@
+-      mPrelude(prelude)
++      mPrelude(prelude),
++      mShaderType(shaderType)
+@@ -1660,0 +1665 @@
++    bool implicitLevelZero = false;
+@@ -1673,2 +1677,0 @@
+-        // TODO(anglebug.com/389145696): these are incorrect translations in vertex shaders, where
+-        // they should probably use textureLoad() (and textureDimensions()).
+@@ -1691,2 +1694,5 @@
+-            if (biasIndex == 0)
+-            {
++            if (biasIndex == 0 && mShaderType == GL_VERTEX_SHADER) {
++                // Vertex-stage implicit sampling uses the base level without derivatives.
++                wgslFunctionName = ImmutableString("textureSampleLevel");
++                implicitLevelZero = true;
++            } else if (biasIndex == 0) {
+@@ -1987,0 +1994,4 @@
++    if (implicitLevelZero) {
++        mSink << ", 0.0f";
++    }
++
+@@ -2940 +2950 @@
+-                                  &overloadedFunctions, &prelude);
++                                  &overloadedFunctions, &prelude, getShaderType());

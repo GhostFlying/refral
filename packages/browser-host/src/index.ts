@@ -417,6 +417,9 @@ export class BrowserHost implements SemanticHost {
 
   draw(operation: DrawOperation): void {
     const { program, state } = operation;
+    if (program.samplers.some(sampler => sampler.type === GL.SAMPLER_CUBE)) {
+      throw new DOMException('CubeMap execution is outside the current runtime profile.', 'NotSupportedError');
+    }
     const target = this.resolveTarget(operation.target);
     const resources = this.programResources(program);
     const layouts: GPUVertexBufferLayout[] = operation.attributes.map(attribute => {

@@ -58,14 +58,16 @@ function run(command, args) {
   const result = spawnSync(command, args, { cwd: root, env, stdio: "inherit" });
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
-const wgslPatch = resolve(root, 'packages/compiler/patches/wgsl-integer-minimum.patch');
-const patchArguments = ['--unidiff-zero', '--directory=artifacts/compiler/angle', wgslPatch];
-const unapplied = spawnSync('git', ['apply', '--check', ...patchArguments], { cwd: root, env });
-if (unapplied.status === 0) {
-  run('git', ['apply', ...patchArguments]);
-} else {
-  const applied = spawnSync('git', ['apply', '--reverse', '--check', ...patchArguments], { cwd: root, env });
-  if (applied.status !== 0) throw new Error('ANGLE WGSL integer-minimum patch differs from the pinned source.');
+for (const name of ['wgsl-integer-minimum.patch', 'wgsl-vertex-texture.patch']) {
+  const patch = resolve(root, 'packages/compiler/patches', name);
+  const patchArguments = ['--unidiff-zero', '--directory=artifacts/compiler/angle', patch];
+  const unapplied = spawnSync('git', ['apply', '--check', ...patchArguments], { cwd: root, env });
+  if (unapplied.status === 0) {
+    run('git', ['apply', ...patchArguments]);
+  } else {
+    const applied = spawnSync('git', ['apply', '--reverse', '--check', ...patchArguments], { cwd: root, env });
+    if (applied.status !== 0) throw new Error(`ANGLE patch ${name} differs from the pinned source.`);
+  }
 }
 run("cmake", ["-S", resolve(root, "packages/compiler/native"), "-B", build, "-G", "Ninja",
   `-DCMAKE_TOOLCHAIN_FILE=${resolve(sdk, "upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake")}`,

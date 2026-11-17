@@ -41,3 +41,5 @@ ADR 008 accepts [synchronous DOM extraction](adr/008-dom-image-extraction.md), i
 ADR 009 records [texture image subresources and CubeMap sampling](adr/009-texture-image-subresources.md). Task034 tracks the compiler/contract, dual-core runtime and original DOM CTS PRs.
 
 The [CubeMap and original DOM CTS report](validation/2026-11-18-cubemap.md) records task034 acceptance, the21-file original set, resource capability3 and built CubeMap verification.
+
+ADR 010 records the [official conformance runner adapter](adr/010-official-conformance-adapter.md), full pinned source acquisition, per-file core initialization and resumable baseline execution. [Task 038](tasks/038-official-conformance-baseline.md) tracks the 971-entry, three-backend baseline and its failure dependencies.

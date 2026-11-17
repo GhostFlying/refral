@@ -45,7 +45,7 @@
     "unimplemented": "No supported implementation in the public initial profile",
     "implemented-unverified": "Implementation exists with incomplete, pending, or failing direct verification",
     "differential-verified": "Listed behavior passed its recorded native WebGL pixel/state differential fixtures",
-    "cts-verified": "Listed behavior also passed the identified original upstream CTS assertions"
+    "cts-verified": "The listed behavior passed its identified original upstream assertions within the recorded cases and environment"
   },
   "entries": [
     {
@@ -761,7 +761,7 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records DOM acceptance. Mipmaps, CubeMap, packed types and additional formats follow their compatibility tasks."
+            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources and cubemap-level-zero entries record those accepted profiles. Nonzero mip levels, mipmap generation, packed types and additional formats follow their compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -806,7 +806,7 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records DOM acceptance. Mipmaps, CubeMap, packed types and additional formats follow their compatibility tasks."
+            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources and cubemap-level-zero entries record those accepted profiles. Nonzero mip levels, mipmap generation, packed types and additional formats follow their compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -1046,7 +1046,7 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records DOM acceptance. Mipmaps, CubeMap, packed types and additional formats follow their compatibility tasks."
+            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources and cubemap-level-zero entries record those accepted profiles. Nonzero mip levels, mipmap generation, packed types and additional formats follow their compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -1076,7 +1076,7 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records DOM acceptance. Mipmaps, CubeMap, packed types and additional formats follow their compatibility tasks."
+            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources and cubemap-level-zero entries record those accepted profiles. Nonzero mip levels, mipmap generation, packed types and additional formats follow their compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -1173,7 +1173,7 @@
             }
           ],
           "limits": [
-            "TypedArray/null and the declared DOM-source profiles are recorded by texture2d-typed-upload and texture-dom-sources. Nonzero levels, mipmaps, CubeMap runtime and packed types follow their scoped tasks."
+            "Texture2D typed, DOM-source and level-zero CubeMap profiles are recorded by texture2d-typed-upload, texture-dom-sources and cubemap-level-zero. Nonzero levels, mipmaps and packed types follow their scoped tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -1198,7 +1198,7 @@
             }
           ],
           "limits": [
-            "TypedArray/null and the declared DOM-source profiles are recorded by texture2d-typed-upload and texture-dom-sources. Nonzero levels, mipmaps, CubeMap runtime and packed types follow their scoped tasks."
+            "Texture2D typed, DOM-source and level-zero CubeMap profiles are recorded by texture2d-typed-upload, texture-dom-sources and cubemap-level-zero. Nonzero levels, mipmaps and packed types follow their scoped tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -2251,6 +2251,58 @@
       "facade": "packages/webgl",
       "scope": "Shared Buffer, ESSL100 shader/program, FLOAT vertex inputs, typed uniforms/matrices, level-zero five-format Texture2D/CubeMap, RGBA/depth FBO and raster profile. Public synchronous RGBA/UNSIGNED_BYTE readPixels through Canvas2D."
     }
+  },
+  "officialConformance": {
+    "testVersion": "1.0.4",
+    "sourceRevision": "39443210f7f81db4773eb104facadfb85d05dfa4",
+    "runtimeBase": "5b3d8cd1ec54f1059694144805901de26759fafc",
+    "environment": "chrome-macos-arm64",
+    "headless": true,
+    "runner": "sdk/tests/webgl-conformance-tests.html",
+    "allSlowTests": true,
+    "inventoryFilesPerBackend": 971,
+    "recordedExecutions": 2913,
+    "matchedPassFiles": 565,
+    "focusedRegression": {
+      "files": 21,
+      "passedAssertionsPerBackend": 2433
+    },
+    "backends": {
+      "native": {
+        "pass": 968,
+        "fail": 3,
+        "unsupported": 0,
+        "timeout": 0,
+        "harness-error": 0,
+        "skip": 0,
+        "capabilityTerminated": 0,
+        "adapterGapFiles": 0
+      },
+      "js": {
+        "pass": 566,
+        "fail": 90,
+        "unsupported": 207,
+        "timeout": 82,
+        "harness-error": 26,
+        "skip": 0,
+        "capabilityTerminated": 138,
+        "adapterGapFiles": 23
+      },
+      "rust": {
+        "pass": 571,
+        "fail": 68,
+        "unsupported": 227,
+        "timeout": 79,
+        "harness-error": 26,
+        "skip": 0,
+        "capabilityTerminated": 155,
+        "adapterGapFiles": 23
+      }
+    },
+    "evidence": "artifacts/conformance/baseline/summary.json",
+    "dependencies": "artifacts/conformance/baseline/failure-clusters.json",
+    "report": "docs/validation/2026-11-18-official-conformance.md",
+    "scope": "Exploratory outcomes for the full original file inventory. Capability termination, timeouts and adapter gaps remain visible."
   },
   "coreVerification": {
     "report": "docs/validation/2026-11-18-cubemap.md",

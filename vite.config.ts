@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { conformanceAssets } from './tools/conformance-assets.js';
 import { fileURLToPath } from 'node:url';
 import { cp, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -6,7 +7,7 @@ import { dirname } from 'node:path';
 const path = (relative: string) => fileURLToPath(new URL(relative, import.meta.url));
 
 export default defineConfig({
-  plugins: [{
+  plugins: [conformanceAssets(), {
     name: 'refral-deployment-assets',
     async closeBundle() {
       for (const relative of ['artifacts/compiler/compiler.mjs', 'artifacts/compiler/compiler.wasm', 'artifacts/fixtures/render-to-texture.mjs', 'artifacts/core-selection/core.wasm', 'artifacts/core-wasm/refral_core.wasm']) {

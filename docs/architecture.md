@@ -62,3 +62,7 @@ ANGLE compiler and required support components are pinned and compiled to Wasm. 
 ## Test boundaries
 
 Browser tests use actual installed Chrome and real WebGPU operations. Both cores use shared behavior fixtures and native references as they implement the contract. Internal asynchronous readback supports image comparison. CTS bootstrap prepares the context and records all test-adapter modifications. Support and results identify the tested core and capability gaps.
+
+## Official conformance execution
+
+The official runner adapter self-hosts the complete pinned `sdk/tests` subtree and executes the original WebGL1 version 1.0.4 inventory through native, JS and Rust. Document-start context hooks preserve synchronous acquisition after per-file asynchronous factory initialization. The original runner owns list parsing, assertions and scheduling. [ADR 010](adr/010-official-conformance-adapter.md) records source provenance, outcomes, recovery and adapter scope.

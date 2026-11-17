@@ -1,4 +1,4 @@
-import { GL, componentCount } from "@refral/core-api";
+import { GL, componentCount, vertexComponentBytes } from "@refral/core-api";
 import { CanvasReadback } from './canvas-readback.js';
 import type {
   AttributeSnapshot, RasterState, TargetSnapshot, TextureParameters, TextureStorage,
@@ -398,7 +398,8 @@ export class BrowserHost implements SemanticHost {
 
   private vertexBuffer(attribute: AttributeSnapshot, vertices: number): GPUBuffer {
     const components = componentCount(attribute.shaderType);
-    const key = `${attribute.size}:${attribute.stride}:${attribute.offset}:${components}:${vertices}`;
+    const { type, normalized, size, offset } = attribute;
+    const key = `${type}:${normalized}:${size}:${attribute.stride}:${offset}:${components}:${vertices}`;
     if (attribute.data) {
       const cached = this.vertexCache.get(attribute.data)?.get(key);
       if (cached) return cached;
@@ -406,12 +407,31 @@ export class BrowserHost implements SemanticHost {
     const values = new Float32Array(Math.max(1, vertices) * components);
     const view = attribute.data ? new DataView(attribute.data.buffer, attribute.data.byteOffset,
       attribute.data.byteLength) : null;
-    const stride = attribute.stride || attribute.size * 4;
+    const componentBytes = vertexComponentBytes(type);
+    const stride = attribute.stride || size * componentBytes;
+    const read = (position: number): number => {
+      switch (type) {
+        case GL.BYTE: {
+          const value = view!.getInt8(position);
+          return normalized ? Math.max(value / 127, -1) : value;
+        }
+        case GL.UNSIGNED_BYTE:
+          return view!.getUint8(position) / (normalized ? 255 : 1);
+        case GL.SHORT: {
+          const value = view!.getInt16(position, true);
+          return normalized ? Math.max(value / 32767, -1) : value;
+        }
+        case GL.UNSIGNED_SHORT:
+          return view!.getUint16(position, true) / (normalized ? 65535 : 1);
+        default:
+          return view!.getFloat32(position, true);
+      }
+    };
     for (let vertex = 0; vertex < Math.max(1, vertices); vertex++) {
       for (let component = 0; component < components; component++) {
         values[vertex * components + component] = view
-          ? (component < attribute.size
-            ? view.getFloat32(attribute.offset + vertex * stride + component * 4, true)
+          ? (component < size
+            ? read(offset + vertex * stride + component * componentBytes)
             : component === 3 ? 1 : 0)
           : attribute.constant[component] ?? (component === 3 ? 1 : 0);
       }
@@ -460,7 +480,13 @@ export class BrowserHost implements SemanticHost {
   }
 
   draw(operation: DrawOperation): void {
-    const { program, state } = operation;
+    const { program, state, indices } = operation;
+    const strip = operation.mode === GL.TRIANGLE_STRIP;
+    const topology = strip ? 'triangle-strip' : 'triangle-list';
+    // WebGL1 index 65535 remains a vertex index. WebGPU uint16 strips reserve it for restart.
+    const wideIndices = strip && indices?.type === GL.UNSIGNED_SHORT && operation.vertexCount === 65536;
+    const indexFormat = wideIndices ? 'uint32' : 'uint16';
+    const stripIndexFormat = strip && indices ? indexFormat : undefined;
     const target = this.resolveTarget(operation.target);
     const resources = this.programResources(program);
     const layouts: GPUVertexBufferLayout[] = operation.attributes.map(attribute => {
@@ -469,7 +495,7 @@ export class BrowserHost implements SemanticHost {
       return { arrayStride: components * 4,
         attributes: [{ shaderLocation: attribute.location, offset: 0, format }] };
     });
-    const key = JSON.stringify([layouts, !!target.depth, target.opaque, state.depthTest, state.depthMask,
+    const key = JSON.stringify([topology, stripIndexFormat, layouts, !!target.depth, target.opaque, state.depthTest, state.depthMask,
       state.depthFunc, state.colorMask, state.blend, state.blendSrcRGB, state.blendDstRGB,
       state.blendSrcAlpha, state.blendDstAlpha, state.blendEquationRGB, state.blendEquationAlpha,
       state.cull, state.cullFace, state.frontFace]);
@@ -486,7 +512,7 @@ export class BrowserHost implements SemanticHost {
         fragment: { module: resources.fragment, entryPoint: program.fragmentEntryPoint,
           targets: [{ format: "rgba8unorm",
             writeMask: colorWriteMask(state.colorMask) & (target.opaque ? 7 : 15), blend }] },
-        primitive: { topology: "triangle-list",
+        primitive: { topology, stripIndexFormat,
           frontFace: state.frontFace === GL.CCW ? "cw" : "ccw",
           cullMode: !state.cull ? "none" : state.cullFace === GL.FRONT ? "front" : "back" },
         depthStencil: target.depth ? { format: "depth24plus",
@@ -536,22 +562,28 @@ export class BrowserHost implements SemanticHost {
       this.stats.bindGroups++;
     }
     let indexBuffer: GPUBuffer | null = null;
-    if (operation.indices) {
-      const cachedIndices = this.indexCache.get(operation.indices.data);
-      indexBuffer = cachedIndices?.get(operation.indices.type) ?? null;
+    if (indices && wideIndices) {
+      const view = new DataView(indices.data.buffer, indices.data.byteOffset, indices.data.byteLength);
+      const widened = new Uint32Array(operation.count);
+      for (let index = 0; index < widened.length; index++) {
+        widened[index] = view.getUint16(indices.offset + index * 2, true);
+      }
+      indexBuffer = this.createBuffer(new Uint8Array(widened.buffer), GPUBufferUsage.INDEX, true);
+    } else if (indices) {
+      const cachedIndices = this.indexCache.get(indices.data);
+      indexBuffer = cachedIndices?.get(indices.type) ?? null;
       if (!indexBuffer) {
-        const values = operation.indices.type === GL.UNSIGNED_BYTE
-          ? new Uint16Array(operation.indices.data)
-          : new Uint16Array(operation.indices.data.buffer, operation.indices.data.byteOffset,
-            operation.indices.data.byteLength / 2);
+        const values = indices.type === GL.UNSIGNED_BYTE
+          ? new Uint16Array(indices.data)
+          : new Uint16Array(indices.data.buffer, indices.data.byteOffset, indices.data.byteLength / 2);
         indexBuffer = this.createBuffer(new Uint8Array(values.buffer, values.byteOffset, values.byteLength),
           GPUBufferUsage.INDEX);
         let cache = cachedIndices;
         if (!cache) {
           cache = new Map();
-          this.indexCache.set(operation.indices.data, cache);
+          this.indexCache.set(indices.data, cache);
         }
-        cache.set(operation.indices.type, indexBuffer);
+        cache.set(indices.type, indexBuffer);
       }
     }
     const pass = this.beginPass(target);
@@ -573,10 +605,10 @@ export class BrowserHost implements SemanticHost {
     pass.setBindGroup(1, textureGroup);
     pass.setBindGroup(2, driverGroup);
     vertexBuffers.forEach((buffer, index) => pass.setVertexBuffer(index, buffer));
-    if (indexBuffer && operation.indices) {
-      pass.setIndexBuffer(indexBuffer, "uint16");
-      const size = operation.indices.type === GL.UNSIGNED_BYTE ? 1 : 2;
-      pass.drawIndexed(operation.count, 1, operation.indices.offset / size);
+    if (indexBuffer && indices) {
+      pass.setIndexBuffer(indexBuffer, indexFormat);
+      const size = vertexComponentBytes(indices.type);
+      pass.drawIndexed(operation.count, 1, wideIndices ? 0 : indices.offset / size);
     } else pass.draw(operation.count, 1, operation.first);
     this.stats.draws++;
     this.stats.bindGroups += 2;

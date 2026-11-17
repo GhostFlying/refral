@@ -37,13 +37,13 @@ Use a single owner thread. Schedule automatic submission at the current task's m
 
 The selected core validates readPixels and returns an immutable plan containing the current target, clipped rectangle and destination layout. The facade converts WebIDL values and checks destination storage before calling the core. BrowserHost ends pending passes and synchronously captures only the intersecting region through a private WebGPU canvas and an opaque sRGB Canvas2D transfer. The facade copies completed RGBA8 rows into the caller view before returning, preserving padding and out-of-framebuffer bytes.
 
-The ordinary Chrome path uses the existing caller thread and public factory. Empty rectangles skip GPU capture. Device loss and disposal are observed by the core before planning. The Rust adapter requires readback capability v1 alongside ABI3/resource-protocol3. ADR 007 records the accepted backend and verified scope.
+The ordinary Chrome path uses the existing caller thread and public factory. Empty rectangles skip GPU capture. Device loss and disposal are observed by the core before planning. The Rust adapter requires readback capability v1 alongside ABI4/resource-protocol3. ADR 007 records the accepted backend and verified scope.
 
 ## Resource model
 
 The common Buffer interface uses context-owned generational handles. The facade associates opaque JS wrappers with those handles and normalizes WebIDL inputs. Both cores own Buffer validation, storage, and errors. See `core-api.md` for synchronous data ownership, validation order, and lifecycle rules.
 
-The facade maps typed logical handles to context-owned wrappers for buffers, shaders, programs, textures, renderbuffers and framebuffers. The JS adapter maps these handles to its semantic objects. Rust executes its own state, validation and planning through ABI v3. Both paths emit the same execution records to BrowserHost through core-api.
+The facade maps typed logical handles to context-owned wrappers for buffers, shaders, programs, textures, renderbuffers and framebuffers. The JS adapter maps these handles to its semantic objects. Rust executes its own state, validation and planning through ABI v4. Both paths emit the same execution records to BrowserHost through core-api.
 
 Each context owns an ExecutionResources registry. Cores produce ordered texture definitions, subimage updates, GPU-write version advances and retirement operations. The registry resolves typed texture versions to canonical executor storage and maps depth handles plus storage generation to executor identities. Draw records reuse these references. FBO contents stay in GPU resources through the write-to-sample transition. The registry owns resource translation and retains no GL binding state.
 
@@ -53,7 +53,7 @@ Storage generation changes when storage or views are replaced. Content version c
 
 TypedArray/null texture input is consumed before the upload call returns. The selected core expands the supported UNSIGNED_BYTE formats with unpack state, retaining independent owned RGBA payloads. Framebuffer attachment relationships retain deleted logical resources until the last reference is released. BrowserHost retires replaced concrete resources after submitted work completes.
 
-The private Rust resource protocol requires ABI v3 and resource-envelope capability v3 for image-subresource versions and cube sampling snapshots. Bounded metadata and binary ranges carry typed results, full raster/target snapshots and ordered operations. The adapter copies Rust-owned output pixels before reusing the output arena. ADR 006 records the resource and transport boundary.
+The private Rust resource protocol requires ABI v4 and resource-envelope capability v3 for image-subresource versions and cube sampling snapshots. Bounded metadata and binary ranges carry typed results, full raster/target snapshots and ordered operations. The adapter copies Rust-owned output pixels before reusing the output arena. ADR 006 records the resource and transport boundary.
 
 ## Compiler integration
 

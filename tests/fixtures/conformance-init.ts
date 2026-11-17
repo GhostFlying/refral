@@ -137,16 +137,21 @@ export function installConformanceBridge(options: { backend: ConformanceBackend 
     const existing = childContexts.get(raw);
     if (existing) return existing;
     const methods = new Map<PropertyKey, { original: unknown; wrapped: (...args: unknown[]) => unknown }>();
-    const context = new Proxy(raw, { get(target, property) {
-      const original = Reflect.get(target, property, target);
-      if (typeof property !== 'string' || !realmGetters.has(property) || typeof original !== 'function') return original;
-      let method = methods.get(property);
-      if (!method || method.original !== original) {
-        method = { original, wrapped: (...args) => childResult(Reflect.apply(original, target, args)) };
-        methods.set(property, method);
-      }
-      return method.wrapped;
-    } });
+    const context = new Proxy(raw, {
+      // Provide the child realm's instanceof identity while reads, writes and has checks use the facade.
+      getPrototypeOf: target => Reflect.isExtensible(target)
+        ? WebGLRenderingContext.prototype : Reflect.getPrototypeOf(target),
+      get(target, property) {
+        const original = Reflect.get(target, property, target);
+        if (typeof property !== 'string' || !realmGetters.has(property) || typeof original !== 'function') return original;
+        let method = methods.get(property);
+        if (!method || method.original !== original) {
+          method = { original, wrapped: (...args) => childResult(Reflect.apply(original, target, args)) };
+          methods.set(property, method);
+        }
+        return method.wrapped;
+      },
+    });
     childContexts.set(raw, context);
     return context;
   }
@@ -176,7 +181,6 @@ export function installConformanceBridge(options: { backend: ConformanceBackend 
         const context = requiredBridge().acquire(this, kind, attributes, location.href);
         if (context) {
           selectedCanvases.add(this);
-          Object.setPrototypeOf(context, WebGLRenderingContext.prototype);
           return childContext(context);
         }
         return context;

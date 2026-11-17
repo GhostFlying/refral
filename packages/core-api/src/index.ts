@@ -1,4 +1,4 @@
-export { GL } from './gl.js';
+export { GL, vertexComponentBytes } from './gl.js';
 export type * from './compiler.js';
 export * from './execution.js';
 export type * from './drawing.js';

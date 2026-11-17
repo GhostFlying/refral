@@ -10,13 +10,13 @@ The output of Cargo package `refral-wasm` is `target/wasm32-unknown-unknown/rele
 
 Run `pnpm --filter @refral/core-wasm test:wasm` after building to execute the adapter against the actual binary. These CPU tests use a fetch stub serving the compiled bytes; they instantiate real Wasm exports. They run separately from the fast unit suite and require a built artifact. The shared browser Buffer suite also exercises this adapter in Chrome.
 
-## Private ABI version 3
+## Private ABI version 4
 
-The module exports `memory` and the following functions, with no host imports. Integer arguments/results are Wasm i32 values interpreted as unsigned by Rust; sizes, offsets, host budget, query results, and semantic versions crossing as floating values are f64. The adapter verifies every required function and `rf_abi_version() === 3`.
+The module exports `memory` and the following functions, with no host imports. Integer arguments/results are Wasm i32 values interpreted as unsigned by Rust; sizes, offsets, host budget, query results, and semantic versions crossing as floating values are f64. The adapter verifies every required function and `rf_abi_version() === 4`.
 
 | Export | Arguments and result |
 | --- | --- |
-| `rf_abi_version` | No arguments; returns `3`. |
+| `rf_abi_version` | No arguments; returns `4`. |
 | `rf_init` | `(context_id: u32, max_buffer_bytes: f64) -> u32`; one for successful initialization, zero for invalid options. Context ID must be positive; budget is a nonnegative safe integer. |
 | `rf_create_buffer` | Returns the new slot, or zero. |
 | `rf_result_generation` | Returns the generation associated with the latest successful create/binding-query result, or zero. |
@@ -53,9 +53,9 @@ The full host budget is retained even when it exceeds the Wasm32 address range. 
 
 Shader/program requests and commits include a request identifier and typed generational object handle. Core validation rejects a commit after the relevant source, link, object lifetime or context has changed. The common compiler registry keeps artifacts under numeric IDs. Reply metadata drains retired artifact IDs to the registry.
 
-Draw replies start with the RFD3 magic and version 3. They contain executable and program identities, link generation, target size, complete raster state, draw counts, attributes, constants, optional indices, and uniform bytes. Each copied Buffer section records its handle, storage generation and content version. The decoder bounds-checks every section and rejects trailing bytes. It resolves the shared executable and emits the common DrawOperation to BrowserHost.
+Draw replies start with the RFD4 magic and version 4. They contain executable and program identities, link generation, target size, complete raster state, primitive mode, draw counts, typed and normalized attributes, constants, optional indices, and uniform bytes. Each copied Buffer section records its handle, storage generation and content version. The decoder bounds-checks every section and rejects trailing bytes. It resolves the shared executable and emits the common DrawOperation to BrowserHost.
 
-Automatic microtask submission and explicit flush use the same host. The testing capture target is the current default framebuffer. ABI v3 covers matrix/integer/bool updates and the declared depth/cull/blend/scissor/mask raster state. Texture/FBO execution is the next task 020 slice. The selected original CTS can still inspect matrix attribute reflection and call unsupported uniform setters with null locations.
+Automatic microtask submission and explicit flush use the same host. The testing capture target is the current default framebuffer. ABI v4 covers triangle lists and strips with typed vertex input alongside the existing uniforms, raster and resource state. The selected original CTS can still inspect matrix attribute reflection and call unsupported uniform setters with null locations.
 
 ## Readback capability v1
 

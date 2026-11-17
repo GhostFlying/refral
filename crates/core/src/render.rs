@@ -25,6 +25,16 @@ pub const FLOAT_VEC2: u32 = 0x8b50;
 pub const FLOAT_VEC3: u32 = 0x8b51;
 pub const FLOAT_VEC4: u32 = 0x8b52;
 pub const TRIANGLES: u32 = 4;
+pub const TRIANGLE_STRIP: u32 = 5;
+
+fn vertex_component_bytes(ty: u32) -> Option<usize> {
+    match ty {
+        0x1400 | 0x1401 => Some(1),
+        0x1402 | 0x1403 => Some(2),
+        FLOAT => Some(4),
+        _ => None,
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
@@ -164,6 +174,8 @@ pub struct AttributeDraw {
     pub location: u32,
     pub shader_type: u32,
     pub size: u32,
+    pub ty: u32,
+    pub normalized: bool,
     pub stride: u32,
     pub offset: usize,
     pub data: Option<BufferSnapshot>,
@@ -171,6 +183,7 @@ pub struct AttributeDraw {
 }
 pub struct DrawSnapshot {
     pub artifact_id: u32,
+    pub mode: u32,
     pub program: ObjectHandle,
     pub link_generation: u64,
     pub state: RasterState,
@@ -254,6 +267,7 @@ pub(crate) struct VertexAttribute {
     pub(crate) buffer: Option<BufferHandle>,
     enabled: bool,
     size: u32,
+    ty: u32,
     normalized: bool,
     stride: u32,
     offset: usize,
@@ -265,6 +279,7 @@ impl Default for VertexAttribute {
             buffer: None,
             enabled: false,
             size: 4,
+            ty: FLOAT,
             normalized: false,
             stride: 0,
             offset: 0,
@@ -1398,15 +1413,12 @@ impl ContextCore {
             self.record_error(INVALID_VALUE);
             return Reply::Null;
         }
-        if !matches!(ty, FLOAT | 0x1400 | 0x1401 | 0x1402 | 0x1403) {
+        let Some(component_bytes) = vertex_component_bytes(ty) else {
             self.record_error(INVALID_ENUM);
             return Reply::Null;
-        }
-        if ty != FLOAT {
-            return Reply::Unsupported("non-FLOAT vertex attributes");
-        }
-        if stride % 4.0 != 0.0
-            || offset % 4.0 != 0.0
+        };
+        if stride % component_bytes as f64 != 0.0
+            || offset % component_bytes as f64 != 0.0
             || self.array_binding.is_none() && offset != 0.0
         {
             self.record_error(INVALID_OPERATION);
@@ -1415,6 +1427,7 @@ impl ContextCore {
         let attribute = &mut self.render.attributes[index];
         attribute.buffer = self.array_binding;
         attribute.size = size as u32;
+        attribute.ty = ty;
         attribute.normalized = args.get(3).is_some_and(Argument::boolean);
         attribute.stride = stride as u32;
         attribute.offset = offset as usize;
@@ -1475,7 +1488,7 @@ impl ContextCore {
         match parameter {
             0x8622 => Reply::Boolean(attribute.enabled),
             0x8623 => Reply::Number(attribute.size as f64),
-            0x8625 => Reply::Number(FLOAT as f64),
+            0x8625 => Reply::Number(attribute.ty as f64),
             0x886a => Reply::Boolean(attribute.normalized),
             0x8624 => Reply::Number(attribute.stride as f64),
             0x889f => attribute
@@ -1495,15 +1508,38 @@ impl ContextCore {
             self.record_error(INVALID_ENUM);
             return Reply::Null;
         }
-        if mode != TRIANGLES {
-            return Reply::Unsupported("non-triangle drawing");
-        }
         let indexed = operation == "drawElements";
         let first = if indexed { 0.0 } else { number(1) };
         let count = number(if indexed { 1 } else { 2 });
         if first < 0.0 || count < 0.0 {
             self.record_error(INVALID_VALUE);
             return Reply::Null;
+        }
+        let index_format = if indexed {
+            let ty = number(2) as u32;
+            let bytes = match ty {
+                0x1401 => 1,
+                0x1403 => 2,
+                _ => {
+                    self.record_error(INVALID_ENUM);
+                    return Reply::Null;
+                }
+            };
+            let offset = number(3);
+            if offset < 0.0 {
+                self.record_error(INVALID_VALUE);
+                return Reply::Null;
+            }
+            if offset % bytes as f64 != 0.0 || self.element_binding.is_none() {
+                self.record_error(INVALID_OPERATION);
+                return Reply::Null;
+            }
+            Some((ty, bytes, offset as usize))
+        } else {
+            None
+        };
+        if !matches!(mode, TRIANGLES | TRIANGLE_STRIP) {
+            return Reply::Unsupported("drawing mode other than TRIANGLES or TRIANGLE_STRIP");
         }
         let Some(program_index) = self.program_index(self.render.current) else {
             return Reply::Null;
@@ -1517,28 +1553,23 @@ impl ContextCore {
             self.record_error(INVALID_OPERATION);
             return Reply::Null;
         }
+        if self.render.attributes[..self.render.attribute_limit]
+            .iter()
+            .any(|attribute| attribute.enabled && attribute.buffer.is_none())
+        {
+            self.record_error(INVALID_OPERATION);
+            return Reply::Null;
+        }
         let Some(target) = self.target_snapshot(true) else {
             return Reply::Null;
         };
         let mut indices = None;
         let mut vertex_count = first as usize + count as usize;
-        if indexed {
-            let ty = number(2) as u32;
-            let offset = number(3);
-            if !matches!(ty, 0x1401 | 0x1403) {
-                self.record_error(INVALID_ENUM);
-                return Reply::Null;
-            }
-            let bytes = if ty == 0x1401 { 1 } else { 2 };
-            if offset < 0.0 || offset % bytes as f64 != 0.0 {
-                self.record_error(INVALID_OPERATION);
-                return Reply::Null;
-            }
+        if let Some((ty, bytes, offset)) = index_format {
             let Some(index) = self.bound_index(ELEMENT_ARRAY_BUFFER) else {
                 return Reply::Null;
             };
             let buffer = self.slots[index].buffer.as_ref().unwrap();
-            let offset = offset as usize;
             let Some(end) = (count as usize)
                 .checked_mul(bytes)
                 .and_then(|length| offset.checked_add(length))
@@ -1622,11 +1653,13 @@ impl ContextCore {
                     return Reply::Null;
                 };
                 let buffer = self.slots[index].buffer.as_ref().unwrap();
+                let element_bytes =
+                    attribute.size as usize * vertex_component_bytes(attribute.ty).unwrap();
                 let stride = if attribute.stride == 0 {
-                    attribute.size * 4
+                    element_bytes
                 } else {
-                    attribute.stride
-                } as usize;
+                    attribute.stride as usize
+                };
                 let required = if count == 0.0 {
                     Some(0)
                 } else {
@@ -1634,7 +1667,7 @@ impl ContextCore {
                         .saturating_sub(1)
                         .checked_mul(stride)
                         .and_then(|value| value.checked_add(attribute.offset))
-                        .and_then(|value| value.checked_add(attribute.size as usize * 4))
+                        .and_then(|value| value.checked_add(element_bytes))
                 };
                 if required.is_none_or(|required| required > buffer.data.len()) {
                     self.record_error(INVALID_OPERATION);
@@ -1652,6 +1685,8 @@ impl ContextCore {
                 location: active.location,
                 shader_type: active.active.ty,
                 size: attribute.size,
+                ty: attribute.ty,
+                normalized: attribute.normalized,
                 stride: attribute.stride,
                 offset: attribute.offset,
                 data,
@@ -1675,6 +1710,7 @@ impl ContextCore {
         };
         let snapshot = DrawSnapshot {
             artifact_id: executable.id,
+            mode,
             program: self.render.current.unwrap(),
             link_generation: program.link_generation,
             state: self.render.raster,

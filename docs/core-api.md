@@ -4,7 +4,7 @@
 
 Both implementations execute the shared WebGL1 drawing and render-to-texture profile. `DrawingCore` extends `BufferCore` with normalized semantic dispatch and target capture. The facade selects `core: 'js' | 'rust'`, with JS as the default, and owns JS object wrappers and WebIDL conversion.
 
-The shared drawing profile includes ESSL100 shader/program lifecycle and reflection, FLOAT attributes and constants, float/int/bool scalar/vector arrays, mat2/mat3/mat4, scalar sampler2D/samplerCube, TRIANGLES arrays and u8/u16 indices, level-zero five-format UNSIGNED_BYTE Texture2D/CubeMap uploads, RGBA color/depth framebuffers, raster state, ordered snapshots, submission and asynchronous testing capture. Each core reports valid operations beyond its declared profile through an explicit library diagnostic. The support matrix records verified behavior per core.
+The shared drawing profile includes ESSL100 shader/program lifecycle and reflection, FLOAT and 8-/16-bit integer attributes and constants, float/int/bool scalar/vector arrays, mat2/mat3/mat4, scalar sampler2D/samplerCube, TRIANGLES and TRIANGLE_STRIP arrays and u8/u16 indices, level-zero five-format UNSIGNED_BYTE Texture2D/CubeMap uploads, RGBA color/depth framebuffers, raster state, ordered snapshots, submission and asynchronous testing capture. Each core reports valid operations beyond its declared profile through an explicit library diagnostic. The support matrix records verified behavior per core.
 
 ## Handles and identity
 
@@ -54,9 +54,9 @@ Framebuffer attachments retain logical references independently from GL-visible 
 
 ## Execution and ownership
 
-Both cores pass shared DrawOperation, TargetSnapshot and RasterState records to SemanticHost. Drawing captures the executable, target dimensions, attributes, uniform bytes and index/vertex Buffer versions observed at the call. Host encoding retains the data needed by queued work. Automatic microtask submission and explicit flush submit encoded operations, while asynchronous testing capture also waits for GPU readback.
+Both cores pass shared DrawOperation, TargetSnapshot and RasterState records to SemanticHost. Drawing captures the executable, primitive mode, target dimensions, attribute component types and normalization, uniform bytes and index/vertex Buffer versions observed at the call. Host encoding retains the data needed by queued work. Automatic microtask submission and explicit flush submit encoded operations, while asynchronous testing capture also waits for GPU readback.
 
-Rust uses one context for the complete profile. ABI v3 carries cold metadata in bounded JSON, source/names as explicit little-endian UTF16, numeric payloads as binary floats or signed integers, and draw results as owned versioned binary snapshots. Resource envelopes bracket execution so uploads precede draws and GPU-write version advances follow them. Pixel payload pointers refer to Rust-owned output storage. The adapter validates ranges and takes independent ownership before another command can reuse that storage. Binding-only serde dependencies stay outside the native semantic crate. ADRs 005 and 006 record this boundary.
+Rust uses one context for the complete profile. ABI v4 carries cold metadata in bounded JSON, source/names as explicit little-endian UTF16, numeric payloads as binary floats or signed integers, and draw results as owned versioned binary snapshots. Resource envelopes bracket execution so uploads precede draws and GPU-write version advances follow them. Pixel payload pointers refer to Rust-owned output storage. The adapter validates ranges and takes independent ownership before another command can reuse that storage. Binding-only serde dependencies stay outside the native semantic crate. ADRs 005 and 006 record this boundary.
 
 ## Public readback planning
 

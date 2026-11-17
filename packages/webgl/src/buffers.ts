@@ -49,7 +49,7 @@ export function toEnum(value: unknown): number {
   return +(value as number) >>> 0;
 }
 
-function toSize(value: unknown): number {
+export function toSize(value: unknown): number {
   const number = +(value as number);
   if (!Number.isFinite(number) || number === 0) return 0;
   const integer = Math.trunc(number);

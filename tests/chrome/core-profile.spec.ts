@@ -29,6 +29,14 @@ test('explicit Rust selection runs its drawing core and JS remains the default',
         rustTextureCreated: rust.isTexture(texture),
         mipmapGap: await failure(() => rust.generateMipmap(rust.TEXTURE_2D)),
         rustError: rust.getError(),
+        members: [js, rust].map(gl => ({
+          draw: [typeof gl.drawArrays, 'drawArrays' in gl, gl.drawArrays === gl.drawArrays],
+          webgl2Draw: [typeof Reflect.get(gl, 'drawArraysInstanced'), 'drawArraysInstanced' in gl],
+          unpackColorSpace: [typeof gl.unpackColorSpace, 'unpackColorSpace' in gl],
+          drawingBuffer: ['drawingBufferWidth' in gl, gl.drawingBufferColorSpace],
+          constants: [gl.TRIANGLE_STRIP, gl.STENCIL_WRITEMASK, 'TRIANGLE_STRIP' in gl],
+          expando: Reflect.set(gl, 'marker', 42) && Reflect.get(gl, 'marker'),
+        })),
       };
       js.deleteShader(shader);
       rust.deleteShader(rustShader);
@@ -43,5 +51,10 @@ test('explicit Rust selection runs its drawing core and JS remains the default',
     defaultCore: 'js', explicitCore: 'rust', jsShaderCreated: true,
     rustShaderCreated: true, drawError: 0x0502, captureDimensions: [300, 150],
     rustTextureCreated: true, mipmapGap: 'NotSupportedError', rustError: 0,
+    members: [0, 1].map(() => ({
+      draw: ['function', true, true], webgl2Draw: ['undefined', false],
+      unpackColorSpace: ['undefined', false], drawingBuffer: [true, 'srgb'],
+      constants: [5, 0x0b98, true], expando: 42,
+    })),
   });
 });

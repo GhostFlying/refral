@@ -1,4 +1,4 @@
-import { createRasterState, GL } from '@refral/core-api';
+import { createRasterState, GL, vertexComponentBytes } from '@refral/core-api';
 import type {
   BufferHandle,
   BufferSnapshot,
@@ -246,11 +246,13 @@ export function createRustDrawingCoreFromModule(
     required.some((name) => typeof exports[name] !== 'function')
   ) {
     throw new Error(
-      'Rust drawing module requires ABI3/resource3/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
+      'Rust drawing module requires ABI4/resource3/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
     );
   }
   const abi = exports as unknown as ABI;
-  if (abi.rf_abi_version() !== 3 || abi.rf_resource_protocol_version() !== 3)
+  if (abi.rf_abi_version() !== 4)
+    throw new Error('Rust drawing ABI version mismatch; expected 4. Rebuild with pnpm rust:build.');
+  if (abi.rf_resource_protocol_version() !== 3)
     throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_readback_protocol_version() !== 1)
     throw new Error('Rust readback protocol mismatch. Rebuild with pnpm rust:build.');
@@ -467,12 +469,14 @@ export function createRustDrawingCoreFromModule(
   }
   function executeDraw(bytes: Uint8Array): void {
     const reader = new Reader(bytes);
-    if (reader.u32() !== 0x33444652 || reader.u32() !== 3)
+    if (reader.u32() !== 0x34444652 || reader.u32() !== 4)
       throw new Error('Invalid Rust draw snapshot version.');
     const program = services.compiler.executable(reader.u32());
     reader.skip(12 + 8);
     const drawTarget = readTarget(reader);
     const state = readRaster(reader, drawTarget.width, drawTarget.height);
+    const mode = reader.u32();
+    if (mode !== GL.TRIANGLES && mode !== GL.TRIANGLE_STRIP) throw new Error('Invalid Rust draw mode.');
     const vertexCount = reader.u32();
     const first = reader.u32();
     const count = reader.u32();
@@ -482,11 +486,15 @@ export function createRustDrawingCoreFromModule(
       const location = reader.u32();
       const shaderType = reader.u32();
       const size = reader.u32();
+      const type = reader.u32();
+      const normalized = reader.u32();
+      if (!vertexComponentBytes(type) || normalized > 1) throw new Error('Invalid Rust vertex attribute format.');
       const stride = reader.u32();
       const offset = reader.u32();
       const constant = [reader.f32(), reader.f32(), reader.f32(), reader.f32()];
       const data = reader.u32() ? reader.buffer() : null;
-      vertexAttributes.push({ location, shaderType, size, stride, offset, constant, data });
+      vertexAttributes.push({ location, shaderType, size, type, normalized: normalized === 1,
+        stride, offset, constant, data });
     }
     const indices = reader.u32() ? { type: reader.u32(), offset: reader.u32(), data: reader.buffer() } : null;
     const vertexUniforms = reader.bytes();
@@ -497,6 +505,7 @@ export function createRustDrawingCoreFromModule(
     reader.finish();
     services.host.draw({
       program,
+      mode,
       target: drawTarget,
       state,
       attributes: vertexAttributes,

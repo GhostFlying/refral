@@ -1,8 +1,8 @@
 {
   "version": 2,
   "profile": "webgl1-prototype",
-  "updated": "2026-11-17",
-  "implementationRevision": "task-036 dual-core CubeMap execution and resource3 from main9b57f9c; delivery identifies integrated heads",
+  "updated": "2026-11-18",
+  "implementationRevision": "task-037 original DOM CubeMap CTS and deployment from main5b59508; delivery identifies integrated heads",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
     "chrome-macos-arm64": {
@@ -817,7 +817,7 @@
       "api": "texImage2D and texSubImage2D DOM source overloads",
       "cores": {
         "js": {
-          "status": "differential-verified",
+          "status": "cts-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
@@ -825,7 +825,10 @@
           "tests": [
             "tests/chrome/dom-imagedata.spec.ts",
             "packages/core-js/src/dom-upload.test.ts",
-            "tests/chrome/dom-canvas-image.spec.ts"
+            "tests/chrome/dom-canvas-image.spec.ts",
+            "sdk/tests/conformance/textures/image_data/tex-2d-rgba-rgba-unsigned_byte.html",
+            "sdk/tests/conformance/textures/canvas/tex-2d-rgba-rgba-unsigned_byte.html",
+            "sdk/tests/conformance/textures/image/tex-2d-rgba-rgba-unsigned_byte.html"
           ],
           "evidence": [
             {
@@ -895,18 +898,25 @@
             {
               "path": "artifacts/dom-input/pr3/public/icc-color-space/result.json",
               "passed": true
+            },
+            {
+              "path": "artifacts/cubemap/pr3/cts/results.json",
+              "passed": true,
+              "originalFiles": 3,
+              "assertions": 1918,
+              "scope": "Unchanged complete RGBA/UNSIGNED_BYTE DOM2D and CubeMap branches, including OffscreenCanvas."
             }
           ],
           "limits": [
             "HTMLImage extraction requires a private native WebGL context at runtime, accepted in ADR008.",
             "ImageData acceptance is unorm8 sRGB with five UNSIGNED_BYTE formats. Canvas/image acceptance is RGBA/UNSIGNED_BYTE level zero, with sRGB Canvas encoding.",
             "Refral source ordering/loss coordination uses the same loaded facade module. Independent module/realm Refral sources and unregistered native WebGL source loss have pending acceptance.",
-            "Wide-gamut/HDR Canvas, additional ImageData encodings, ImageBitmap/video, mipmaps, CubeMap and packed formats retain compatibility tasks."
+            "Wide-gamut/HDR Canvas, additional ImageData encodings, ImageBitmap/video, mipmaps and packed formats retain compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported inputs produce WebIDL exceptions, SecurityError or core GL errors before destination mutation. Additional ImageData encodings and unavailable native image extraction report explicit capability errors. Other unaccepted source combinations are scoped by these limits."
         },
         "rust": {
-          "status": "differential-verified",
+          "status": "cts-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
@@ -914,7 +924,10 @@
           "tests": [
             "tests/chrome/dom-imagedata.spec.ts",
             "crates/core/src/render/dom_texture_tests.rs",
-            "tests/chrome/dom-canvas-image.spec.ts"
+            "tests/chrome/dom-canvas-image.spec.ts",
+            "sdk/tests/conformance/textures/image_data/tex-2d-rgba-rgba-unsigned_byte.html",
+            "sdk/tests/conformance/textures/canvas/tex-2d-rgba-rgba-unsigned_byte.html",
+            "sdk/tests/conformance/textures/image/tex-2d-rgba-rgba-unsigned_byte.html"
           ],
           "evidence": [
             {
@@ -984,13 +997,20 @@
             {
               "path": "artifacts/dom-input/pr3/public/icc-color-space/result.json",
               "passed": true
+            },
+            {
+              "path": "artifacts/cubemap/pr3/cts/results.json",
+              "passed": true,
+              "originalFiles": 3,
+              "assertions": 1918,
+              "scope": "Unchanged complete RGBA/UNSIGNED_BYTE DOM2D and CubeMap branches, including OffscreenCanvas."
             }
           ],
           "limits": [
             "HTMLImage extraction requires a private native WebGL context at runtime, accepted in ADR008.",
             "ImageData acceptance is unorm8 sRGB with five UNSIGNED_BYTE formats. Canvas/image acceptance is RGBA/UNSIGNED_BYTE level zero, with sRGB Canvas encoding.",
             "Refral source ordering/loss coordination uses the same loaded facade module. Independent module/realm Refral sources and unregistered native WebGL source loss have pending acceptance.",
-            "Wide-gamut/HDR Canvas, additional ImageData encodings, ImageBitmap/video, mipmaps, CubeMap and packed formats retain compatibility tasks."
+            "Wide-gamut/HDR Canvas, additional ImageData encodings, ImageBitmap/video, mipmaps and packed formats retain compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported inputs produce WebIDL exceptions, SecurityError or core GL errors before destination mutation. Additional ImageData encodings and unavailable native image extraction report explicit capability errors. Other unaccepted source combinations are scoped by these limits."
         }
@@ -2009,13 +2029,16 @@
       "api": "bindTexture, texImage2D, texSubImage2D, texParameter*, getTexParameter, getParameter, isTexture, deleteTexture",
       "cores": {
         "js": {
-          "status": "differential-verified",
+          "status": "cts-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
           "coverage": "Six independent level-zero square faces, five UBYTE logical formats for typed/null input and RGBA DOM input. Fixed target and per-unit bindings, per-image versions, rectangular subimage updates, face orientation, sampler completeness, snapshots, deletion and GPU retirement.",
           "tests": [
-            "tests/chrome/cubemap.spec.ts"
+            "tests/chrome/cubemap.spec.ts",
+            "sdk/tests/conformance/textures/image_data/tex-2d-rgba-rgba-unsigned_byte.html",
+            "sdk/tests/conformance/textures/canvas/tex-2d-rgba-rgba-unsigned_byte.html",
+            "sdk/tests/conformance/textures/image/tex-2d-rgba-rgba-unsigned_byte.html"
           ],
           "evidence": [
             {
@@ -2024,6 +2047,13 @@
               "groups": 10,
               "drawSamplesPerBackend": 129,
               "pixelTolerance": 0
+            },
+            {
+              "path": "artifacts/cubemap/pr3/cts/results.json",
+              "passed": true,
+              "originalFiles": 3,
+              "assertions": 1918,
+              "scope": "Unchanged complete RGBA/UNSIGNED_BYTE DOM2D and CubeMap branches, including OffscreenCanvas."
             }
           ],
           "limits": [
@@ -2032,13 +2062,16 @@
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Valid operations beyond the declared profile report NotSupportedError."
         },
         "rust": {
-          "status": "differential-verified",
+          "status": "cts-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
           "coverage": "Six independent level-zero square faces, five UBYTE logical formats for typed/null input and RGBA DOM input. Fixed target and per-unit bindings, per-image versions, rectangular subimage updates, face orientation, sampler completeness, snapshots, deletion and GPU retirement.",
           "tests": [
-            "tests/chrome/cubemap.spec.ts"
+            "tests/chrome/cubemap.spec.ts",
+            "sdk/tests/conformance/textures/image_data/tex-2d-rgba-rgba-unsigned_byte.html",
+            "sdk/tests/conformance/textures/canvas/tex-2d-rgba-rgba-unsigned_byte.html",
+            "sdk/tests/conformance/textures/image/tex-2d-rgba-rgba-unsigned_byte.html"
           ],
           "evidence": [
             {
@@ -2047,6 +2080,13 @@
               "groups": 10,
               "drawSamplesPerBackend": 129,
               "pixelTolerance": 0
+            },
+            {
+              "path": "artifacts/cubemap/pr3/cts/results.json",
+              "passed": true,
+              "originalFiles": 3,
+              "assertions": 1918,
+              "scope": "Unchanged complete RGBA/UNSIGNED_BYTE DOM2D and CubeMap branches, including OffscreenCanvas."
             }
           ],
           "limits": [
@@ -2191,8 +2231,8 @@
   },
   "deploymentVerification": {
     "status": "passed",
-    "evidence": "artifacts/cubemap/pr2/dist-result.json",
-    "scope": "Built probe, three-path RTT/triangles, synchronous readPixels and DOM uploads, matching packaged hashes and ABI3/resource3/readback1/DOM2."
+    "evidence": "artifacts/cubemap/pr3/dist-result.json",
+    "scope": "Built probe, three-path RTT/triangles, synchronous readPixels, DOM uploads and58 CubeMap draw samples per backend, matching packaged hashes and ABI3/resource3/readback1/DOM2."
   },
   "defaultCore": "js",
   "cores": {
@@ -2213,13 +2253,13 @@
     }
   },
   "coreVerification": {
-    "report": "docs/validation/2026-11-16-dom-uploads.md",
+    "report": "docs/validation/2026-11-18-cubemap.md",
     "environment": "chrome-macos-arm64",
     "allChromeTests": {
       "passed": 122,
       "failed": 0,
       "skipped": 0,
-      "evidence": "artifacts/cubemap/pr2/chrome.log",
+      "evidence": "artifacts/cubemap/pr3/chrome.log",
       "headless": true
     },
     "deterministicChecks": {
@@ -2232,8 +2272,8 @@
       "rustClippy": "passed",
       "actualWasmAdapterTests": 46,
       "evidence": [
-        "artifacts/cubemap/pr2/check.log",
-        "artifacts/cubemap/pr2/wasm-tests.log"
+        "artifacts/cubemap/pr3/check.log",
+        "artifacts/cubemap/pr3/wasm-tests.log"
       ]
     },
     "js": {
@@ -2241,8 +2281,8 @@
       "bufferSuite": "passed",
       "sharedDrawingScenes": 16,
       "sharedRttScenes": 20,
-      "ctsFiles": 18,
-      "ctsAssertions": 515,
+      "ctsFiles": 21,
+      "ctsAssertions": 2433,
       "remainingParity": "Additional DOM encodings and source-context combinations, nonzero mip levels/mipmap generation/packed formats, cube framebuffer attachments, additional readback formats, extensions and restoration.",
       "publicReadPixelsCaseGroups": 8,
       "publicReadPixelsAssertions": 296,
@@ -2258,8 +2298,8 @@
       "bufferSuite": "passed",
       "sharedDrawingScenes": 16,
       "sharedRttScenes": 20,
-      "ctsFiles": 18,
-      "ctsAssertions": 515,
+      "ctsFiles": 21,
+      "ctsAssertions": 2433,
       "remainingParity": "Additional DOM encodings and source-context combinations, nonzero mip levels/mipmap generation/packed formats, cube framebuffer attachments, additional readback formats, extensions and restoration.",
       "publicReadPixelsCaseGroups": 8,
       "publicReadPixelsAssertions": 296,
@@ -2279,8 +2319,8 @@
     "explicitSelectionTest": "tests/chrome/core-profile.spec.ts::explicit Rust selection runs its drawing core and JS remains the default",
     "deployment": {
       "status": "passed",
-      "evidence": "artifacts/cubemap/pr2/dist-result.json",
-      "scope": "Built probe, three-path RTT/triangles, synchronous readPixels and DOM uploads, matching packaged hashes and ABI3/resource3/readback1/DOM2."
+      "evidence": "artifacts/cubemap/pr3/dist-result.json",
+      "scope": "Built probe, three-path RTT/triangles, synchronous readPixels, DOM uploads and58 CubeMap draw samples per backend, matching packaged hashes and ABI3/resource3/readback1/DOM2."
     }
   },
   "specifications": {
@@ -2415,10 +2455,10 @@
   "cubemapStage": {
     "task": "docs/tasks/034-cubemap-stage.md",
     "contract": "docs/adr/009-texture-image-subresources.md",
-    "status": "runtime-differential-verified",
+    "status": "accepted",
     "runtimeStatus": {
-      "js": "differential-verified",
-      "rust": "differential-verified"
+      "js": "cts-verified",
+      "rust": "cts-verified"
     },
     "headless": true,
     "targetOriginalCtsFiles": 21,
@@ -2428,6 +2468,18 @@
     "runtimeEvidence": "artifacts/cubemap/pr2/cases/",
     "runtimeGroups": 10,
     "runtimeDrawSamplesPerBackend": 129,
-    "resourceProtocol": 3
+    "resourceProtocol": 3,
+    "originalCtsFiles": 21,
+    "ctsAssertionsPerBackend": 2433,
+    "addedDomCtsAssertionsPerBackend": 1918,
+    "originalDomCts": {
+      "imageData": 226,
+      "canvas": 1570,
+      "image": 122
+    },
+    "ctsEvidence": "artifacts/cubemap/pr3/cts/results.json",
+    "deploymentDrawSamplesPerBackend": 58,
+    "deploymentEvidence": "artifacts/cubemap/pr3/dist-result.json",
+    "report": "docs/validation/2026-11-18-cubemap.md"
   }
 }

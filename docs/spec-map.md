@@ -72,7 +72,7 @@ The WebGL lifecycle and source clauses above are defined alongside shader/progra
 
 ## Original CTS and derived regressions
 
-The executable original CTS set contains eleven files. The harness prepares the compiler/device asynchronously, injects the selected context factory inside an iframe, and executes original scripts and assertions unchanged. Results retain each upstream path, assertion, backend, and fixed revision in `artifacts/cts/results.json`.
+The executable original CTS set is listed in fixtures.lock.json. The first eleven files established shader/program/uniform acceptance. Task037 expands the complete set to21 files. The harness prepares the compiler/device asynchronously, injects the selected context factory inside an iframe, and executes original scripts and assertions unchanged. Results retain each upstream path, assertion, backend, and fixed revision in `artifacts/cts/results.json`.
 
 - `glsl/misc/shader-with-invalid-identifier.frag.html`
 - `glsl/misc/shader-without-precision.frag.html`
@@ -117,3 +117,7 @@ The resource bridge's define/update/write/retire sequence is an implementation c
 Task 020's uniform slice passed all eleven original files with 243 assertions on each of native, JS and Rust. Texture/FBO original cases retain their synchronous-readback, CubeMap, mipmap, packed-format, copy-image or renderbuffer-format prerequisites in `fixtures.lock.json`. Their asynchronous project scenes retain separate identities and explicit source references.
 
 The pinned texture IDL declares a nullable pixel view for texSubImage2D. A null input reaches semantic validation and produces INVALID_VALUE. Framebuffer attachment queries use GLES 6.1.3 and the WebGL query table. An empty attachment returns NONE for OBJECT_TYPE and INVALID_ENUM for OBJECT_NAME, TEXTURE_LEVEL and CUBE_MAP_FACE. A renderbuffer attachment rejects the latter two texture-specific queries with INVALID_ENUM. Native observations are retained under `artifacts/rtt/native-attachment-queries.json`.
+
+## Complete original DOM texture acceptance
+
+Task037 executes unchanged image_data/canvas/image RGBA UBYTE originals at the pinned revision through native, JS and actual Rust. Per backend they pass226/1570/122 assertions, including2D and six-face CubeMap paths and the exposed OffscreenCanvas branch. The whole21-file set passes2433 assertions per backend. Source provenance, actual-core/context metadata, original messages and resource/Promise/GPU diagnostics are recorded under artifacts/cubemap/pr3/cts. [CubeMap report](validation/2026-11-18-cubemap.md)

@@ -79,7 +79,7 @@ const pixels = new Uint8Array(canvas.width * canvas.height * 4);
 gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 ```
 
-The asynchronous factory prepares GPU and compiler dependencies and the selected core. JS is the default. Both semantic cores execute the shared Buffer, shader/program, typed uniform/matrix, Texture2D, RGBA/depth framebuffer and raster profile. Supported calls are synchronous. Each core reports valid operations beyond its declared scope through `NotSupportedError`. See `docs/core-api.md` for the shared contract and `docs/support.json` for per-core scope and evidence. The test adapter exposes asynchronous pixel capture separately from the public GL interface.
+The asynchronous factory prepares GPU and compiler dependencies and the selected core. JS is the default. Both semantic cores execute the shared Buffer, shader/program, typed uniform/matrix, Texture2D/CubeMap, RGBA/depth framebuffer and raster profile. Supported calls are synchronous. Each core reports valid operations beyond its declared scope through `NotSupportedError`. See `docs/core-api.md` for the shared contract and `docs/support.json` for per-core scope and evidence. The test adapter exposes asynchronous pixel capture separately from the public GL interface.
 
 The accepted DOM overloads include unorm8 sRGB ImageData, sRGB Canvas/OffscreenCanvas and decoded HTMLImageElement. After the context is initialized, texImage2D/texSubImage2D consume their source synchronously. HTMLImage extraction uses a lazy private native WebGL context at runtime for ICC/alpha fidelity. Canvas transfer uses WebGPU external copy and the opaque Canvas2D readback transport. The [DOM extraction decision](docs/adr/008-dom-image-extraction.md) records ownership, source-context coordination and accepted limits.
 
@@ -106,3 +106,5 @@ Raw outputs are under ignored `artifacts/`. They include environment reports, co
 ## Third-party sources
 
 ANGLE and Emscripten revisions are pinned in `packages/compiler/dependencies.json`. Demo and Khronos WebGL revisions are pinned in `fixtures.lock.json`. Compiler adaptation patches and licenses are described in the compiler package. Original demo/CTS license files are fetched with the corresponding source. See `THIRD_PARTY.md`.
+
+The [CubeMap milestone](docs/validation/2026-11-18-cubemap.md) adds level-zero six-face sampling to both actual cores, with129 exact shared draw samples per backend and resource capability3. Twenty-one complete original CTS files pass2433 assertions per backend, including the unchanged ImageData, Canvas and HTMLImage RGBA generators with their2D/Cube branches. Built CubeMap verification retains58 additional draw samples per backend.

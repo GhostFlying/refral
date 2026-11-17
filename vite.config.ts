@@ -38,5 +38,6 @@ export default defineConfig({
     selection: path('./experiments/core-selection/index.html'),
     triangle: path('./examples/triangle/index.html'),
     domDeployment: path('./tests/fixtures/dom-deployment.html'),
+    cubeDeployment: path('./tests/fixtures/cubemap-deployment.html'),
   } } },
 });

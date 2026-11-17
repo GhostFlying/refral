@@ -1,3 +1,4 @@
+import { GL } from './gl.js';
 import type { RenderbufferHandle, TextureHandle } from './index.js';
 import type { SemanticHost, TextureStorage } from './execution.js';
 
@@ -5,7 +6,16 @@ export interface TextureVersion {
   readonly texture: TextureHandle;
   readonly storageGeneration: number;
   readonly contentVersion: number;
+  /** Image target is TEXTURE_2D or a cube face. Legacy records identify TEXTURE_2D level zero. */
+  readonly imageTarget?: number;
+  readonly level?: number;
 }
+
+export const CUBE_FACES = [
+  GL.TEXTURE_CUBE_MAP_POSITIVE_X, GL.TEXTURE_CUBE_MAP_NEGATIVE_X,
+  GL.TEXTURE_CUBE_MAP_POSITIVE_Y, GL.TEXTURE_CUBE_MAP_NEGATIVE_Y,
+  GL.TEXTURE_CUBE_MAP_POSITIVE_Z, GL.TEXTURE_CUBE_MAP_NEGATIVE_Z,
+] as const;
 
 /** Source view identity is retained for GL pixel-type validation. */
 export interface PixelUpload {
@@ -34,8 +44,12 @@ export function resourceHandleKey(handle: TextureHandle | RenderbufferHandle): s
   return `${handle.kind}/${handle.contextId}/${handle.slot}/${handle.generation}`;
 }
 
+export function textureImageKey(version: TextureVersion): string {
+  return `${resourceHandleKey(version.texture)}/${version.imageTarget ?? GL.TEXTURE_2D}/${version.level ?? 0}`;
+}
+
 function sameVersion(first: TextureVersion, second: TextureVersion): boolean {
-  return resourceHandleKey(first.texture) === resourceHandleKey(second.texture)
+  return textureImageKey(first) === textureImageKey(second)
     && first.storageGeneration === second.storageGeneration
     && first.contentVersion === second.contentVersion;
 }
@@ -70,7 +84,14 @@ export class ExecutionResources implements ResourceRegistry {
     if (version.texture.kind !== 'texture' || !Number.isSafeInteger(version.storageGeneration)
       || version.storageGeneration <= 0 || !Number.isSafeInteger(version.contentVersion)
       || version.contentVersion <= 0) throw new Error('Invalid texture execution version.');
-    return this.handle(version.texture);
+    const target = version.imageTarget ?? GL.TEXTURE_2D;
+    const level = version.level ?? 0;
+    if ((target !== GL.TEXTURE_2D && !CUBE_FACES.some(face => face === target))
+      || !Number.isInteger(level) || level < 0 || level > 0x7fff_ffff) {
+      throw new Error('Invalid texture image subresource.');
+    }
+    this.handle(version.texture);
+    return textureImageKey(version);
   }
 
   private current(version: TextureVersion): TextureRecord {
@@ -110,6 +131,7 @@ export class ExecutionResources implements ResourceRegistry {
       this.advance(operation.version, operation.previous);
       // A rendered image stays in its GPU allocation through this version step.
       record.version = operation.version;
+      record.storage.reference = operation.version;
       return;
     }
     this.pixels(operation.width, operation.height, operation.data);
@@ -142,7 +164,7 @@ export class ExecutionResources implements ResourceRegistry {
   }
 
   private advance(next: TextureVersion, previous: TextureVersion): void {
-    if (resourceHandleKey(next.texture) !== resourceHandleKey(previous.texture)
+    if (textureImageKey(next) !== textureImageKey(previous)
       || next.storageGeneration !== previous.storageGeneration
       || next.contentVersion <= previous.contentVersion) throw new Error('Invalid texture content transition.');
   }

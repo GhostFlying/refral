@@ -2,11 +2,11 @@
   "version": 2,
   "profile": "webgl1-prototype",
   "updated": "2026-11-16",
-  "implementationRevision": "task-033 DOM stage closure from main3861a65; final delivery identifies integrated heads",
+  "implementationRevision": "task-035 texture-image contract and CubeMap compiler verification from main db9c722; delivery identifies integrated heads",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
     "chrome-macos-arm64": {
-      "browser": "Google Chrome 157.0.8103.51",
+      "browser": "Google Chrome 157.0.8103.79",
       "osArchitecture": "macOS arm64",
       "adapterVendor": "apple",
       "adapterArchitecture": "metal-3",
@@ -1143,7 +1143,7 @@
             }
           ],
           "limits": [
-            "TypedArray/null, level zero and UNSIGNED_BYTE are the verified upload profile. DOM sources, mipmaps, CubeMap, packed types and additional formats require subsequent acceptance."
+            "TypedArray/null and the declared DOM-source profiles are recorded by texture2d-typed-upload and texture-dom-sources. Nonzero levels, mipmaps, CubeMap runtime and packed types follow their scoped tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -1168,7 +1168,7 @@
             }
           ],
           "limits": [
-            "TypedArray/null, level zero and UNSIGNED_BYTE are the verified upload profile. DOM sources, mipmaps, CubeMap, packed types and additional formats require subsequent acceptance."
+            "TypedArray/null and the declared DOM-source profiles are recorded by texture2d-typed-upload and texture-dom-sources. Nonzero levels, mipmaps, CubeMap runtime and packed types follow their scoped tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -2111,17 +2111,19 @@
   "compilerVerification": {
     "node": {
       "evidence": "artifacts/compiler/corpus.json",
-      "passedCases": 24,
-      "totalCases": 24
+      "passedCases": 39,
+      "totalCases": 39
     },
     "browser": {
       "evidence": "artifacts/compiler/chrome-corpus.json",
-      "passedCases": 24,
-      "totalCases": 24,
-      "pipelines": 4
+      "passedCases": 39,
+      "totalCases": 39,
+      "pipelines": 8,
+      "cubeEvidence": "artifacts/cubemap/pr1/compiler-gpu.json",
+      "cubePixelSamples": 32
     },
     "profileSource": "packages/compiler/profile-limits.json",
-    "note": "The shared eight-attribute profile and boundary corpus pass Node and Chrome. Four shader pairs create real pipelines, including the patched INT_MIN WGSL regression."
+    "note": "The shared profile passes39 compiler cases in Node and headless Chrome. Four existing shader pairs plus four direct cube/vertex-sampling pipelines validate final WGSL. CubeMap execution scope is tracked separately."
   },
   "deploymentVerification": {
     "evidence": "artifacts/dom-input/pr4/dist-result.json",
@@ -2149,15 +2151,15 @@
     "report": "docs/validation/2026-11-16-dom-uploads.md",
     "environment": "chrome-macos-arm64",
     "allChromeTests": {
-      "passed": 110,
+      "passed": 111,
       "failed": 0,
       "skipped": 0,
-      "evidence": "artifacts/dom-input/pr4/chrome.log",
+      "evidence": "artifacts/cubemap/pr1/chrome.log",
       "headless": true
     },
     "deterministicChecks": {
       "typescript": "passed",
-      "jsUnitTests": 201,
+      "jsUnitTests": 210,
       "rustNativeTests": 66,
       "rustCoreTests": 58,
       "wasmCrateTests": 8,
@@ -2165,8 +2167,8 @@
       "rustClippy": "passed",
       "actualWasmAdapterTests": 38,
       "evidence": [
-        "artifacts/dom-input/pr4/check.log",
-        "artifacts/dom-input/pr4/wasm-tests.log"
+        "artifacts/cubemap/pr1/check.log",
+        "artifacts/cubemap/pr1/wasm-tests.log"
       ]
     },
     "js": {
@@ -2200,8 +2202,8 @@
       "publicCanvasImageAssertions": 700
     },
     "sharedCompiler": {
-      "corpusCases": 24,
-      "realPipelines": 4,
+      "corpusCases": 39,
+      "realPipelines": 8,
       "evidence": "artifacts/compiler/chrome-corpus.json",
       "scope": "Shared compiler used by both semantic cores and original ESSL demo."
     },
@@ -2340,5 +2342,19 @@
     },
     "deploymentDomCapturesPerBackend": 16,
     "evidence": "artifacts/dom-input/pr4/"
+  },
+  "cubemapStage": {
+    "task": "docs/tasks/034-cubemap-stage.md",
+    "contract": "docs/adr/009-texture-image-subresources.md",
+    "status": "contract-and-compiler-verified",
+    "runtimeStatus": {
+      "js": "unimplemented",
+      "rust": "unimplemented"
+    },
+    "headless": true,
+    "targetOriginalCtsFiles": 21,
+    "compilerEvidence": "artifacts/cubemap/pr1/compiler-gpu.json",
+    "compilerPixelSamples": 32,
+    "compilerPipelines": 4
   }
 }

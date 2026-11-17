@@ -10,7 +10,7 @@ Task 013 established spec-driven minimal drawing, typed shader/program handles, 
 
 ADR 003 defines the accepted parallel-core direction. The root pnpm/Cargo workspaces contain the shared API, migrated JS core, formal Rust core, Wasm exports, and JS adapter. Task 006 established Buffer lifecycle/data/query/error behavior with native/JS/Rust fixtures. Task 013 extends the shared contract through default-framebuffer drawing. Track implementation and verification per core.
 
-The existing Chrome prototype and recorded P0–P2 results describe the earlier JS rendering implementation. The Rust trace experiment retains its documented small-core measurements. The current shared contract includes float/int/bool uniforms and matrices, level-zero five-format UNSIGNED_BYTE texture uploads, RGBA color/depth targets and raster state. Both semantic cores use the common compiler, executor, inputs and acceptance fixtures. The selected original CTS set contains fourteen files, including public synchronous readback and the earlier source-derived texture/FBO coverage.
+The existing Chrome prototype and recorded P0–P2 results describe the earlier JS rendering implementation. The Rust trace experiment retains its documented small-core measurements. The current shared contract includes float/int/bool uniforms and matrices, level-zero five-format UNSIGNED_BYTE texture uploads, RGBA color/depth targets and raster state. Both semantic cores use the common compiler, executor, inputs and acceptance fixtures. The selected original CTS set contains eighteen files. Tasks029–033 accepted ImageData, Canvas and HTMLImage uploads, preserving source-derived identities separately from complete original-file CTS results. Task034 advances CubeMap/samplerCube and targets three complete original DOM files.
 
 ## P0 Engineering and environment
 
@@ -45,8 +45,8 @@ Grow a pinned suite by semantic dependency. Retain test identities, assertions, 
 After the RTT milestone, organize the next bounded tasks around the recorded upstream prerequisites.
 
 1. Task 025 establishes synchronous readback feasibility using actual JS/Rust cores and an independent GPU worker. Task 027 adds a main-thread Canvas2D candidate, byte-exact shared rendering corpus and matched latency/process CPU comparison. Task028 implements the user-selected Canvas2D path through both public cores, including destination ownership, packing, clipping, ordering and loss handling. The original program-handling, feedback-loop and read-pixels-pack-alignment files execute unchanged through a recorded iframe prototype adapter. ADR 007 records the accepted backend.
-2. Add DOM image-source uploads and their conversion/ownership rules through the shared facade and fixtures. Task 026 records ImageData, canvas and image source slices and their upstream dependencies.
-3. Expand mip levels, mipmap generation, CubeMap, packed pixel types and framebuffer formats with per-core support entries. Use the pinned dependency audit to activate complete original scripts as their prerequisites become available.
+2. Tasks029–033 complete the declared DOM input profile. Task034 extends texture-image identities, samplerCube and six-face level-zero sampling, then runs the three unchanged original RGBA DOM upload files. Tasks035–037 preserve both cores and the common host.
+3. After the CubeMap DOM milestone, expand packed pixel types, mip levels, mipmap generation and framebuffer formats with per-core support entries. Use the pinned dependency audit to activate complete original scripts as their prerequisites become available.
 4. Extend context restoration, extensions and remaining state according to the fixed CTS dependency graph.
 
 Use the repeated drawing baseline to choose separate optimization tasks for the measured CPU, bridge, allocation and host costs. Preserve workload sizes, raw samples and image assertions when comparing changes.

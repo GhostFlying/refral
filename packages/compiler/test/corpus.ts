@@ -42,6 +42,27 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
   const matrixOverlap = compiler.link(matrixAttribute, plainFragment, { transform: 2, position: 4 });
   const matrixLimit = compiler.link(matrixAttribute, plainFragment, { transform: COMPILER_LIMITS.vertexAttributes - 2 });
   const minimumInteger = compiler.compile('precision highp float; precision highp int; uniform int value; void main(){gl_FragColor=vec4(value == (-2147483647 - 1) ? 1.0 : 0.0);}', 'fragment');
+  const cubeFragmentSource = 'precision mediump float; uniform samplerCube cube; void main(){gl_FragColor=textureCube(cube,vec3(1.0,0.0,0.0));}';
+  const cubeFragment = compiler.compile(cubeFragmentSource, 'fragment');
+  const cubeProgram = compiler.link(vertex, cubeFragment);
+  const cubeVertex = compiler.compile('attribute vec3 position; uniform samplerCube cube; void main(){gl_Position=vec4(position,1.0)+textureCube(cube,vec3(1.0,0.0,0.0))*0.01;}', 'vertex');
+  const sharedCubeProgram = compiler.link(cubeVertex, cubeFragment);
+  const mixedFragment = compiler.compile('precision mediump float; uniform sampler2D planar; uniform samplerCube cube; void main(){gl_FragColor=texture2D(planar,vec2(0.5))+textureCube(cube,vec3(1.0,0.0,0.0));}', 'fragment');
+  const mixedProgram = compiler.link(vertex, mixedFragment);
+  const cubeArray = compiler.compile('precision mediump float; uniform samplerCube cubes[2]; void main(){gl_FragColor=textureCube(cubes[1],vec3(1.0,0.0,0.0));}', 'fragment');
+  const cubeArrayProgram = compiler.link(vertex, cubeArray);
+  const singleCubeArray = compiler.compile('precision mediump float; uniform samplerCube cubes[1]; void main(){gl_FragColor=textureCube(cubes[0],vec3(1.0,0.0,0.0));}', 'fragment');
+  const singleCubeArrayProgram = compiler.link(vertex, singleCubeArray);
+  const unsupportedVolume = compiler.compile('#version 300 es\nprecision highp float; uniform highp sampler3D volume; out vec4 color; void main(){color=texture(volume,vec3(0.5));}', 'fragment', 2);
+  const unsupportedVolumeProgram = compiler.link(vertex300, unsupportedVolume);
+  const unsupportedIntegerCube = compiler.compile('#version 300 es\nprecision highp float; uniform highp isamplerCube cube; out vec4 color; void main(){color=vec4(texture(cube,vec3(1.0,0.0,0.0)));}', 'fragment', 2);
+  const unsupportedIntegerCubeProgram = compiler.link(vertex300, unsupportedIntegerCube);
+  const vertexTexture2D = compiler.compile('attribute vec3 position; uniform sampler2D image; void main(){gl_Position=vec4(position,1.0)+texture2D(image,vec2(0.5))*0.01;}', 'vertex');
+  const vertexCubeLod = compiler.compile('attribute vec3 position; uniform samplerCube cube; void main(){gl_Position=vec4(position,1.0)+textureCubeLod(cube,vec3(1.0,0.0,0.0),0.75)*0.01;}', 'vertex');
+  const fragmentCubeBias = compiler.compile('precision mediump float; uniform samplerCube cube; void main(){gl_FragColor=textureCube(cube,vec3(1.0,0.0,0.0),0.5);}', 'fragment');
+  const vertexCubeBias = compiler.compile('attribute vec3 position; uniform samplerCube cube; void main(){gl_Position=vec4(position,1.0)+textureCube(cube,vec3(1.0,0.0,0.0),0.5)*0.01;}', 'vertex');
+  const markerNamedFunction = compiler.compile('precision mediump float; vec4 TODO_UNHANDLED_TEXTURE_FUNCTION(){return vec4(0.25,0.5,0.75,1.0);} void main(){gl_FragColor=TODO_UNHANDLED_TEXTURE_FUNCTION();}', 'fragment');
+  const markerNamedProgram = compiler.link(vertex, markerNamedFunction);
   return [
     { name: "essl100-vertex", passed: vertex.success, log: vertex.log },
     { name: "essl100-fragment", passed: fragment.success, log: fragment.log },
@@ -69,5 +90,38 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
     { name: 'integer-minimum-literal', passed: minimumInteger.success
       && minimumInteger.wgsl.includes('(-2147483647i - 1i)')
       && !minimumInteger.wgsl.includes('-2147483648i'), log: minimumInteger.log },
+    { name: 'scalar-cube-reflection', passed: cubeFragment.success && cubeFragment.uniforms.some(uniform => uniform.name === 'cube' && uniform.type === 0x8b60 && uniform.size === 1), log: cubeFragment.log },
+    { name: 'scalar-cube-link', passed: cubeProgram.success && cubeProgram.samplers.length === 1
+      && cubeProgram.samplers[0]?.type === 0x8b60 && cubeProgram.samplers[0]?.samplerBinding === 0
+      && cubeProgram.samplers[0]?.textureBinding === 1 && cubeProgram.fragmentWGSL.includes('texture_cube<f32>')
+      && !cubeProgram.fragmentWGSL.includes('@@@@@@'), log: cubeProgram.log },
+    { name: 'shared-cube-stage-binding', passed: sharedCubeProgram.success && sharedCubeProgram.samplers.length === 1
+      && sharedCubeProgram.vertexWGSL.includes('@group(1) @binding(1) var ANGLE_texture_cube')
+      && sharedCubeProgram.fragmentWGSL.includes('@group(1) @binding(1) var ANGLE_texture_cube'), log: sharedCubeProgram.log },
+    { name: 'mixed-2d-cube-binding', passed: mixedProgram.success && mixedProgram.samplers.length === 2
+      && mixedProgram.samplers.some(sampler => sampler.type === 0x8b5e)
+      && mixedProgram.samplers.some(sampler => sampler.type === 0x8b60)
+      && mixedProgram.samplers.every((sampler, index) => sampler.samplerBinding === index * 2 && sampler.textureBinding === index * 2 + 1), log: mixedProgram.log },
+    { name: 'cube-sampler-array-diagnostic', passed: cubeArray.success && !cubeArrayProgram.success
+      && cubeArrayProgram.log.includes('Sampler cubes'), log: cubeArrayProgram.log },
+    { name: 'single-cube-sampler-array-diagnostic', passed: singleCubeArray.success && !singleCubeArrayProgram.success
+      && singleCubeArrayProgram.log.includes('sampler array'), log: singleCubeArrayProgram.log },
+    { name: 'unsupported-volume-sampler-diagnostic', passed: unsupportedVolume.success && !unsupportedVolumeProgram.success
+      && unsupportedVolumeProgram.log.includes('Sampler volume'), log: unsupportedVolumeProgram.log },
+    { name: 'unsupported-integer-cube-diagnostic', passed: unsupportedIntegerCube.success && !unsupportedIntegerCubeProgram.success
+      && unsupportedIntegerCubeProgram.log.includes('Sampler cube'), log: unsupportedIntegerCubeProgram.log },
+    { name: 'vertex-cube-implicit-lod-zero', passed: cubeVertex.success && cubeVertex.wgsl.includes('textureSampleLevel(')
+      && cubeVertex.wgsl.includes(', 0.0f)') && !cubeVertex.wgsl.includes('textureSample('), log: cubeVertex.log },
+    { name: 'vertex-2d-implicit-lod-zero', passed: vertexTexture2D.success && vertexTexture2D.wgsl.includes('textureSampleLevel(')
+      && vertexTexture2D.wgsl.includes(', 0.0f)') && !vertexTexture2D.wgsl.includes('textureSample('), log: vertexTexture2D.log },
+    { name: 'vertex-cube-explicit-lod', passed: vertexCubeLod.success && vertexCubeLod.wgsl.includes('textureSampleLevel(')
+      && vertexCubeLod.wgsl.split('\n').some(line => line.includes('textureSampleLevel(') && line.includes('0.75f')), log: vertexCubeLod.log },
+    { name: 'fragment-cube-implicit-sampling', passed: cubeFragment.success && cubeFragment.wgsl.includes('textureSample(')
+      && !cubeFragment.wgsl.includes('textureSampleLevel('), log: cubeFragment.log },
+    { name: 'fragment-cube-bias', passed: fragmentCubeBias.success && fragmentCubeBias.wgsl.includes('textureSampleBias(')
+      && fragmentCubeBias.wgsl.includes('0.5f'), log: fragmentCubeBias.log },
+    { name: 'vertex-cube-bias-diagnostic', passed: !vertexCubeBias.success && vertexCubeBias.log.length > 0, log: vertexCubeBias.log },
+    { name: 'user-function-texture-marker-name', passed: markerNamedFunction.success && markerNamedProgram.success
+      && markerNamedProgram.fragmentWGSL.includes('_uTODO_UNHANDLED_TEXTURE_FUNCTION'), log: markerNamedProgram.log },
   ];
 }

@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 
 test("ANGLE Wasm compiles ESSL corpus and WebGPU accepts linked WGSL", async ({ page }) => {
   // Keep Vite's URL helper available while disabling source-change navigation in this test.
@@ -83,5 +84,51 @@ test("ANGLE Wasm compiles ESSL corpus and WebGPU accepts linked WGSL", async ({ 
   for (const stage of result.validation) {
     expect(stage.messages.filter((message) => message.type === "error")).toEqual([]);
     expect(stage.pipeline).toBe(true);
+  }
+});
+
+test("ANGLE scalar cube samplers preserve six faces and per-face texel orientation", async ({ page, browser }) => {
+  await page.route("**/@vite/client", (route) => route.fulfill({
+    contentType: "text/javascript", body: "export const injectQuery = (url) => url;",
+  }));
+  await page.goto("/packages/compiler/test/browser.html");
+  const result = await page.evaluate(async () => {
+    const compilerURL = "/packages/compiler/src/index.ts";
+    const fixtureURL = "/packages/compiler/test/cubemap.ts";
+    const { createCompiler } = await import(compilerURL) as typeof import("../../packages/compiler/src/index.js");
+    const { runCubeSamplerVerification } = await import(fixtureURL) as typeof import("../../packages/compiler/test/cubemap.js");
+    return runCubeSamplerVerification(await createCompiler());
+  });
+  const evidence = {
+    recordedAt: new Date().toISOString(), browser: browser.version(),
+    launchMode: process.env.REFRAL_HEADLESS === "0" ? "headed" : "headless",
+    scope: "Direct ANGLE compiler and WebGPU sampling spike with a native WebGL reference",
+    compilerDependencies: JSON.parse(await readFile("packages/compiler/dependencies.json", "utf8")),
+    compilerWasmSha256: createHash("sha256").update(await readFile("artifacts/compiler/compiler.wasm")).digest("hex"),
+    ...result,
+  };
+  await mkdir("artifacts/cubemap/pr1", { recursive: true });
+  await writeFile("artifacts/cubemap/pr1/compiler-gpu.json", JSON.stringify(evidence, null, 2) + "\n");
+  expect(evidence.launchMode).toBe("headless");
+  expect(result.faceOrder.map(face => face.target)).toEqual([0x8515, 0x8516, 0x8517, 0x8518, 0x8519, 0x851a]);
+  expect(result.results.map(sample => [sample.id, sample.probes.length])).toEqual([
+    ["six-axis-directions", 6], ["six-face-texel-orientation", 24],
+    ["vertex-implicit-cube-level-zero", 1], ["vertex-implicit-2d-level-zero", 1],
+  ]);
+  expect(result.validationErrors).toEqual([]);
+  for (const sample of result.results) {
+    expect(sample.nativeError, sample.id).toBe(0);
+    expect(sample.pipeline, sample.id).toBe(true);
+    expect(sample.compilation.filter(message => message.type === "error"), sample.id).toEqual([]);
+    expect(sample.reflection.samplers).toEqual([{
+      name: "image", type: sample.kind === "cube" ? 0x8b60 : 0x8b5e,
+      size: 1, samplerBinding: 0, textureBinding: 1,
+    }]);
+    expect(sample.sources.vertexWGSL).not.toContain("@@@@@@");
+    expect(sample.sources.fragmentWGSL).not.toContain("@@@@@@");
+    for (const probe of sample.probes) {
+      expect(probe.native, `${sample.id} native ${probe.id}`).toEqual(probe.expected);
+      expect(probe.webgpu, `${sample.id} WebGPU ${probe.id}`).toEqual(probe.expected);
+    }
   }
 });

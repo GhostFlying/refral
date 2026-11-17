@@ -12,7 +12,11 @@ interface AngleModule {
   ccall(name: string, returnType: string, parameterTypes: string[], parameters: unknown[]): string;
 }
 
-const samplerTypes = new Set([0x8b5e, 0x8b60, 0x8b62, 0x8dc1, 0x8dc4, 0x8dca, 0x8dd2]);
+const samplerTypes = new Set([
+  0x8b5e, 0x8b5f, 0x8b60, 0x8b62, 0x8dc1, 0x8dc4, 0x8dc5,
+  0x8dca, 0x8dcb, 0x8dcc, 0x8dcf, 0x8dd2, 0x8dd3, 0x8dd4, 0x8dd7,
+]);
+const unsupportedTextureOperation = /\bTODO_UNHANDLED_TEXTURE_FUNCTION\s*\(/;
 
 function isSampler(variable: ShaderVariable): boolean {
   return samplerTypes.has(variable.type);
@@ -92,10 +96,17 @@ export function linkShaders(vertex: CompiledShader, fragment: CompiledShader,
     if (variable.fields.length !== 0) {
       return failedProgram(`Struct uniform ${variable.name} is outside the initial compiler profile.`);
     }
-    if (isSampler(variable) && (variable.size !== 1 || variable.type !== 0x8b5e)) {
+    if (isSampler(variable) && (variable.size !== 1 ||
+        (variable.type !== 0x8b5e && variable.type !== 0x8b60))) {
       return failedProgram(`Sampler ${variable.name} requires an unsupported type or array layout.`);
     }
     allUniforms.set(variable.name, variable);
+  }
+  // A one-element sampler array has scalar-sized reflection in the pinned ANGLE API.
+  // Reject the backend's explicit unsupported operation marker before final WGSL is exposed.
+  if (unsupportedTextureOperation.test(vertex.wgsl) ||
+      unsupportedTextureOperation.test(fragment.wgsl)) {
+    return failedProgram("ANGLE WGSL backend does not support this texture operation, including sampler array access.");
   }
   const locations = new Map<string, number>();
   const occupied = new Set<number>();

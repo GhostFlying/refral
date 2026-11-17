@@ -37,3 +37,5 @@ ADR 006 records [resource versions and shared execution](adr/006-resource-execut
 ADR 007 accepts the [synchronous readback integration](adr/007-synchronous-readback.md) using task025's worker feasibility and task027's Canvas2D comparison. Task028 records public readPixels acceptance through the Canvas2D backend.
 
 ADR 008 accepts [synchronous DOM extraction](adr/008-dom-image-extraction.md), including the private native WebGL HTMLImage dependency, WebGPU/opaque-Canvas transfer for Canvas sources and source-context coordination.
+
+ADR 009 records [texture image subresources and CubeMap sampling](adr/009-texture-image-subresources.md). Task034 tracks the compiler/contract, dual-core runtime and original DOM CTS PRs.

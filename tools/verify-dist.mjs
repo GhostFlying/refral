@@ -174,10 +174,39 @@ try {
     }
     domUploads.push(result);
   }
+  const cubeMaps = [];
+  await page.goto('http://127.0.0.1:4174/tests/fixtures/cubemap-deployment.html');
+  await page.waitForFunction(() => typeof window.runCubemapDeployment === 'function');
+  for (const name of ['six-axes-and-face-corners', 'dom-face-sources-and-pixel-store']) {
+    const nativeResults = [];
+    for (const backend of ['native', 'js', 'rust']) {
+      const cube = await page.evaluate(({ name, backend }) => window.runCubemapDeployment(name, backend),
+        { name, backend });
+      assert.equal(cube.selectedCore, backend, `${backend} built CubeMap core`);
+      assert.equal(cube.failure, null, `${backend} built CubeMap execution`);
+      assert.deepEqual(cube.checks.filter(check => !check.passed), [], `${backend} built CubeMap assertions`);
+      assert.deepEqual(cube.validationErrors, [], `${backend} built CubeMap GPU diagnostics`);
+      assert.deepEqual(cube.cleanupErrors, [], `${backend} built CubeMap cleanup`);
+      assert.equal(cube.pixels.length, cube.width * cube.height * 4);
+      assert.ok(cube.samples.length > 0, `${backend} built CubeMap draw samples`);
+      assert.deepEqual(cube.pixels, cube.expected, `${backend} built CubeMap expected pixels`);
+      if (nativeResults.length) assert.deepEqual(cube.pixels, nativeResults[0].pixels,
+        `${backend} built CubeMap native pixels`);
+      nativeResults.push(cube);
+      const image = new PNG({ width: cube.width, height: cube.height });
+      for (let row = 0; row < cube.height; row++) {
+        const start = row * cube.width * 4;
+        image.data.set(cube.pixels.slice(start, start + cube.width * 4),
+          (cube.height - row - 1) * cube.width * 4);
+      }
+      await writeFile(`artifacts/deployment/cube-${name}-${backend}.png`, PNG.sync.write(image));
+      cubeMaps.push(cube);
+    }
+  }
   assert.deepEqual(errors, []);
-  const result = { recordedAt: new Date().toISOString(), url: page.url(), browserVersion: browser.version(), launchCommandLine, builds, headless: process.env.REFRAL_HEADLESS !== '0', viewport: page.viewportSize(), probe, demos, demoComparisons, rustBuffer, triangles, domUploads, pageErrors: errors };
+  const result = { recordedAt: new Date().toISOString(), url: page.url(), browserVersion: browser.version(), launchCommandLine, builds, headless: process.env.REFRAL_HEADLESS !== '0', viewport: page.viewportSize(), probe, demos, demoComparisons, rustBuffer, triangles, domUploads, cubeMaps, pageErrors: errors };
   await writeFile('artifacts/deployment/result.json', JSON.stringify(result, null, 2) + '\n');
-  console.log('Built deployment passed Chrome probe, three-path RTT and triangle pixels, public readPixels and DOM uploads, ABI3/resource3/readback1/DOM upload2 and page-error checks.');
+  console.log('Built deployment passed Chrome probe, three-path RTT and triangle pixels, public readPixels, DOM uploads and CubeMap pixels, ABI3/resource3/readback1/DOM upload2 and page-error checks.');
 } finally {
   try { await browser?.close(); } finally {
     if (server.exitCode === null) {

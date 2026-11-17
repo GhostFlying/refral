@@ -39,3 +39,5 @@ ADR 007 accepts the [synchronous readback integration](adr/007-synchronous-readb
 ADR 008 accepts [synchronous DOM extraction](adr/008-dom-image-extraction.md), including the private native WebGL HTMLImage dependency, WebGPU/opaque-Canvas transfer for Canvas sources and source-context coordination.
 
 ADR 009 records [texture image subresources and CubeMap sampling](adr/009-texture-image-subresources.md). Task034 tracks the compiler/contract, dual-core runtime and original DOM CTS PRs.
+
+The [CubeMap and original DOM CTS report](validation/2026-11-18-cubemap.md) records task034 acceptance, the21-file original set, resource capability3 and built CubeMap verification.

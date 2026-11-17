@@ -21,7 +21,17 @@
       "sdk/tests/conformance/state/gl-geterror.html",
       "sdk/tests/conformance/state/gl-getstring.html",
       "sdk/tests/conformance/state/gl-initial-state.html",
-      "sdk/tests/conformance/buffers/buffer-data-and-buffer-sub-data.html"
+      "sdk/tests/conformance/buffers/buffer-data-and-buffer-sub-data.html",
+      "sdk/tests/conformance/textures/image_data/tex-2d-rgba-rgba-unsigned_byte.html",
+      "sdk/tests/conformance/textures/canvas/tex-2d-rgba-rgba-unsigned_byte.html",
+      "sdk/tests/conformance/textures/image/tex-2d-rgba-rgba-unsigned_byte.html"
+    ],
+    "supportFiles": [
+      "sdk/tests/js/tests/tex-image-and-sub-image-utils.js",
+      "sdk/tests/js/tests/tex-image-and-sub-image-2d-with-image-data.js",
+      "sdk/tests/js/tests/tex-image-and-sub-image-2d-with-canvas.js",
+      "sdk/tests/js/tests/tex-image-and-sub-image-2d-with-image.js",
+      "sdk/tests/resources/red-green.png"
     ],
     "specifications": [
       "specs/latest/1.0/index.html",
@@ -31,7 +41,6 @@
       {
         "path": "sdk/tests/conformance/textures/misc/tex-image-and-sub-image-2d-with-array-buffer-view.html",
         "prerequisites": [
-          "TEXTURE_CUBE_MAP",
           "packed RGBA UNSIGNED_SHORT_5_5_5_1 and UNSIGNED_SHORT_4_4_4_4 texture formats"
         ],
         "derivedCases": [
@@ -42,10 +51,8 @@
       {
         "path": "sdk/tests/conformance/textures/misc/texture-npot.html",
         "prerequisites": [
-          "TEXTURE_CUBE_MAP",
           "mipmaps",
-          "copyTexImage2D validation for rejected NPOT level",
-          "HTMLCanvasElement-source texImage2D"
+          "copyTexImage2D validation for rejected NPOT level"
         ],
         "derivedCases": [
           "texture-npot-completeness"

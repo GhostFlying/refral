@@ -1,8 +1,8 @@
 {
   "version": 2,
   "profile": "webgl1-prototype",
-  "updated": "2026-11-16",
-  "implementationRevision": "task-035 texture-image contract and CubeMap compiler verification from main db9c722; delivery identifies integrated heads",
+  "updated": "2026-11-17",
+  "implementationRevision": "task-036 dual-core CubeMap execution and resource3 from main9b57f9c; delivery identifies integrated heads",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
     "chrome-macos-arm64": {
@@ -1071,10 +1071,11 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Scalar sampler2D selects multiple units with query/type/range validation. NPOT filter/wrap restrictions and incomplete black sampling follow the shared profile. A 1x1 level-zero image satisfies its full mip chain.",
+          "coverage": "Scalar sampler2D and samplerCube select independent per-unit bindings with query/type/range validation and mixed-type unit conflicts. NPOT filter/wrap restrictions and incomplete opaque-black sampling follow the shared profile. Six matching 1x1 cube faces satisfy the full mip chain.",
           "tests": [
             "tests/chrome/rtt.spec.ts::RTT texture-npot-completeness",
-            "tests/chrome/rtt.spec.ts::RTT texture-sampler-units"
+            "tests/chrome/rtt.spec.ts::RTT texture-sampler-units",
+            "tests/chrome/cubemap.spec.ts"
           ],
           "evidence": [
             {
@@ -1084,10 +1085,14 @@
             {
               "path": "artifacts/rtt/texture-sampler-units/result.json",
               "passed": true
+            },
+            {
+              "path": "artifacts/cubemap/pr2/cases/completeness-and-npot/result.json",
+              "passed": true
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records DOM acceptance. Mipmaps, CubeMap, packed types and additional formats follow their compatibility tasks."
+            "Level zero and UNSIGNED_BYTE. The DOM entry records accepted source overloads. Nonzero mip levels, mipmap generation, packed types and additional formats have separate compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -1096,10 +1101,11 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Scalar sampler2D selects multiple units with query/type/range validation. NPOT filter/wrap restrictions and incomplete black sampling follow the shared profile. A 1x1 level-zero image satisfies its full mip chain.",
+          "coverage": "Scalar sampler2D and samplerCube select independent per-unit bindings with query/type/range validation and mixed-type unit conflicts. NPOT filter/wrap restrictions and incomplete opaque-black sampling follow the shared profile. Six matching 1x1 cube faces satisfy the full mip chain.",
           "tests": [
             "tests/chrome/rtt.spec.ts::RTT texture-npot-completeness",
-            "tests/chrome/rtt.spec.ts::RTT texture-sampler-units"
+            "tests/chrome/rtt.spec.ts::RTT texture-sampler-units",
+            "tests/chrome/cubemap.spec.ts"
           ],
           "evidence": [
             {
@@ -1109,10 +1115,14 @@
             {
               "path": "artifacts/rtt/texture-sampler-units/result.json",
               "passed": true
+            },
+            {
+              "path": "artifacts/cubemap/pr2/cases/completeness-and-npot/result.json",
+              "passed": true
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources entry records DOM acceptance. Mipmaps, CubeMap, packed types and additional formats follow their compatibility tasks."
+            "Level zero and UNSIGNED_BYTE. The DOM entry records accepted source overloads. Nonzero mip levels, mipmap generation, packed types and additional formats have separate compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -1993,6 +2003,58 @@
         "buffer-objects",
         "WebIDL AllowSharedBufferSource and overload resolution"
       ]
+    },
+    {
+      "id": "cubemap-level-zero",
+      "api": "bindTexture, texImage2D, texSubImage2D, texParameter*, getTexParameter, getParameter, isTexture, deleteTexture",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Six independent level-zero square faces, five UBYTE logical formats for typed/null input and RGBA DOM input. Fixed target and per-unit bindings, per-image versions, rectangular subimage updates, face orientation, sampler completeness, snapshots, deletion and GPU retirement.",
+          "tests": [
+            "tests/chrome/cubemap.spec.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/cubemap/pr2/cases/",
+              "passed": true,
+              "groups": 10,
+              "drawSamplesPerBackend": 129,
+              "pixelTolerance": 0
+            }
+          ],
+          "limits": [
+            "Nonzero mip levels, mipmap generation, packed pixel types and CubeMap framebuffer attachments have separate acceptance tasks."
+          ],
+          "unsupportedBehavior": "Invalid supported calls produce GL errors. Valid operations beyond the declared profile report NotSupportedError."
+        },
+        "rust": {
+          "status": "differential-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Six independent level-zero square faces, five UBYTE logical formats for typed/null input and RGBA DOM input. Fixed target and per-unit bindings, per-image versions, rectangular subimage updates, face orientation, sampler completeness, snapshots, deletion and GPU retirement.",
+          "tests": [
+            "tests/chrome/cubemap.spec.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/cubemap/pr2/cases/",
+              "passed": true,
+              "groups": 10,
+              "drawSamplesPerBackend": 129,
+              "pixelTolerance": 0
+            }
+          ],
+          "limits": [
+            "Nonzero mip levels, mipmap generation, packed pixel types and CubeMap framebuffer attachments have separate acceptance tasks."
+          ],
+          "unsupportedBehavior": "Invalid supported calls produce GL errors. Valid operations beyond the declared profile report NotSupportedError."
+        }
+      }
     }
   ],
   "observability": {
@@ -2111,23 +2173,26 @@
   "compilerVerification": {
     "node": {
       "evidence": "artifacts/compiler/corpus.json",
-      "passedCases": 39,
-      "totalCases": 39
+      "passedCases": 45,
+      "totalCases": 45
     },
     "browser": {
       "evidence": "artifacts/compiler/chrome-corpus.json",
-      "passedCases": 39,
-      "totalCases": 39,
-      "pipelines": 8,
+      "passedCases": 45,
+      "totalCases": 45,
+      "pipelines": 10,
       "cubeEvidence": "artifacts/cubemap/pr1/compiler-gpu.json",
-      "cubePixelSamples": 32
+      "cubePixelSamples": 32,
+      "fragmentOutputEvidence": "artifacts/cubemap/pr2/compiler-frag-data-gpu.json",
+      "fragmentOutputPixelSamples": 28
     },
     "profileSource": "packages/compiler/profile-limits.json",
-    "note": "The shared profile passes39 compiler cases in Node and headless Chrome. Four existing shader pairs plus four direct cube/vertex-sampling pipelines validate final WGSL. CubeMap execution scope is tracked separately."
+    "note": "The shared profile passes45 compiler cases in Node and headless Chrome. Ten direct pipelines validate final WGSL, including vertex texture sampling and original CTS gl_FragData outputs with array reads and early returns."
   },
   "deploymentVerification": {
-    "evidence": "artifacts/dom-input/pr4/dist-result.json",
-    "scope": "Built Chrome probe, three-path RTT/triangle pixels and public readPixels,16 DOM captures per backend, matching packaged hashes and ABI3/resource2/readback1/DOM upload2."
+    "status": "passed",
+    "evidence": "artifacts/cubemap/pr2/dist-result.json",
+    "scope": "Built probe, three-path RTT/triangles, synchronous readPixels and DOM uploads, matching packaged hashes and ABI3/resource3/readback1/DOM2."
   },
   "defaultCore": "js",
   "cores": {
@@ -2136,7 +2201,7 @@
       "implementation": "packages/core-js",
       "contract": "packages/core-api",
       "facade": "packages/webgl",
-      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT vertex inputs, typed uniforms/matrices, level-zero five-format Texture2D, RGBA/depth FBO and raster profile. Public synchronous RGBA/UNSIGNED_BYTE readPixels through Canvas2D."
+      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT vertex inputs, typed uniforms/matrices, level-zero five-format Texture2D/CubeMap, RGBA/depth FBO and raster profile. Public synchronous RGBA/UNSIGNED_BYTE readPixels through Canvas2D."
     },
     "rust": {
       "profile": "webgl1-render-to-texture",
@@ -2144,31 +2209,31 @@
       "binding": "crates/wasm + packages/core-wasm",
       "contract": "packages/core-api",
       "facade": "packages/webgl",
-      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT vertex inputs, typed uniforms/matrices, level-zero five-format Texture2D, RGBA/depth FBO and raster profile. Public synchronous RGBA/UNSIGNED_BYTE readPixels through Canvas2D."
+      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT vertex inputs, typed uniforms/matrices, level-zero five-format Texture2D/CubeMap, RGBA/depth FBO and raster profile. Public synchronous RGBA/UNSIGNED_BYTE readPixels through Canvas2D."
     }
   },
   "coreVerification": {
     "report": "docs/validation/2026-11-16-dom-uploads.md",
     "environment": "chrome-macos-arm64",
     "allChromeTests": {
-      "passed": 111,
+      "passed": 122,
       "failed": 0,
       "skipped": 0,
-      "evidence": "artifacts/cubemap/pr1/chrome.log",
+      "evidence": "artifacts/cubemap/pr2/chrome.log",
       "headless": true
     },
     "deterministicChecks": {
       "typescript": "passed",
-      "jsUnitTests": 210,
-      "rustNativeTests": 66,
-      "rustCoreTests": 58,
-      "wasmCrateTests": 8,
+      "jsUnitTests": 226,
+      "rustNativeTests": 75,
+      "rustCoreTests": 66,
+      "wasmCrateTests": 9,
       "rustFmt": "passed",
       "rustClippy": "passed",
-      "actualWasmAdapterTests": 38,
+      "actualWasmAdapterTests": 46,
       "evidence": [
-        "artifacts/cubemap/pr1/check.log",
-        "artifacts/cubemap/pr1/wasm-tests.log"
+        "artifacts/cubemap/pr2/check.log",
+        "artifacts/cubemap/pr2/wasm-tests.log"
       ]
     },
     "js": {
@@ -2178,13 +2243,15 @@
       "sharedRttScenes": 20,
       "ctsFiles": 18,
       "ctsAssertions": 515,
-      "remainingParity": "Additional DOM encodings and source-context combinations, mipmaps/CubeMap/packed formats, additional targets/readback formats, extensions and restoration.",
+      "remainingParity": "Additional DOM encodings and source-context combinations, nonzero mip levels/mipmap generation/packed formats, cube framebuffer attachments, additional readback formats, extensions and restoration.",
       "publicReadPixelsCaseGroups": 8,
       "publicReadPixelsAssertions": 296,
       "publicImageDataGroups": 8,
       "publicImageDataAssertions": 871,
       "publicCanvasImageGroups": 9,
-      "publicCanvasImageAssertions": 700
+      "publicCanvasImageAssertions": 700,
+      "cubeMapCaseGroups": 10,
+      "cubeMapDrawSamples": 129
     },
     "rust": {
       "profile": "webgl1-render-to-texture",
@@ -2193,25 +2260,27 @@
       "sharedRttScenes": 20,
       "ctsFiles": 18,
       "ctsAssertions": 515,
-      "remainingParity": "Additional DOM encodings and source-context combinations, mipmaps/CubeMap/packed formats, additional targets/readback formats, extensions and restoration.",
+      "remainingParity": "Additional DOM encodings and source-context combinations, nonzero mip levels/mipmap generation/packed formats, cube framebuffer attachments, additional readback formats, extensions and restoration.",
       "publicReadPixelsCaseGroups": 8,
       "publicReadPixelsAssertions": 296,
       "publicImageDataGroups": 8,
       "publicImageDataAssertions": 871,
       "publicCanvasImageGroups": 9,
-      "publicCanvasImageAssertions": 700
+      "publicCanvasImageAssertions": 700,
+      "cubeMapCaseGroups": 10,
+      "cubeMapDrawSamples": 129
     },
     "sharedCompiler": {
-      "corpusCases": 39,
-      "realPipelines": 8,
+      "corpusCases": 45,
+      "realPipelines": 10,
       "evidence": "artifacts/compiler/chrome-corpus.json",
       "scope": "Shared compiler used by both semantic cores and original ESSL demo."
     },
     "explicitSelectionTest": "tests/chrome/core-profile.spec.ts::explicit Rust selection runs its drawing core and JS remains the default",
     "deployment": {
       "status": "passed",
-      "evidence": "artifacts/deployment/result.json",
-      "scope": "Built Chrome probe, three-path RTT/triangle pixels and public readPixels, packaged Rust ABI3/resource2/readback1 and page-error checks."
+      "evidence": "artifacts/cubemap/pr2/dist-result.json",
+      "scope": "Built probe, three-path RTT/triangles, synchronous readPixels and DOM uploads, matching packaged hashes and ABI3/resource3/readback1/DOM2."
     }
   },
   "specifications": {
@@ -2346,15 +2415,19 @@
   "cubemapStage": {
     "task": "docs/tasks/034-cubemap-stage.md",
     "contract": "docs/adr/009-texture-image-subresources.md",
-    "status": "contract-and-compiler-verified",
+    "status": "runtime-differential-verified",
     "runtimeStatus": {
-      "js": "unimplemented",
-      "rust": "unimplemented"
+      "js": "differential-verified",
+      "rust": "differential-verified"
     },
     "headless": true,
     "targetOriginalCtsFiles": 21,
     "compilerEvidence": "artifacts/cubemap/pr1/compiler-gpu.json",
     "compilerPixelSamples": 32,
-    "compilerPipelines": 4
+    "compilerPipelines": 4,
+    "runtimeEvidence": "artifacts/cubemap/pr2/cases/",
+    "runtimeGroups": 10,
+    "runtimeDrawSamplesPerBackend": 129,
+    "resourceProtocol": 3
   }
 }

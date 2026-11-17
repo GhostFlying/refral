@@ -343,7 +343,9 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
     if (operation === "getParameter") {
       if (args[0] === GL.CURRENT_PROGRAM) return this.wrap(result as object | null, "program");
       if (args[0] === GL.ARRAY_BUFFER_BINDING || args[0] === GL.ELEMENT_ARRAY_BUFFER_BINDING) return this.toHandle(result);
-      if (args[0] === GL.TEXTURE_BINDING_2D) return this.wrap(result as object | null, "texture");
+      if (args[0] === GL.TEXTURE_BINDING_2D || args[0] === GL.TEXTURE_BINDING_CUBE_MAP) {
+        return this.wrap(result as object | null, "texture");
+      }
       if (args[0] === GL.RENDERBUFFER_BINDING) return this.wrap(result as object | null, "renderbuffer");
       if (args[0] === GL.FRAMEBUFFER_BINDING) return this.wrap(result as object | null, "framebuffer");
     }

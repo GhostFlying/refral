@@ -220,10 +220,7 @@ fn lost_source_preparation_preserves_destination_and_validation_order() {
         assert_eq!(core.texture_version(0), initial);
         no_operations(&mut core);
     }
-    let storage = core.render.textures.slots[0]
-        .value
-        .as_ref()
-        .unwrap()
+    let storage = core.render.textures.slots[0].value.as_ref().unwrap().images[0]
         .storage
         .unwrap();
     assert_eq!(
@@ -278,10 +275,7 @@ fn dom_commits_reject_invalid_source_dimensions_without_changing_storage() {
             }
         }
     }
-    let storage = core.render.textures.slots[0]
-        .value
-        .as_ref()
-        .unwrap()
+    let storage = core.render.textures.slots[0].value.as_ref().unwrap().images[0]
         .storage
         .unwrap();
     assert_eq!(
@@ -304,10 +298,7 @@ fn typed_and_null_uploads_preserve_zero_size_behavior() {
             image(&mut core, width, height, RGBA, source);
             let (_, pixels) = definition(&mut core);
             assert!(pixels.is_empty());
-            let storage = core.render.textures.slots[0]
-                .value
-                .as_ref()
-                .unwrap()
+            let storage = core.render.textures.slots[0].value.as_ref().unwrap().images[0]
                 .storage
                 .unwrap();
             assert_eq!(
@@ -533,11 +524,8 @@ fn dom_updates_own_their_pixels_and_failed_updates_preserve_versions() {
 #[test]
 fn dom_preparation_reports_version_capacity_and_neutral_loss() {
     let mut core = context();
-    core.render.textures.slots[0]
-        .value
-        .as_mut()
-        .unwrap()
-        .storage_generation = MAX_SAFE_VERSION;
+    core.render.textures.slots[0].value.as_mut().unwrap().images[0].storage_generation =
+        MAX_SAFE_VERSION;
     assert!(matches!(
         core.render_invoke("prepareDomTextureUpload", &request(false, 1, 1, RGBA, true)),
         Reply::Null

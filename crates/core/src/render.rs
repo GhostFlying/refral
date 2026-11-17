@@ -1,6 +1,8 @@
 use super::*;
 
 #[cfg(test)]
+mod cube_texture_tests;
+#[cfg(test)]
 mod dom_texture_tests;
 mod framebuffers;
 mod raster;
@@ -12,7 +14,9 @@ pub use framebuffers::{DepthAttachment, TargetSnapshot};
 mod uniforms;
 pub use raster::RasterState;
 pub use readback::ReadPixelsPlan;
-pub use textures::{ResourceOperation, TextureBinding, TextureParameters, TextureVersion};
+pub use textures::{
+    ResourceOperation, TextureBinding, TextureImages, TextureParameters, TextureVersion,
+};
 
 pub const VERTEX_SHADER: u32 = 0x8b31;
 pub const FRAGMENT_SHADER: u32 = 0x8b30;
@@ -1037,13 +1041,25 @@ impl ContextCore {
                 let Some(index) = self.program_index(arg(0).handle()) else {
                     return Reply::Null;
                 };
+                if operation == "validateProgram" {
+                    let program = self.render.programs[index].value.as_ref().unwrap();
+                    let valid = program.linked
+                        && program
+                            .executable
+                            .as_ref()
+                            .is_some_and(|executable| self.sampler_units_valid(executable));
+                    let program = self.render.programs[index].value.as_mut().unwrap();
+                    program.validated = valid;
+                    program.log = if valid {
+                        String::new()
+                    } else {
+                        "Program sampler bindings are invalid.".to_owned()
+                    };
+                    return Reply::Null;
+                }
                 let program = self.render.programs[index].value.as_mut().unwrap();
                 if operation == "getProgramInfoLog" {
                     return text(&program.log);
-                }
-                if operation == "validateProgram" {
-                    program.validated = program.linked;
-                    return Reply::Null;
                 }
                 return match arg(1).number() as u32 {
                     0x8b80 => Reply::Boolean(program.deleted),
@@ -1551,16 +1567,25 @@ impl ContextCore {
         }
         let program = self.render.programs[program_index].value.as_ref().unwrap();
         let executable = program.executable.as_ref().unwrap();
+        if !self.sampler_units_valid(executable) {
+            self.record_error(INVALID_OPERATION);
+            return Reply::Null;
+        }
         if let Some(color) = self.framebuffer_color_texture() {
             if executable
                 .layout
                 .samplers
                 .iter()
                 .enumerate()
-                .any(|(index, _)| {
+                .any(|(index, sampler)| {
                     let unit =
                         executable.values[executable.layout.uniforms.len() + index][0] as usize;
-                    self.render.textures.units.get(unit).copied().flatten() == Some(color)
+                    self.render
+                        .textures
+                        .units
+                        .get(unit)
+                        .and_then(|unit| unit.binding(Self::sampler_target(sampler.ty)))
+                        == Some(color)
                 })
             {
                 self.record_error(INVALID_OPERATION);

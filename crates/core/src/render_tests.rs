@@ -125,7 +125,7 @@ fn link(core: &mut ContextCore, program: ObjectHandle, id: u32, success: bool) {
         }
     ));
 }
-fn scene() -> (
+pub(crate) fn scene() -> (
     ContextCore,
     ObjectHandle,
     ObjectHandle,

@@ -1,0 +1,51 @@
+--- a/src/compiler/translator/wgsl/RewritePipelineVariables.cpp
++++ b/src/compiler/translator/wgsl/RewritePipelineVariables.cpp
+@@ -163,3 +162,0 @@
+-    // TODO(anglebug.com/42267100): gl_FragData needs to be emulated. Need something
+-    // like spir-v's
+-    // third_party/angle/src/compiler/translator/tree_ops/spirv/EmulateFragColorData.h.
+@@ -230,0 +228,38 @@
++
++        if (shaderVarName == "gl_FragData") {
++          ASSERT(compiler.getShaderType() == GL_FRAGMENT_SHADER &&
++                 ioType == IOType::Output);
++          const TVariable* var = compiler.getSymbolTable().gl_FragData();
++          const TType& array_type = var->getType();
++          ASSERT(array_type.isArray() && !array_type.isArrayOfArrays());
++          varsToReplace->insert(var->uniqueId().get());
++
++          // Keep the resource-sized AST array in private storage.
++          ImmutableString name =
++              CreateNameToReplaceBuiltin(ImmutableString("gl_FragData"));
++          TStringStream array_type_stream;
++          WriteWgslType(array_type_stream, array_type, {});
++          ioblock->angleGlobalMembers.push_back(
++              BuildConcatenatedImmutableString(
++                  name, " : ", array_type_stream.str().c_str(), ","));
++
++          // Flatten the array into WGSL scalar/vector entry-point outputs.
++          TType element_type = array_type;
++          element_type.toArrayElementType();
++          TStringStream element_type_stream;
++          WriteWgslType(element_type_stream, element_type, {});
++          for (unsigned int location = 0;
++               location < array_type.getOutermostArraySize(); ++location) {
++            ImmutableString output_name =
++                BuildConcatenatedImmutableString(name, location);
++            ioblock->angleAnnotatedMembers.push_back(
++                BuildConcatenatedImmutableString(
++                    "@location(", location, ") ", output_name, " : ",
++                    element_type_stream.str().c_str(), ","));
++            ioblock->angleConversionFuncs.push_back(
++                BuildConcatenatedImmutableString(
++                    toStruct, ".", output_name, " = ", fromStruct, ".", name,
++                    "[", location, "];"));
++          }
++          return true;
++        }
+@@ -344 +379 @@
+-        if (shaderVar.name == "gl_FragData" || shaderVar.name == "gl_SecondaryFragColorEXT" ||
++        if (shaderVar.name == "gl_SecondaryFragColorEXT" ||
+@@ -347 +382 @@
+-            // TODO(anglebug.com/42267100): declare gl_FragData as multiple variables.
++            // TODO(anglebug.com/42267100): emulate dual-source outputs.

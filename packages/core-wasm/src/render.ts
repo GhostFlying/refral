@@ -246,11 +246,11 @@ export function createRustDrawingCoreFromModule(
     required.some((name) => typeof exports[name] !== 'function')
   ) {
     throw new Error(
-      'Rust drawing module requires ABI3/resource2/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
+      'Rust drawing module requires ABI3/resource3/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
     );
   }
   const abi = exports as unknown as ABI;
-  if (abi.rf_abi_version() !== 3 || abi.rf_resource_protocol_version() !== 2)
+  if (abi.rf_abi_version() !== 3 || abi.rf_resource_protocol_version() !== 3)
     throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_readback_protocol_version() !== 1)
     throw new Error('Rust readback protocol mismatch. Rebuild with pnpm rust:build.');
@@ -365,7 +365,14 @@ export function createRustDrawingCoreFromModule(
       slot: reader.u32(),
       generation: reader.u32(),
     };
-    return { texture, storageGeneration: reader.u64(), contentVersion: reader.u64() };
+    const version = { texture, storageGeneration: reader.u64(), contentVersion: reader.u64() };
+    const imageTarget = reader.u32();
+    const level = reader.u32();
+    if (imageTarget !== GL.TEXTURE_2D
+      && (imageTarget < GL.TEXTURE_CUBE_MAP_POSITIVE_X || imageTarget > GL.TEXTURE_CUBE_MAP_NEGATIVE_Z)) {
+      throw new Error('Invalid Rust texture image target.');
+    }
+    return imageTarget === GL.TEXTURE_2D && level === 0 ? version : { ...version, imageTarget, level };
   }
   function applyOperations(bytes: Uint8Array): void {
     if (!bytes.byteLength) return;
@@ -415,14 +422,29 @@ export function createRustDrawingCoreFromModule(
     if (count) schedule();
   }
   function textureBinding(reader: Reader): TextureBinding {
-    const version = reader.u32() ? textureVersion(reader) : null;
+    const kind = reader.u32();
+    const present = reader.u32();
+    if (kind > 1 || present > 1) throw new Error('Invalid Rust texture binding kind.');
+    const versions: TextureVersion[] = [];
+    if (present) {
+      for (let face = 0; face < (kind === 1 ? 6 : 1); face++) {
+        const version = textureVersion(reader);
+        const expectedTarget = kind === 1 ? GL.TEXTURE_CUBE_MAP_POSITIVE_X + face : GL.TEXTURE_2D;
+        if ((version.imageTarget ?? GL.TEXTURE_2D) !== expectedTarget || (version.level ?? 0) !== 0) {
+          throw new Error('Invalid Rust sampled image identity.');
+        }
+        versions.push(version);
+      }
+    }
     const parameters = {
       minFilter: reader.u32(),
       magFilter: reader.u32(),
       wrapS: reader.u32(),
       wrapT: reader.u32(),
     };
-    return { storage: version ? services.resources.texture(version) : null, parameters };
+    if (kind === 1) return { storage: null, parameters, dimension: 'cube',
+      ...(present ? { cubeFaces: versions.map(version => services.resources.texture(version)) } : {}) };
+    return { storage: present ? services.resources.texture(versions[0]!) : null, parameters };
   }
   function readTarget(reader: Reader): TargetSnapshot {
     const width = reader.u32();
@@ -721,6 +743,7 @@ export function createRustDrawingCoreFromModule(
           [GL.MAX_TEXTURE_IMAGE_UNITS]: profile.fragmentTextureUnits,
           [GL.MAX_COMBINED_TEXTURE_IMAGE_UNITS]: profile.combinedTextureUnits,
           [GL.MAX_TEXTURE_SIZE]: services.host.limits.maxTextureDimension2D,
+          [GL.MAX_CUBE_MAP_TEXTURE_SIZE]: services.host.limits.maxTextureDimension2D,
           [GL.MAX_RENDERBUFFER_SIZE]: services.host.limits.maxTextureDimension2D,
           [GL.MAX_VIEWPORT_DIMS]: new Int32Array([
             services.host.limits.maxTextureDimension2D,

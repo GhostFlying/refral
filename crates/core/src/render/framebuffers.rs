@@ -298,6 +298,7 @@ impl ContextCore {
                 .value
                 .as_ref()
                 .unwrap()
+                .images[0]
                 .storage
             else {
                 return INCOMPLETE_ATTACHMENT;
@@ -379,6 +380,7 @@ impl ContextCore {
         let color = self.render.textures.slots[color_index]
             .value
             .as_ref()?
+            .images[0]
             .storage?;
         let depth = framebuffer.depth.and_then(|handle| {
             let index = slot_index(
@@ -441,6 +443,7 @@ impl ContextCore {
             .value
             .as_mut()
             .unwrap()
+            .images[0]
             .content_version += 1;
         self.render
             .textures
@@ -536,7 +539,7 @@ impl ContextCore {
                 ObjectKind::Texture,
                 self.context_id,
             )?;
-            self.render.textures.slots[index].value.as_ref()?.storage
+            self.render.textures.slots[index].value.as_ref()?.images[0].storage
         });
         let Some(color) = color.filter(|color| color.width > 0 && color.height > 0) else {
             return 0;
@@ -811,7 +814,8 @@ impl ContextCore {
                     .value
                     .as_ref()
                     .unwrap()
-                    .bound
+                    .target
+                    != 0
             } else {
                 self.render.framebuffers.renderbuffers[index]
                     .value
@@ -837,7 +841,9 @@ impl ContextCore {
         } else {
             RENDERBUFFER
         };
-        if arg(1).number() as u32 != attachment || arg(2).number() as u32 != resource_target {
+        let textarget = arg(2).number() as u32;
+        let cube_face = texture_attachment && (0x8515..=0x851a).contains(&textarget);
+        if arg(1).number() as u32 != attachment || textarget != resource_target && !cube_face {
             self.record_error(INVALID_ENUM);
             return Reply::Null;
         }
@@ -845,9 +851,30 @@ impl ContextCore {
             self.record_error(INVALID_VALUE);
             return Reply::Null;
         }
+        if texture_attachment
+            && resource_index.is_some_and(|index| {
+                let expected = if cube_face {
+                    textures::TEXTURE_CUBE_MAP
+                } else {
+                    TEXTURE_2D
+                };
+                self.render.textures.slots[index]
+                    .value
+                    .as_ref()
+                    .unwrap()
+                    .target
+                    != expected
+            })
+        {
+            self.record_error(INVALID_OPERATION);
+            return Reply::Null;
+        }
         let Some(index) = self.bound_framebuffer(arg(0).number() as u32) else {
             return Reply::Null;
         };
+        if cube_face && handle.is_some() {
+            return Reply::Unsupported("cube framebuffer attachments");
+        }
         let framebuffer = self.render.framebuffers.slots[index]
             .value
             .as_ref()

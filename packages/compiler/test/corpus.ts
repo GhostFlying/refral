@@ -1,5 +1,6 @@
 import type { Compiler } from "../src/types.js";
 import COMPILER_LIMITS from "../profile-limits.json" with { type: "json" };
+import fragmentOutputShaders from "./fragment-output-shaders.json" with { type: "json" };
 
 export interface CompilerCaseResult {
   name: string;
@@ -63,6 +64,15 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
   const vertexCubeBias = compiler.compile('attribute vec3 position; uniform samplerCube cube; void main(){gl_Position=vec4(position,1.0)+textureCube(cube,vec3(1.0,0.0,0.0),0.5)*0.01;}', 'vertex');
   const markerNamedFunction = compiler.compile('precision mediump float; vec4 TODO_UNHANDLED_TEXTURE_FUNCTION(){return vec4(0.25,0.5,0.75,1.0);} void main(){gl_FragColor=TODO_UNHANDLED_TEXTURE_FUNCTION();}', 'fragment');
   const markerNamedProgram = compiler.link(vertex, markerNamedFunction);
+  const { simpleTextureVertexShader, simpleCubeMapTextureFragmentShader,
+    fragDataReadFragmentShader } = fragmentOutputShaders;
+  const ctsCubeVertex = compiler.compile(simpleTextureVertexShader, "vertex");
+  const ctsCubeFragment = compiler.compile(simpleCubeMapTextureFragmentShader, "fragment");
+  const ctsCubeProgram = compiler.link(ctsCubeVertex, ctsCubeFragment);
+  const fragDataRead = compiler.compile(fragDataReadFragmentShader, "fragment");
+  const fragDataReadProgram = compiler.link(ctsCubeVertex, fragDataRead);
+  const fragDataOutsideLimit = compiler.compile("precision mediump float; void main(){gl_FragData[1]=vec4(1.0);}", "fragment");
+  const mixedFragColorData = compiler.compile("precision mediump float; void main(){gl_FragColor=vec4(1.0);gl_FragData[0]=vec4(1.0);}", "fragment");
   return [
     { name: "essl100-vertex", passed: vertex.success, log: vertex.log },
     { name: "essl100-fragment", passed: fragment.success, log: fragment.log },
@@ -123,5 +133,24 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
     { name: 'vertex-cube-bias-diagnostic', passed: !vertexCubeBias.success && vertexCubeBias.log.length > 0, log: vertexCubeBias.log },
     { name: 'user-function-texture-marker-name', passed: markerNamedFunction.success && markerNamedProgram.success
       && markerNamedProgram.fragmentWGSL.includes('_uTODO_UNHANDLED_TEXTURE_FUNCTION'), log: markerNamedProgram.log },
+    { name: "frag-data-original-cts-compile", passed: ctsCubeVertex.success && ctsCubeFragment.success,
+      log: [ctsCubeVertex.log, ctsCubeFragment.log].join("\n") },
+    { name: "frag-data-original-cts-link", passed: ctsCubeProgram.success
+      && ctsCubeProgram.samplers[0]?.name === "tex" && ctsCubeProgram.samplers[0]?.type === 0x8b60
+      && ctsCubeProgram.uniforms.some(uniform => uniform.name === "face" && uniform.type === 0x1404)
+      && !ctsCubeProgram.fragmentWGSL.includes("@@@@@@"), log: ctsCubeProgram.log },
+    { name: "frag-data-private-array-and-scalar-output", passed: ctsCubeFragment.success
+      && ctsCubeFragment.outputs.some(output => output.name === "gl_FragData" && output.type === 0x8b52 && output.size === 1)
+      && ctsCubeFragment.wgsl.includes("gl_FragData_ : array<vec4<f32>, 1>")
+      && ctsCubeFragment.wgsl.includes("@location(0) gl_FragData_0 : vec4<f32>")
+      && ctsCubeFragment.wgsl.includes("ANGLE_output_annotated.gl_FragData_0 = ANGLE_output_global.gl_FragData_[0];"),
+      log: ctsCubeFragment.log },
+    { name: "frag-data-read-and-early-return", passed: fragDataRead.success && fragDataReadProgram.success
+      && fragDataReadProgram.fragmentWGSL.includes("ANGLE_output_global.gl_FragData_")
+      && fragDataReadProgram.fragmentWGSL.includes("return;"), log: fragDataReadProgram.log },
+    { name: "frag-data-output-index-limit", passed: !fragDataOutsideLimit.success && fragDataOutsideLimit.log.length > 0,
+      log: fragDataOutsideLimit.log },
+    { name: "frag-data-frag-color-exclusivity", passed: !mixedFragColorData.success && mixedFragColorData.log.length > 0,
+      log: mixedFragColorData.log },
   ];
 }

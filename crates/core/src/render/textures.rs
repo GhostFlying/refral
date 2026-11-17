@@ -1,6 +1,9 @@
 use super::*;
 
 const TEXTURE_2D: u32 = 0x0de1;
+pub(super) const TEXTURE_CUBE_MAP: u32 = 0x8513;
+const CUBE_POSITIVE_X: u32 = 0x8515;
+const CUBE_NEGATIVE_Z: u32 = 0x851a;
 const TEXTURE0: u32 = 0x84c0;
 const RGBA: u32 = 0x1908;
 const RGB: u32 = 0x1907;
@@ -27,6 +30,8 @@ pub struct TextureVersion {
     pub texture: ObjectHandle,
     pub storage_generation: u64,
     pub content_version: u64,
+    pub image_target: u32,
+    pub level: u32,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TextureParameters {
@@ -46,8 +51,13 @@ impl Default for TextureParameters {
     }
 }
 pub struct TextureBinding {
-    pub version: Option<TextureVersion>,
+    pub images: TextureImages,
     pub parameters: TextureParameters,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextureImages {
+    Texture2D(Option<TextureVersion>),
+    Cube(Option<[TextureVersion; 6]>),
 }
 pub enum ResourceOperation {
     DefineTexture {
@@ -83,18 +93,23 @@ pub(super) struct TextureStorage {
     pub(super) height: u32,
     pub(super) format: u32,
 }
-pub(super) struct Texture {
-    pub(super) deleted: bool,
-    pub(super) references: usize,
-    pub(super) bound: bool,
+#[derive(Clone, Copy, Default)]
+pub(super) struct TextureImage {
     pub(super) storage: Option<TextureStorage>,
     pub(super) storage_generation: u64,
     pub(super) content_version: u64,
+}
+pub(super) struct Texture {
+    pub(super) deleted: bool,
+    pub(super) references: usize,
+    pub(super) target: u32,
+    // The first image is 2D. The following six are +X,-X,+Y,-Y,+Z,-Z.
+    pub(super) images: [TextureImage; 7],
     parameters: TextureParameters,
 }
 pub(super) struct TextureState {
     pub(super) slots: Vec<RenderSlot<Texture>>,
-    pub(super) units: [Option<ObjectHandle>; 32],
+    pub(super) units: [TextureUnit; 32],
     pub(super) active: usize,
     unpack_alignment: usize,
     pub(super) pack_alignment: usize,
@@ -104,11 +119,42 @@ pub(super) struct TextureState {
     pub(super) before: Vec<ResourceOperation>,
     pub(super) after: Vec<ResourceOperation>,
 }
+#[derive(Clone, Copy, Default)]
+pub(super) struct TextureUnit {
+    pub(super) texture_2d: Option<ObjectHandle>,
+    pub(super) texture_cube: Option<ObjectHandle>,
+}
+
+fn image_index(target: u32) -> Option<usize> {
+    match target {
+        TEXTURE_2D => Some(0),
+        CUBE_POSITIVE_X..=CUBE_NEGATIVE_Z => Some((target - CUBE_POSITIVE_X + 1) as usize),
+        _ => None,
+    }
+}
+
+fn image_target(index: usize) -> u32 {
+    if index == 0 {
+        TEXTURE_2D
+    } else {
+        CUBE_POSITIVE_X + index as u32 - 1
+    }
+}
+
+impl TextureUnit {
+    pub(super) fn binding(&self, target: u32) -> Option<ObjectHandle> {
+        if target == TEXTURE_CUBE_MAP {
+            self.texture_cube
+        } else {
+            self.texture_2d
+        }
+    }
+}
 impl Default for TextureState {
     fn default() -> Self {
         Self {
             slots: Vec::new(),
-            units: [None; 32],
+            units: [TextureUnit::default(); 32],
             active: 0,
             unpack_alignment: 4,
             pack_alignment: 4,
@@ -131,11 +177,13 @@ impl ContextCore {
                     ObjectKind::Texture,
                     self.context_id,
                 ) {
-                    if self.texture_version(index) == *version {
+                    let image = image_index(version.image_target).unwrap();
+                    if self.texture_image_version(index, image) == *version {
                         self.render.textures.slots[index]
                             .value
                             .as_mut()
                             .unwrap()
+                            .images[image]
                             .content_version = previous.content_version;
                     }
                 }
@@ -173,17 +221,34 @@ impl ContextCore {
         index
     }
     fn bound_texture(&mut self, target: u32) -> Option<usize> {
-        if target != TEXTURE_2D {
+        if !matches!(target, TEXTURE_2D | TEXTURE_CUBE_MAP) {
             self.record_error(INVALID_ENUM);
             return None;
         }
-        let Some(handle) = self.render.textures.units[self.render.textures.active] else {
+        let Some(handle) = self.render.textures.units[self.render.textures.active].binding(target)
+        else {
             self.record_error(INVALID_OPERATION);
             return None;
         };
         self.texture_index(handle, false)
     }
+    fn bound_texture_image(&mut self, target: u32) -> Option<(usize, usize)> {
+        let Some(image) = image_index(target) else {
+            self.record_error(INVALID_ENUM);
+            return None;
+        };
+        let binding_target = if image == 0 {
+            TEXTURE_2D
+        } else {
+            TEXTURE_CUBE_MAP
+        };
+        self.bound_texture(binding_target)
+            .map(|index| (index, image))
+    }
     pub(super) fn texture_version(&self, index: usize) -> TextureVersion {
+        self.texture_image_version(index, 0)
+    }
+    fn texture_image_version(&self, index: usize, image: usize) -> TextureVersion {
         let slot = &self.render.textures.slots[index];
         let texture = slot.value.as_ref().unwrap();
         TextureVersion {
@@ -193,8 +258,10 @@ impl ContextCore {
                 slot: index as u32 + 1,
                 generation: slot.generation,
             },
-            storage_generation: texture.storage_generation,
-            content_version: texture.content_version,
+            storage_generation: texture.images[image].storage_generation,
+            content_version: texture.images[image].content_version,
+            image_target: image_target(image),
+            level: 0,
         }
     }
     fn reserve_texture_operation(&mut self) -> bool {
@@ -212,15 +279,30 @@ impl ContextCore {
         if !texture.deleted || texture.references != 0 {
             return;
         }
-        if texture.storage.is_some() {
-            let version = self.texture_version(index);
-            if !self.reserve_texture_operation() {
-                return;
+        let count = texture
+            .images
+            .iter()
+            .filter(|image| image.storage.is_some())
+            .count();
+        if self.render.textures.before.try_reserve(count).is_err() {
+            self.record_error(OUT_OF_MEMORY);
+            return;
+        }
+        for image in 0..7 {
+            if self.render.textures.slots[index]
+                .value
+                .as_ref()
+                .unwrap()
+                .images[image]
+                .storage
+                .is_some()
+            {
+                let version = self.texture_image_version(index, image);
+                self.render
+                    .textures
+                    .before
+                    .push(ResourceOperation::RetireTexture { version });
             }
-            self.render
-                .textures
-                .before
-                .push(ResourceOperation::RetireTexture { version });
         }
         self.render.textures.slots[index].value = None;
     }
@@ -229,7 +311,13 @@ impl ContextCore {
         Some(match parameter {
             0x84e0 => Reply::Number((TEXTURE0 + state.active as u32) as f64),
             TEXTURE_2D => return None,
-            0x8069 => state.units[state.active].map_or(Reply::Null, Reply::Handle),
+            0x8069 => state.units[state.active]
+                .texture_2d
+                .map_or(Reply::Null, Reply::Handle),
+            0x8514 => state.units[state.active]
+                .texture_cube
+                .map_or(Reply::Null, Reply::Handle),
+            0x851c => Reply::Number(self.render.texture_dimension_limit as f64),
             0x0cf5 => Reply::Number(state.unpack_alignment as f64),
             0x0d05 => Reply::Number(state.pack_alignment as f64),
             0x9240 => Reply::Boolean(state.unpack_flip),
@@ -245,10 +333,8 @@ impl ContextCore {
                 let texture = Texture {
                     deleted: false,
                     references: 0,
-                    bound: false,
-                    storage: None,
-                    storage_generation: 0,
-                    content_version: 0,
+                    target: 0,
+                    images: [TextureImage::default(); 7],
                     parameters: TextureParameters::default(),
                 };
                 let result = insert(
@@ -279,7 +365,7 @@ impl ContextCore {
                         })
                         .is_some_and(|index| {
                             let texture = self.render.textures.slots[index].value.as_ref().unwrap();
-                            texture.bound && !texture.deleted
+                            texture.target != 0 && !texture.deleted
                         }),
                 ))
             }
@@ -302,18 +388,25 @@ impl ContextCore {
                 } else {
                     None
                 };
-                if arg(0).number() as u32 != TEXTURE_2D {
+                let target = arg(0).number() as u32;
+                if !matches!(target, TEXTURE_2D | TEXTURE_CUBE_MAP) {
                     self.record_error(INVALID_ENUM);
                     return Some(Reply::Null);
                 }
                 if let Some(index) = index {
-                    self.render.textures.slots[index]
-                        .value
-                        .as_mut()
-                        .unwrap()
-                        .bound = true;
+                    let texture = self.render.textures.slots[index].value.as_mut().unwrap();
+                    if texture.target != 0 && texture.target != target {
+                        self.record_error(INVALID_OPERATION);
+                        return Some(Reply::Null);
+                    }
+                    texture.target = target;
                 }
-                self.render.textures.units[self.render.textures.active] = arg(1).handle();
+                let unit = &mut self.render.textures.units[self.render.textures.active];
+                if target == TEXTURE_2D {
+                    unit.texture_2d = arg(1).handle();
+                } else {
+                    unit.texture_cube = arg(1).handle();
+                }
             }
             "deleteTexture" => {
                 let Some(handle) = arg(0).handle() else {
@@ -349,14 +442,16 @@ impl ContextCore {
                 {
                     return Some(Reply::Null);
                 }
-                if self.render.textures.slots[index]
+                let count = self.render.textures.slots[index]
                     .value
                     .as_ref()
                     .unwrap()
-                    .storage
-                    .is_some()
-                    && !self.reserve_texture_operation()
-                {
+                    .images
+                    .iter()
+                    .filter(|image| image.storage.is_some())
+                    .count();
+                if self.render.textures.before.try_reserve(count).is_err() {
+                    self.record_error(OUT_OF_MEMORY);
                     return Some(Reply::Null);
                 }
                 self.render.textures.slots[index]
@@ -365,8 +460,11 @@ impl ContextCore {
                     .unwrap()
                     .deleted = true;
                 for unit in &mut self.render.textures.units {
-                    if *unit == Some(handle) {
-                        *unit = None;
+                    if unit.texture_2d == Some(handle) {
+                        unit.texture_2d = None;
+                    }
+                    if unit.texture_cube == Some(handle) {
+                        unit.texture_cube = None;
                     }
                 }
                 self.detach_bound_texture(handle);
@@ -480,9 +578,9 @@ impl ContextCore {
     fn validate_texture_definition(
         &mut self,
         args: &[Argument],
-    ) -> Result<usize, TextureUploadError> {
+    ) -> Result<(usize, usize), TextureUploadError> {
         let number = |index: usize| args[index].number();
-        let Some(index) = self.bound_texture(number(0) as u32) else {
+        let Some((index, image)) = self.bound_texture_image(number(0) as u32) else {
             return Err(TextureUploadError::Invalid);
         };
         let level = number(1);
@@ -491,6 +589,16 @@ impl ContextCore {
         if !self.image_dimensions(level, number(3), number(4), number(5))
             || !self.validate_texture_format(format, ty)
         {
+            return Err(TextureUploadError::Invalid);
+        }
+        if image != 0 && number(3) != number(4) {
+            self.record_error(INVALID_VALUE);
+            return Err(TextureUploadError::Invalid);
+        }
+        if level > 0.0
+            && (!(number(3) as u32).is_power_of_two() || !(number(4) as u32).is_power_of_two())
+        {
+            self.record_error(INVALID_VALUE);
             return Err(TextureUploadError::Invalid);
         }
         if number(2) as u32 != format {
@@ -503,24 +611,32 @@ impl ContextCore {
         if ty != 0x1401 {
             return Err(TextureUploadError::Unsupported("packed texture formats"));
         }
-        let texture = self.render.textures.slots[index].value.as_ref().unwrap();
-        if texture.storage_generation == MAX_SAFE_VERSION
-            || texture.content_version == MAX_SAFE_VERSION
+        let image_state = &self.render.textures.slots[index]
+            .value
+            .as_ref()
+            .unwrap()
+            .images[image];
+        if image_state.storage_generation == MAX_SAFE_VERSION
+            || image_state.content_version == MAX_SAFE_VERSION
         {
             self.record_error(OUT_OF_MEMORY);
             return Err(TextureUploadError::Invalid);
         }
-        Ok(index)
+        Ok((index, image))
     }
-    fn validate_texture_update(&mut self, args: &[Argument]) -> Result<usize, TextureUploadError> {
+    fn validate_texture_update(
+        &mut self,
+        args: &[Argument],
+    ) -> Result<(usize, usize), TextureUploadError> {
         let number = |index: usize| args[index].number();
-        let Some(index) = self.bound_texture(number(0) as u32) else {
+        let Some((index, image)) = self.bound_texture_image(number(0) as u32) else {
             return Err(TextureUploadError::Invalid);
         };
         let Some(storage) = self.render.textures.slots[index]
             .value
             .as_ref()
             .unwrap()
+            .images[image]
             .storage
         else {
             self.record_error(INVALID_OPERATION);
@@ -556,13 +672,14 @@ impl ContextCore {
             .value
             .as_ref()
             .unwrap()
+            .images[image]
             .content_version
             == MAX_SAFE_VERSION
         {
             self.record_error(OUT_OF_MEMORY);
             return Err(TextureUploadError::Invalid);
         }
-        Ok(index)
+        Ok((index, image))
     }
     fn prepare_dom_texture_upload(&mut self, args: &[Argument]) -> Reply {
         if !(11..=12).contains(&args.len()) || !matches!(args[0], Argument::Boolean(_)) {
@@ -776,7 +893,7 @@ impl ContextCore {
         {
             return Reply::Null;
         }
-        let index = match self.validate_texture_definition(args) {
+        let (index, image) = match self.validate_texture_definition(args) {
             Ok(index) => index,
             Err(error) => return error.reply(),
         };
@@ -791,15 +908,19 @@ impl ContextCore {
         if !self.reserve_texture_operation() {
             return Reply::Null;
         }
-        let texture = self.render.textures.slots[index].value.as_mut().unwrap();
-        texture.storage_generation += 1;
-        texture.content_version += 1;
-        texture.storage = Some(TextureStorage {
+        let image_state = &mut self.render.textures.slots[index]
+            .value
+            .as_mut()
+            .unwrap()
+            .images[image];
+        image_state.storage_generation += 1;
+        image_state.content_version += 1;
+        image_state.storage = Some(TextureStorage {
             width: width as u32,
             height: height as u32,
             format,
         });
-        let version = self.texture_version(index);
+        let version = self.texture_image_version(index, image);
         self.render
             .textures
             .before
@@ -820,7 +941,7 @@ impl ContextCore {
         {
             return Reply::Null;
         }
-        let index = match self.validate_texture_update(args) {
+        let (index, image) = match self.validate_texture_update(args) {
             Ok(index) => index,
             Err(error) => return error.reply(),
         };
@@ -840,13 +961,14 @@ impl ContextCore {
         if !self.reserve_texture_operation() {
             return Reply::Null;
         }
-        let previous = self.texture_version(index);
+        let previous = self.texture_image_version(index, image);
         self.render.textures.slots[index]
             .value
             .as_mut()
             .unwrap()
+            .images[image]
             .content_version += 1;
-        let version = self.texture_version(index);
+        let version = self.texture_image_version(index, image);
         self.render
             .textures
             .before
@@ -861,20 +983,43 @@ impl ContextCore {
             });
         Reply::Null
     }
+    pub(super) fn sampler_target(ty: u32) -> u32 {
+        if ty == 0x8b60 {
+            TEXTURE_CUBE_MAP
+        } else {
+            TEXTURE_2D
+        }
+    }
+
+    pub(super) fn sampler_units_valid(&self, executable: &Executable) -> bool {
+        let mut types = [0_u32; 32];
+        for (index, sampler) in executable.layout.samplers.iter().enumerate() {
+            let unit = executable.values[executable.layout.uniforms.len() + index][0] as usize;
+            let Some(previous) = types.get_mut(unit) else {
+                return false;
+            };
+            if *previous != 0 && *previous != sampler.ty {
+                return false;
+            }
+            *previous = sampler.ty;
+        }
+        true
+    }
+
     pub(super) fn sampled_textures(&self, executable: &Executable) -> Option<Vec<TextureBinding>> {
         let mut bindings = Vec::new();
         bindings
             .try_reserve_exact(executable.layout.samplers.len())
             .ok()?;
-        for index in 0..executable.layout.samplers.len() {
+        for (index, sampler) in executable.layout.samplers.iter().enumerate() {
             let unit = executable.values[executable.layout.uniforms.len() + index][0] as usize;
-            let texture = self
+            let target = Self::sampler_target(sampler.ty);
+            let texture_index = self
                 .render
                 .textures
                 .units
                 .get(unit)
-                .copied()
-                .flatten()
+                .and_then(|unit| unit.binding(target))
                 .and_then(|handle| {
                     slot_index(
                         &self.render.textures.slots,
@@ -883,37 +1028,63 @@ impl ContextCore {
                         self.context_id,
                     )
                 });
-            if let Some(index) = texture {
-                let texture = self.render.textures.slots[index].value.as_ref().unwrap();
-                bindings.push(TextureBinding {
-                    version: if texture_complete(texture) {
-                        Some(self.texture_version(index))
-                    } else {
-                        None
-                    },
-                    parameters: texture.parameters,
-                });
+            let texture =
+                texture_index.and_then(|index| self.render.textures.slots[index].value.as_ref());
+            let complete = texture.is_some_and(texture_complete);
+            let images = if target == TEXTURE_CUBE_MAP {
+                TextureImages::Cube(if complete {
+                    Some(std::array::from_fn(|face| {
+                        self.texture_image_version(texture_index.unwrap(), face + 1)
+                    }))
+                } else {
+                    None
+                })
             } else {
-                bindings.push(TextureBinding {
-                    version: None,
-                    parameters: TextureParameters {
+                TextureImages::Texture2D(if complete {
+                    Some(self.texture_version(texture_index.unwrap()))
+                } else {
+                    None
+                })
+            };
+            bindings.push(TextureBinding {
+                images,
+                parameters: texture.map_or(
+                    TextureParameters {
                         min_filter: 0x2600,
                         mag_filter: 0x2600,
                         wrap_s: 0x812f,
                         wrap_t: 0x812f,
                     },
-                });
-            }
+                    |texture| texture.parameters,
+                ),
+            });
         }
         Some(bindings)
     }
 }
 
 pub(super) fn texture_complete(texture: &Texture) -> bool {
-    let Some(storage) = texture.storage else {
+    let image = if texture.target == TEXTURE_CUBE_MAP {
+        1
+    } else {
+        0
+    };
+    let Some(storage) = texture.images[image].storage else {
         return false;
     };
     if storage.width == 0 || storage.height == 0 {
+        return false;
+    }
+    if texture.target == TEXTURE_CUBE_MAP
+        && texture.images[1..].iter().any(|face| {
+            face.storage.is_none_or(|other| {
+                other.width != storage.width
+                    || other.height != storage.height
+                    || other.format != storage.format
+                    || other.width != other.height
+            })
+        })
+    {
         return false;
     }
     let parameters = texture.parameters;

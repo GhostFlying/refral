@@ -1,7 +1,7 @@
 use super::*;
 use refral_core::{
     ActiveInfo, Argument, AttributeInfo, CompileOutcome, LinkOutcome, ObjectHandle, ObjectKind,
-    ProgramLayout, Reply, UniformInfo,
+    ProgramLayout, Reply, TextureImages, UniformInfo,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -10,7 +10,7 @@ const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
 
 #[no_mangle]
 pub extern "C" fn rf_resource_protocol_version() -> u32 {
-    2
+    3
 }
 
 #[no_mangle]
@@ -64,7 +64,10 @@ pub extern "C" fn rf_command_prepare(metadata_length: f64, binary_length: f64) -
         }
         // Reserve resource headers before any semantic state can change.
         transport.binary.clear();
-        if transport.binary.try_reserve_exact(128).is_err()
+        if transport
+            .binary
+            .try_reserve_exact(crate::resources::MAX_OPERATION_HEADERS)
+            .is_err()
             || !reserve(&mut transport.metadata, metadata_length as usize)
             || !reserve(&mut transport.input, binary_length as usize)
         {
@@ -472,10 +475,19 @@ fn reply_capacity(value: &Reply) -> Option<usize> {
                 total = total.checked_add(40)?.checked_add(buffer.data.len())?;
             }
             for binding in &snapshot.textures {
-                total = total.checked_add(20)?;
-                if binding.version.is_some() {
-                    total = total.checked_add(28)?;
-                }
+                let versions = match &binding.images {
+                    TextureImages::Texture2D(version) => usize::from(version.is_some()),
+                    TextureImages::Cube(versions) => {
+                        if versions.is_some() {
+                            6
+                        } else {
+                            0
+                        }
+                    }
+                };
+                total = total
+                    .checked_add(24)?
+                    .checked_add(versions * crate::resources::VERSION_BYTES)?;
             }
             Some(total)
         }
@@ -612,9 +624,23 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             bytes(output, &snapshot.fragment_uniforms);
             u32_value(output, snapshot.textures.len() as u32);
             for binding in snapshot.textures {
-                u32_value(output, u32::from(binding.version.is_some()));
-                if let Some(version) = binding.version {
-                    crate::resources::version(output, version);
+                match binding.images {
+                    TextureImages::Texture2D(version) => {
+                        u32_value(output, 0);
+                        u32_value(output, u32::from(version.is_some()));
+                        if let Some(version) = version {
+                            crate::resources::version(output, version);
+                        }
+                    }
+                    TextureImages::Cube(versions) => {
+                        u32_value(output, 1);
+                        u32_value(output, u32::from(versions.is_some()));
+                        if let Some(versions) = versions {
+                            for version in versions {
+                                crate::resources::version(output, version);
+                            }
+                        }
+                    }
                 }
                 crate::resources::parameters(output, binding.parameters);
             }
@@ -701,7 +727,7 @@ mod tests {
 
     #[test]
     fn command_transport_preserves_utf16_and_owns_output() {
-        assert_eq!(rf_resource_protocol_version(), 2);
+        assert_eq!(rf_resource_protocol_version(), 3);
         assert_eq!(rf_readback_protocol_version(), 1);
         assert_eq!(rf_dom_upload_protocol_version(), 2);
         assert_eq!(rf_init(7, 4096.0), 1);

@@ -32,7 +32,8 @@ function pixels(value: unknown): PixelUpload | null {
 }
 
 export function isResourceBinding(parameter: number): boolean {
-  return parameter === GL.TEXTURE_BINDING_2D || parameter === GL.FRAMEBUFFER_BINDING
+  return parameter === GL.TEXTURE_BINDING_2D || parameter === GL.TEXTURE_BINDING_CUBE_MAP
+    || parameter === GL.FRAMEBUFFER_BINDING
     || parameter === GL.RENDERBUFFER_BINDING;
 }
 

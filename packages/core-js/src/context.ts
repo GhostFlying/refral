@@ -1,8 +1,8 @@
 import {
-  GL, createRasterState, snapshotRaster, componentCount,
+  CUBE_FACES, GL, createRasterState, snapshotRaster, componentCount,
 } from "@refral/core-api";
 import type {
-  AttributeSnapshot, RasterState, TargetSnapshot,
+  AttributeSnapshot, RasterState, TargetSnapshot, TextureBinding,
   Compiler, CompiledShader, LinkedProgram, ProgramUniform, DrawingSurface,
   ContextAttributes, RuntimeProfile, SemanticHost, ResourceRegistry, TextureVersion, PixelUpload,
   ReadPixelsPlan, ReadPixelsRequest, DomTextureUploadPlan, DomTextureUploadRequest,
@@ -11,7 +11,7 @@ import {
   LogicalObject, BufferObject, TextureObject, RenderbufferObject, FramebufferObject,
   ErrorState, isTextureComplete,
 } from "./resources.js";
-import type { VertexAttribute } from "./resources.js";
+import type { TextureImage, VertexAttribute } from "./resources.js";
 
 export type {
   DrawingSurface, ContextAttributes, RuntimeProfile, SemanticHost, DrawOperation as CoreDrawOperation,
@@ -64,6 +64,11 @@ interface SemanticCompiler extends Compiler {
   releaseProgram?(program: LinkedProgram): void;
 }
 
+interface TextureUnit {
+  texture2D: TextureObject | null;
+  cubeMap: TextureObject | null;
+}
+
 export class SemanticContext {
   private readonly owner = {};
   private readonly errors = new ErrorState();
@@ -75,7 +80,7 @@ export class SemanticContext {
   private framebuffer: FramebufferObject | null = null;
   private renderbuffer: RenderbufferObject | null = null;
   private activeUnit = 0;
-  private textureUnits: (TextureObject | null)[];
+  private readonly textureUnits: TextureUnit[];
   private readonly attributes: VertexAttribute[];
   private clearColorValue: [number, number, number, number] = [0, 0, 0, 0];
   private clearDepthValue = 1;
@@ -94,7 +99,7 @@ export class SemanticContext {
     private readonly profile: RuntimeProfile, private readonly resources?: ResourceRegistry) {
     this.maxBufferBytes = host.limits.maxBufferSize ?? Number.MAX_SAFE_INTEGER;
     this.state = createRasterState(canvas.width, canvas.height);
-    this.textureUnits = Array.from({ length: profile.combinedTextureUnits }, () => null);
+    this.textureUnits = Array.from({ length: profile.combinedTextureUnits }, () => ({ texture2D: null, cubeMap: null }));
     this.attributes = Array.from({ length: profile.vertexAttributes }, () => ({ enabled: false, buffer: null, size: 4,
       type: GL.FLOAT, normalized: false, stride: 0, offset: 0, constant: [0, 0, 0, 1] }));
 
@@ -158,8 +163,17 @@ export class SemanticContext {
   }
   private boundTexture(target: number): TextureObject | null | undefined {
     if (this.lost) return undefined;
-    if (target !== GL.TEXTURE_2D) { this.error(GL.INVALID_ENUM); return undefined; }
-    return this.textureUnits[this.activeUnit];
+    const unit = this.textureUnits[this.activeUnit]!;
+    if (target === GL.TEXTURE_2D) return unit.texture2D;
+    if (target === GL.TEXTURE_CUBE_MAP) return unit.cubeMap;
+    this.error(GL.INVALID_ENUM);
+    return undefined;
+  }
+  private boundImageTexture(imageTarget: number): TextureObject | null | undefined {
+    if (imageTarget === GL.TEXTURE_2D) return this.boundTexture(GL.TEXTURE_2D);
+    if (CUBE_FACES.some(face => face === imageTarget)) return this.boundTexture(GL.TEXTURE_CUBE_MAP);
+    this.error(GL.INVALID_ENUM);
+    return undefined;
   }
   private target(): TargetSnapshot | null {
     if (!this.framebuffer) return {
@@ -178,9 +192,12 @@ export class SemanticContext {
       width: storage.width, height: storage.height, isDefault: false };
   }
 
-  private textureVersion(texture: TextureObject): TextureVersion {
+  private textureVersion(texture: TextureObject, imageTarget: number = GL.TEXTURE_2D): TextureVersion {
     if (!texture.handle) throw new Error("Texture has no logical resource handle.");
-    return { texture: texture.handle, storageGeneration: texture.generation, contentVersion: texture.version };
+    const image = texture.image(imageTarget);
+    if (!image) throw new Error("Texture image has no defined resource version.");
+    const version = { texture: texture.handle, storageGeneration: image.generation, contentVersion: image.version };
+    return imageTarget === GL.TEXTURE_2D ? version : { ...version, imageTarget, level: 0 };
   }
 
   private wroteColorTarget(): void {
@@ -396,8 +413,20 @@ export class SemanticContext {
   }
   validateProgram(program: ProgramObject): void {
     if (!this.valid(program, ProgramObject)) return;
-    // The supported sampler profile has no cross-type or array binding conflicts.
-    program.validateStatus = program.linkStatus;
+    const conflict = this.samplerTypeConflict(program);
+    program.validateStatus = program.linkStatus && !conflict;
+    if (conflict) program.log = "Active samplers of different types reference the same texture unit.";
+    else program.log = program.linkStatus ? "" : "A successfully linked program is required for validation.";
+  }
+  private samplerTypeConflict(program: ProgramObject): boolean {
+    const types = new Map<number, number>();
+    for (const sampler of program.executable?.samplers ?? []) {
+      const unit = program.samplerUnits.get(baseName(sampler.name)) ?? 0;
+      const previous = types.get(unit);
+      if (previous !== undefined && previous !== sampler.type) return true;
+      types.set(unit, sampler.type);
+    }
+    return false;
   }
   getAttribLocation(program: ProgramObject, name: string): number {
     if (!this.valid(program, ProgramObject)) return -1;
@@ -616,6 +645,7 @@ export class SemanticContext {
     if (mode !== GL.TRIANGLES) return unsupported("non-triangle draw");
     if (first < 0 || count < 0 || !Number.isInteger(first) || !Number.isInteger(count)) return this.error(GL.INVALID_VALUE);
     if (!this.program?.linkStatus || !this.program.executable) return this.error(GL.INVALID_OPERATION);
+    if (this.samplerTypeConflict(this.program)) return this.error(GL.INVALID_OPERATION);
     const target = this.target(); if (!target) return;
     let vertices = first + count;
     if (indices) {
@@ -645,21 +675,29 @@ export class SemanticContext {
         size: attribute.size, stride: attribute.stride, offset: attribute.offset,
         data: attribute.enabled ? attribute.buffer!.data : null, constant: [...attribute.constant] });
     }
-    const textures = this.program.executable.samplers.map(sampler => {
+    const textures: TextureBinding[] = [];
+    for (const sampler of this.program.executable.samplers) {
       const unit = this.program!.samplerUnits.get(baseName(sampler.name)) ?? 0;
-      const texture = this.textureUnits[unit];
-      if (texture && this.framebuffer?.color === texture) return null;
-      return { storage: texture && isTextureComplete(texture) ? texture.storage : null,
-        parameters: texture ? { ...texture.parameters } :
-          { minFilter: GL.NEAREST, magFilter: GL.NEAREST, wrapS: GL.CLAMP_TO_EDGE, wrapT: GL.CLAMP_TO_EDGE } };
-    });
-    if (textures.some(texture => texture === null)) return this.error(GL.INVALID_OPERATION);
+      const binding = this.textureUnits[unit]!;
+      const cube = sampler.type === GL.SAMPLER_CUBE;
+      if (!cube && sampler.type !== GL.SAMPLER_2D) return unsupported("sampler type");
+      const texture = cube ? binding.cubeMap : binding.texture2D;
+      if (texture && this.framebuffer?.color === texture) return this.error(GL.INVALID_OPERATION);
+      const complete = texture !== null && isTextureComplete(texture);
+      const parameters = texture ? { ...texture.parameters } :
+        { minFilter: GL.NEAREST, magFilter: GL.NEAREST, wrapS: GL.CLAMP_TO_EDGE, wrapT: GL.CLAMP_TO_EDGE };
+      if (cube) {
+        const snapshot: TextureBinding = { dimension: "cube", storage: null, parameters };
+        if (complete) snapshot.cubeFaces = CUBE_FACES.map(face => texture!.image(face)!.storage!);
+        textures.push(snapshot);
+      } else textures.push({ storage: complete ? texture!.storage : null, parameters });
+    }
     if (!count || !target.width || !target.height ||
         (this.state.cull && this.state.cullFace === GL.FRONT_AND_BACK)) return;
     this.host.draw({ program: this.program.executable, target, state: snapshotRaster(this.state),
       attributes, vertexCount: vertices, first, count, indices,
       vertexUniforms: this.program.vertexUniforms.slice(), fragmentUniforms: this.program.fragmentUniforms.slice(),
-      textures: textures as NonNullable<typeof textures[number]>[] });
+      textures });
     this.wroteColorTarget();
     this.schedule();
   }
@@ -671,10 +709,15 @@ export class SemanticContext {
     this.activeUnit = unit;
   }
   bindTexture(target: number, texture: TextureObject | null): void {
-    if (target !== GL.TEXTURE_2D) return this.error(GL.INVALID_ENUM);
+    if (target !== GL.TEXTURE_2D && target !== GL.TEXTURE_CUBE_MAP) return this.error(GL.INVALID_ENUM);
     if (texture !== null && !this.valid(texture, TextureObject)) return;
-    if (texture) texture.initialized = true;
-    this.textureUnits[this.activeUnit] = texture;
+    if (texture && texture.target !== null && texture.target !== target) {
+      return this.error(GL.INVALID_OPERATION);
+    }
+    if (texture) { texture.target = target; texture.initialized = true; }
+    const unit = this.textureUnits[this.activeUnit]!;
+    if (target === GL.TEXTURE_2D) unit.texture2D = texture;
+    else unit.cubeMap = texture;
   }
   texParameteri(target: number, parameter: number, value: number): void {
     const texture = this.boundTexture(target); if (texture === undefined) return;
@@ -768,11 +811,12 @@ export class SemanticContext {
   }
   private validateTextureImage(target: number, level: number, internalFormat: number,
     width: number, height: number, border: number, format: number, type: number): TextureObject | null {
-    const texture = this.boundTexture(target);
+    const texture = this.boundImageTexture(target);
     if (texture === undefined) return null;
     if (!texture) { this.error(GL.INVALID_OPERATION); return null; }
     if (level < 0 || width < 0 || height < 0 || !Number.isInteger(width) || !Number.isInteger(height) ||
-        width > this.host.limits.maxTextureDimension2D || height > this.host.limits.maxTextureDimension2D || border !== 0) {
+        width > this.host.limits.maxTextureDimension2D || height > this.host.limits.maxTextureDimension2D || border !== 0 ||
+        (target !== GL.TEXTURE_2D && width !== height)) {
       this.error(GL.INVALID_VALUE); return null;
     }
     if (level !== 0) return unsupported("texture mip levels");
@@ -783,18 +827,19 @@ export class SemanticContext {
   }
   private validateTextureSubImage(target: number, level: number, x: number, y: number,
     width: number, height: number, format: number, type: number): TextureObject | null {
-    const texture = this.boundTexture(target);
+    const texture = this.boundImageTexture(target);
     if (texture === undefined) return null;
-    if (!texture?.storage) { this.error(GL.INVALID_OPERATION); return null; }
+    const image = texture?.image(target);
+    if (!image?.storage) { this.error(GL.INVALID_OPERATION); return null; }
     if (level < 0) { this.error(GL.INVALID_VALUE); return null; }
     if (level !== 0) return unsupported("texture mip levels");
     if (x < 0 || y < 0 || width < 0 || height < 0 || !Number.isInteger(width) || !Number.isInteger(height) ||
-        x + width > texture.storage.width || y + height > texture.storage.height) {
+        x + width > image.storage.width || y + height > image.storage.height) {
       this.error(GL.INVALID_VALUE); return null;
     }
     if (![GL.RGBA, GL.RGB, GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA].includes(format as 0x1908) ||
         type !== GL.UNSIGNED_BYTE) { this.error(GL.INVALID_ENUM); return null; }
-    if (format !== texture.format) { this.error(GL.INVALID_OPERATION); return null; }
+    if (format !== image.format) { this.error(GL.INVALID_OPERATION); return null; }
     return texture;
   }
   prepareDomTextureUpload(request: DomTextureUploadRequest): DomTextureUploadPlan | null {
@@ -812,9 +857,9 @@ export class SemanticContext {
     const [target, level, internalFormat] = arguments_ as number[];
     const dimensions = arguments_.length === 9;
     const source = arguments_[dimensions ? 8 : 5];
-    const image = source as { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number; videoWidth?: number; videoHeight?: number } | null;
-    const width = Number(dimensions ? arguments_[3] : image?.naturalWidth ?? image?.videoWidth ?? image?.width);
-    const height = Number(dimensions ? arguments_[4] : image?.naturalHeight ?? image?.videoHeight ?? image?.height);
+    const sourceImage = source as { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number; videoWidth?: number; videoHeight?: number } | null;
+    const width = Number(dimensions ? arguments_[3] : sourceImage?.naturalWidth ?? sourceImage?.videoWidth ?? sourceImage?.width);
+    const height = Number(dimensions ? arguments_[4] : sourceImage?.naturalHeight ?? sourceImage?.videoHeight ?? sourceImage?.height);
     const border = dimensions ? Number(arguments_[5]) : 0;
     const format = Number(arguments_[dimensions ? 6 : 3]);
     const type = Number(arguments_[dimensions ? 7 : 4]);
@@ -824,15 +869,17 @@ export class SemanticContext {
     const texture = this.validateTextureImage(target!, level!, internalFormat!, width, height, border, format, type);
     if (!texture) return;
     const data = this.pixelData(width, height, format, source); if (!data) return;
-    const previous = texture.storage;
-    texture.generation++; texture.version++; texture.format = format;
+    const image: TextureImage = texture.image(target!) ?? { storage: null, generation: 0, version: 0, format: GL.RGBA };
+    const previous = image.storage;
+    image.generation++; image.version++; image.format = format;
+    if (target !== GL.TEXTURE_2D) texture.cubeImages.set(target!, image);
     if (this.resources) {
-      const version = this.textureVersion(texture);
+      const version = this.textureVersion(texture, target!);
       this.resources.apply({ kind: "define-texture", version, width, height, data });
-      texture.storage = this.resources.texture(version);
+      image.storage = this.resources.texture(version);
     } else {
-      texture.storage = { width, height, generation: texture.generation, data };
-      this.host.replaceStorage(previous, texture.storage);
+      image.storage = { width, height, generation: image.generation, data };
+      this.host.replaceStorage(previous, image.storage);
     }
     this.schedule();
   }
@@ -840,9 +887,9 @@ export class SemanticContext {
     const [target, level, x, y] = arguments_ as number[];
     const dimensions = arguments_.length === 9;
     const source = arguments_[dimensions ? 8 : 6];
-    const image = source as { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number } | null;
-    const width = Number(dimensions ? arguments_[4] : image?.naturalWidth ?? image?.width);
-    const height = Number(dimensions ? arguments_[5] : image?.naturalHeight ?? image?.height);
+    const sourceImage = source as { width?: number; height?: number; naturalWidth?: number; naturalHeight?: number } | null;
+    const width = Number(dimensions ? arguments_[4] : sourceImage?.naturalWidth ?? sourceImage?.width);
+    const height = Number(dimensions ? arguments_[5] : sourceImage?.naturalHeight ?? sourceImage?.height);
     const format = Number(arguments_[dimensions ? 6 : 4]);
     const type = Number(arguments_[dimensions ? 7 : 5]);
     const upload = source && typeof source === "object" && "bytes" in source && "viewType" in source
@@ -853,19 +900,20 @@ export class SemanticContext {
     if (source === null) return this.error(GL.INVALID_VALUE);
     const data = this.pixelData(width, height, format, source); if (!data) return;
     if (width === 0 || height === 0) return;
-    const previous = texture.storage!;
-    const previousVersion = this.resources ? this.textureVersion(texture) : null;
-    texture.version++;
+    const image = texture.image(target!)!;
+    const previous = image.storage!;
+    const previousVersion = this.resources ? this.textureVersion(texture, target!) : null;
+    image.version++;
     if (this.resources) {
-      const version = this.textureVersion(texture);
+      const version = this.textureVersion(texture, target!);
       this.resources.apply({ kind: "update-texture", version, previous: previousVersion!,
         x: x!, y: y!, width, height, data });
-      texture.storage = this.resources.texture(version);
+      image.storage = this.resources.texture(version);
     } else {
-      texture.storage = { width: previous.width, height: previous.height,
-        generation: texture.generation, parent: previous,
+      image.storage = { width: previous.width, height: previous.height,
+        generation: image.generation, parent: previous,
         update: { x: x!, y: y!, width, height, data } };
-      this.host.replaceStorage(previous, texture.storage);
+      this.host.replaceStorage(previous, image.storage);
     }
     this.schedule();
   }
@@ -874,7 +922,10 @@ export class SemanticContext {
     if (texture === null || !this.valid(texture, TextureObject, true) || texture.deleted) return;
     texture.deleted = true;
     this.objects.delete(texture);
-    this.textureUnits = this.textureUnits.map(value => value === texture ? null : value);
+    for (const unit of this.textureUnits) {
+      if (unit.texture2D === texture) unit.texture2D = null;
+      if (unit.cubeMap === texture) unit.cubeMap = null;
+    }
     if (this.framebuffer?.color === texture) this.framebuffer.color = null;
     this.releaseTexture(texture);
   }
@@ -883,10 +934,15 @@ export class SemanticContext {
     const retained = [...this.objects].some(object => object instanceof FramebufferObject && object.color === texture);
     if (!retained) {
       texture.retired = true;
-      if (!texture.storage) return;
-      if (this.resources) this.resources.apply({ kind: "retire-texture", version: this.textureVersion(texture) });
-      else this.host.retireStorage(texture.storage);
-      texture.storage = null;
+      const targets = texture.target === GL.TEXTURE_CUBE_MAP ? CUBE_FACES : [GL.TEXTURE_2D];
+      for (const imageTarget of targets) {
+        const image = texture.image(imageTarget);
+        if (!image?.storage) continue;
+        if (this.resources) this.resources.apply({ kind: "retire-texture", version: this.textureVersion(texture, imageTarget) });
+        else this.host.retireStorage(image.storage);
+        image.storage = null;
+      }
+      texture.cubeImages.clear();
       this.schedule();
     }
   }
@@ -914,11 +970,17 @@ export class SemanticContext {
   }
   framebufferTexture2D(target: number, attachment: number, textureTarget: number,
     texture: TextureObject | null, level: number): void {
-    if (target !== GL.FRAMEBUFFER || attachment !== GL.COLOR_ATTACHMENT0 || textureTarget !== GL.TEXTURE_2D) return this.error(GL.INVALID_ENUM);
+    const cubeFace = CUBE_FACES.some(face => face === textureTarget);
+    if (target !== GL.FRAMEBUFFER || attachment !== GL.COLOR_ATTACHMENT0 ||
+        (textureTarget !== GL.TEXTURE_2D && !cubeFace)) return this.error(GL.INVALID_ENUM);
     if (level !== 0) return this.error(GL.INVALID_VALUE);
     if (!this.framebuffer) return this.error(GL.INVALID_OPERATION);
     if (texture !== null && !this.valid(texture, TextureObject)) return;
     if (texture !== null && !texture.initialized) return this.error(GL.INVALID_OPERATION);
+    if (texture !== null && texture.target !== (cubeFace ? GL.TEXTURE_CUBE_MAP : GL.TEXTURE_2D)) {
+      return this.error(GL.INVALID_OPERATION);
+    }
+    if (cubeFace) return unsupported("cube framebuffer attachment");
     const previous = this.framebuffer.color;
     this.framebuffer.color = texture;
     if (previous && previous !== texture) this.releaseTexture(previous);
@@ -1116,7 +1178,8 @@ export class SemanticContext {
       [GL.ARRAY_BUFFER_BINDING]: this.arrayBuffer, [GL.ELEMENT_ARRAY_BUFFER_BINDING]: this.elementBuffer,
       [GL.CURRENT_PROGRAM]: this.program, [GL.FRAMEBUFFER_BINDING]: this.framebuffer,
       [GL.RENDERBUFFER_BINDING]: this.renderbuffer, [GL.ACTIVE_TEXTURE]: GL.TEXTURE0 + this.activeUnit,
-      [GL.TEXTURE_BINDING_2D]: this.textureUnits[this.activeUnit],
+      [GL.TEXTURE_BINDING_2D]: this.textureUnits[this.activeUnit]!.texture2D,
+      [GL.TEXTURE_BINDING_CUBE_MAP]: this.textureUnits[this.activeUnit]!.cubeMap,
       [GL.VIEWPORT]: new Int32Array(this.state.viewport), [GL.SCISSOR_BOX]: new Int32Array(this.state.scissor),
       [GL.COLOR_CLEAR_VALUE]: new Float32Array(this.clearColorValue), [GL.DEPTH_CLEAR_VALUE]: this.clearDepthValue,
       [GL.COLOR_WRITEMASK]: [...this.state.colorMask], [GL.DEPTH_WRITEMASK]: this.state.depthMask,
@@ -1130,6 +1193,7 @@ export class SemanticContext {
       [GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL]: this.unpackPremultiply,
       [GL.UNPACK_COLORSPACE_CONVERSION_WEBGL]: this.unpackColorSpace,
       [GL.MAX_VERTEX_ATTRIBS]: this.profile.vertexAttributes, [GL.MAX_TEXTURE_SIZE]: this.host.limits.maxTextureDimension2D,
+      [GL.MAX_CUBE_MAP_TEXTURE_SIZE]: this.host.limits.maxTextureDimension2D,
       [GL.MAX_RENDERBUFFER_SIZE]: this.host.limits.maxTextureDimension2D,
       [GL.MAX_TEXTURE_IMAGE_UNITS]: this.profile.fragmentTextureUnits, [GL.MAX_COMBINED_TEXTURE_IMAGE_UNITS]: this.profile.combinedTextureUnits,
       [GL.MAX_VERTEX_TEXTURE_IMAGE_UNITS]: this.profile.vertexTextureUnits, [GL.MAX_VERTEX_UNIFORM_VECTORS]: this.profile.vertexUniformVectors,
@@ -1223,7 +1287,10 @@ export class SemanticContext {
         object.vertexUniforms = new Uint8Array(0);
         object.fragmentUniforms = new Uint8Array(0);
       } else if (object instanceof BufferObject) object.data = new Uint8Array(0);
-      else if (object instanceof TextureObject) object.storage = null;
+      else if (object instanceof TextureObject) {
+        object.storage = null;
+        object.cubeImages.clear();
+      }
       else if (object instanceof FramebufferObject) {
         object.color = null;
         object.depth = null;
@@ -1235,7 +1302,7 @@ export class SemanticContext {
     this.elementBuffer = null;
     this.framebuffer = null;
     this.renderbuffer = null;
-    this.textureUnits.fill(null);
+    for (const unit of this.textureUnits) { unit.texture2D = null; unit.cubeMap = null; }
     for (const attribute of this.attributes) attribute.buffer = null;
   }
 

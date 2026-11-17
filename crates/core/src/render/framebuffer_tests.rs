@@ -511,6 +511,7 @@ fn target_validation_and_color_writes_are_ordered_and_version_bounded() {
         .value
         .as_mut()
         .unwrap()
+        .images[0]
         .content_version = MAX_SAFE_VERSION;
     let maximum = core.target_snapshot(true).unwrap();
     assert!(!core.prepare_color_write(&maximum));

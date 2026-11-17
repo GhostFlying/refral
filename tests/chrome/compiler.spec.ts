@@ -132,3 +132,45 @@ test("ANGLE scalar cube samplers preserve six faces and per-face texel orientati
     }
   }
 });
+
+test("ANGLE preserves original CTS gl_FragData array outputs and main return semantics", async ({ page, browser }) => {
+  const shaders = JSON.parse(await readFile("packages/compiler/test/fragment-output-shaders.json", "utf8")) as Record<string, string>;
+  const originalShaderSha256 = Object.fromEntries(["simpleTextureVertexShader", "simpleCubeMapTextureFragmentShader"]
+    .map(name => [name, createHash("sha256").update(shaders[name]!).digest("hex")]));
+  expect(originalShaderSha256).toEqual({
+    simpleTextureVertexShader: "9706fa0607f5852f9f737f7559ce81e164900c364aca7f8dd30ec37533411cec",
+    simpleCubeMapTextureFragmentShader: "58ed004072642d45799c6c2ec6fcaa2dc76f64c69d386c48702fcc066e8ea124",
+  });
+  await page.route("**/@vite/client", route => route.fulfill({
+    contentType: "text/javascript", body: "export const injectQuery = (url) => url;",
+  }));
+  await page.goto("/packages/compiler/test/browser.html");
+  const result = await page.evaluate(async () => {
+    const compilerURL = "/packages/compiler/src/index.ts";
+    const fixtureURL = "/packages/compiler/test/fragment-output.ts";
+    const { createCompiler } = await import(compilerURL) as typeof import("../../packages/compiler/src/index.js");
+    const { runFragmentOutputVerification } = await import(fixtureURL) as typeof import("../../packages/compiler/test/fragment-output.js");
+    return runFragmentOutputVerification(await createCompiler());
+  });
+  const evidence = { recordedAt: new Date().toISOString(), browser: browser.version(),
+    launchMode: process.env.REFRAL_HEADLESS === "0" ? "headed" : "headless",
+    compilerDependencies: JSON.parse(await readFile("packages/compiler/dependencies.json", "utf8")),
+    compilerWasmSha256: createHash("sha256").update(await readFile("artifacts/compiler/compiler.wasm")).digest("hex"),
+    originalShaderSha256, ...result };
+  await mkdir("artifacts/cubemap/pr2", { recursive: true });
+  await writeFile("artifacts/cubemap/pr2/compiler-frag-data-gpu.json", JSON.stringify(evidence, null, 2) + "\n");
+  expect(evidence.launchMode).toBe("headless");
+  expect(result.results.map(sample => [sample.id, sample.samples.length])).toEqual([
+    ["original-cts-cubemap-frag-data", 6], ["frag-data-array-read-early-return", 1],
+  ]);
+  expect(result.validationErrors).toEqual([]);
+  for (const sample of result.results) {
+    expect(sample.pipeline, sample.id).toBe(true);
+    expect(sample.compilation.filter(message => message.type === "error"), sample.id).toEqual([]);
+    for (const face of sample.samples) {
+      expect(face.nativeError, `${sample.id} ${face.target}`).toBe(0);
+      expect(face.native, `${sample.id} native ${face.target}`).toEqual(face.expected);
+      expect(face.webgpu, `${sample.id} WebGPU ${face.target}`).toEqual(face.expected);
+    }
+  }
+});

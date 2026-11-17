@@ -2,7 +2,7 @@ import { GL, componentCount } from "@refral/core-api";
 import { CanvasReadback } from './canvas-readback.js';
 import type {
   AttributeSnapshot, RasterState, TargetSnapshot, TextureParameters, TextureStorage,
-  LinkedProgram, DrawOperation, SemanticHost, DomTextureUploadPlan,
+  LinkedProgram, DrawOperation, SemanticHost, DomTextureUploadPlan, TextureVersion,
 } from "@refral/core-api";
 
 export type { TextureBinding, DrawOperation } from "@refral/core-api";
@@ -93,6 +93,9 @@ export class BrowserHost implements SemanticHost {
   private defaultTarget: Target | null = null;
   private defaultDirty = false;
   private textureCache = new WeakMap<TextureStorage, GPUTexture>();
+  private cubeCache = new Map<TextureStorage, {
+    texture: GPUTexture; faces: readonly TextureStorage[]; versions: readonly (TextureVersion | undefined)[];
+  }>();
   private depthCache = new Map<string, GPUTexture>();
   private targetCache = new WeakMap<GPUTexture, Target>();
   private initialized = new WeakSet<GPUTexture>();
@@ -113,6 +116,7 @@ export class BrowserHost implements SemanticHost {
   private driverGroups = new WeakMap<LinkedProgram, Map<string, GPUBindGroup>>();
   private presentationPipeline: GPURenderPipeline | null = null;
   private blackTexture: GPUTexture | null = null;
+  private blackCubeTexture: GPUTexture | null = null;
   private disposed = false;
   private canvasReadback: CanvasReadback | null = null;
   private readonly handleError = (event: Event): void => {
@@ -177,13 +181,13 @@ export class BrowserHost implements SemanticHost {
     return this.encoder;
   }
 
-  private createTexture(width: number, height: number, format: GPUTextureFormat): GPUTexture {
+  private createTexture(width: number, height: number, format: GPUTextureFormat, layers = 1): GPUTexture {
     const texture = this.device.createTexture({
-      size: { width: Math.max(1, width), height: Math.max(1, height) }, format,
+      size: { width: Math.max(1, width), height: Math.max(1, height), depthOrArrayLayers: layers }, format,
       usage: format === "depth24plus" ? GPUTextureUsage.RENDER_ATTACHMENT : TEXTURE_USAGE,
     });
     this.textures.add(texture);
-    this.stats.allocatedTextureBytes += Math.max(1, width) * Math.max(1, height) * 4;
+    this.stats.allocatedTextureBytes += Math.max(1, width) * Math.max(1, height) * layers * 4;
     this.stats.peakAllocatedTextureBytes = Math.max(this.stats.peakAllocatedTextureBytes,
       this.stats.allocatedTextureBytes);
     return texture;
@@ -206,7 +210,7 @@ export class BrowserHost implements SemanticHost {
   }
 
   private uploadTexture(texture: GPUTexture, data: Uint8Array, width: number, height: number,
-    x = 0, y = 0): void {
+    x = 0, y = 0, layer = 0): void {
     if (!width || !height) return;
     this.endPass();
     const bytesPerRow = aligned(width * 4, 256);
@@ -216,7 +220,7 @@ export class BrowserHost implements SemanticHost {
     }
     const buffer = this.createBuffer(staging, GPUBufferUsage.COPY_SRC, true);
     this.getEncoder().copyBufferToTexture({ buffer, bytesPerRow },
-      { texture, origin: { x, y } }, { width, height });
+      { texture, origin: { x, y, z: layer } }, { width, height });
     this.stats.copies++;
     this.initialized.add(texture);
   }
@@ -239,6 +243,30 @@ export class BrowserHost implements SemanticHost {
       const update = storage.update;
       this.uploadTexture(texture, update.data, update.width, update.height, update.x, update.y);
     }
+    return texture;
+  }
+
+  private materializeCube(faces: readonly TextureStorage[] | undefined): GPUTexture {
+    if (!faces) return this.getBlackCubeTexture();
+    const first = faces[0];
+    if (faces.length !== 6 || !first || !first.width || first.width !== first.height
+      || faces.some(face => face.width !== first.width || face.height !== first.height)) {
+      throw new Error('A complete cube snapshot requires six matching positive square images.');
+    }
+    const cached = this.cubeCache.get(first);
+    if (cached && faces.every((face, index) => face === cached.faces[index]
+      && face.reference === cached.versions[index])) return cached.texture;
+    const sources = faces.map(face => this.materializeTexture(face));
+    this.endPass();
+    const texture = this.createTexture(first.width, first.height, 'rgba8unorm', 6);
+    for (const [layer, source] of sources.entries()) {
+      this.getEncoder().copyTextureToTexture({ texture: source }, { texture, origin: { x: 0, y: 0, z: layer } },
+        { width: first.width, height: first.height, depthOrArrayLayers: 1 });
+      this.stats.copies++;
+    }
+    this.initialized.add(texture);
+    if (cached) this.retiredTextures.add(cached.texture);
+    this.cubeCache.set(first, { texture, faces: [...faces], versions: faces.map(face => face.reference) });
     return texture;
   }
 
@@ -317,6 +345,12 @@ export class BrowserHost implements SemanticHost {
   }
 
   retireStorage(storage: TextureStorage): void {
+    for (const [first, cube] of this.cubeCache) {
+      if (cube.faces.includes(storage)) {
+        this.cubeCache.delete(first);
+        this.retiredTextures.add(cube.texture);
+      }
+    }
     const texture = this.textureCache.get(storage);
     if (!texture) return;
     this.textureCache.delete(storage);
@@ -344,7 +378,8 @@ export class BrowserHost implements SemanticHost {
       textureEntries.push({ binding: sampler.samplerBinding,
         visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } });
       textureEntries.push({ binding: sampler.textureBinding,
-        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } });
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        texture: { sampleType: "float", viewDimension: sampler.type === GL.SAMPLER_CUBE ? 'cube' : '2d' } });
     }
     const textureLayout = this.device.createBindGroupLayout({ entries: textureEntries });
     const driverLayout = this.device.createBindGroupLayout({ entries: [
@@ -415,11 +450,17 @@ export class BrowserHost implements SemanticHost {
     return this.blackTexture;
   }
 
+  private getBlackCubeTexture(): GPUTexture {
+    if (!this.blackCubeTexture) {
+      this.blackCubeTexture = this.createTexture(1, 1, 'rgba8unorm', 6);
+      const black = new Uint8Array([0, 0, 0, 255]);
+      for (let face = 0; face < 6; face++) this.uploadTexture(this.blackCubeTexture, black, 1, 1, 0, 0, face);
+    }
+    return this.blackCubeTexture;
+  }
+
   draw(operation: DrawOperation): void {
     const { program, state } = operation;
-    if (program.samplers.some(sampler => sampler.type === GL.SAMPLER_CUBE)) {
-      throw new DOMException('CubeMap execution is outside the current runtime profile.', 'NotSupportedError');
-    }
     const target = this.resolveTarget(operation.target);
     const resources = this.programResources(program);
     const layouts: GPUVertexBufferLayout[] = operation.attributes.map(attribute => {
@@ -467,9 +508,12 @@ export class BrowserHost implements SemanticHost {
     for (let i = 0; i < program.samplers.length; i++) {
       const sampler = program.samplers[i]!;
       const binding = operation.textures[i]!;
-      const texture = binding.storage ? this.materializeTexture(binding.storage) : this.getBlackTexture();
+      const cube = sampler.type === GL.SAMPLER_CUBE;
+      if (cube !== (binding.dimension === 'cube')) throw new Error('Sampler and execution texture dimensions differ.');
+      const texture = cube ? this.materializeCube(binding.cubeFaces)
+        : binding.storage ? this.materializeTexture(binding.storage) : this.getBlackTexture();
       textureEntries.push({ binding: sampler.samplerBinding, resource: this.sampler(binding.parameters) });
-      textureEntries.push({ binding: sampler.textureBinding, resource: texture.createView() });
+      textureEntries.push({ binding: sampler.textureBinding, resource: texture.createView({ dimension: cube ? 'cube' : '2d' }) });
     }
     const textureGroup = this.device.createBindGroup({ layout: resources.groups[1], entries: textureEntries });
     const driverKey = JSON.stringify([target.width, target.height, state.depthRange]);
@@ -662,7 +706,7 @@ export class BrowserHost implements SemanticHost {
         buffer.destroy();
       }
       for (const texture of retired) {
-        this.stats.allocatedTextureBytes -= texture.width * texture.height * 4;
+        this.stats.allocatedTextureBytes -= texture.width * texture.height * texture.depthOrArrayLayers * 4;
         this.textures.delete(texture);
         texture.destroy();
       }
@@ -752,6 +796,7 @@ export class BrowserHost implements SemanticHost {
     if (this.ownsDevice) this.device.destroy();
     this.buffers.clear();
     this.textures.clear();
+    this.cubeCache.clear();
     this.stats.allocatedBufferBytes = 0;
     this.stats.allocatedTextureBytes = 0;
   }

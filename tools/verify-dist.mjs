@@ -133,7 +133,7 @@ try {
     call('rf_dispose');
     return { version, resourceProtocol, readbackProtocol, domUploadProtocol, initialized, slot, generation, byteLength, error };
   });
-  assert.deepEqual(rustBuffer, { version: 3, resourceProtocol: 2, readbackProtocol: 1, domUploadProtocol: 2, initialized: 1, slot: 1, generation: 1, byteLength: 4, error: 0 });
+  assert.deepEqual(rustBuffer, { version: 3, resourceProtocol: 3, readbackProtocol: 1, domUploadProtocol: 2, initialized: 1, slot: 1, generation: 1, byteLength: 4, error: 0 });
   await page.screenshot({ path: 'artifacts/deployment/chrome.png' });
   const triangles = [];
   for (const core of ['native', 'js', 'rust']) {
@@ -177,7 +177,7 @@ try {
   assert.deepEqual(errors, []);
   const result = { recordedAt: new Date().toISOString(), url: page.url(), browserVersion: browser.version(), launchCommandLine, builds, headless: process.env.REFRAL_HEADLESS !== '0', viewport: page.viewportSize(), probe, demos, demoComparisons, rustBuffer, triangles, domUploads, pageErrors: errors };
   await writeFile('artifacts/deployment/result.json', JSON.stringify(result, null, 2) + '\n');
-  console.log('Built deployment passed Chrome probe, three-path RTT and triangle pixels, public readPixels and DOM uploads, ABI3/resource2/readback1/DOM upload2 and page-error checks.');
+  console.log('Built deployment passed Chrome probe, three-path RTT and triangle pixels, public readPixels and DOM uploads, ABI3/resource3/readback1/DOM upload2 and page-error checks.');
 } finally {
   try { await browser?.close(); } finally {
     if (server.exitCode === null) {

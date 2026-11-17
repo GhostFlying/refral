@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { GL, ExecutionResources } from '@refral/core-api';
+import { CUBE_FACES, GL, ExecutionResources } from '@refral/core-api';
 import type {
   CompiledShader,
   CompilerRegistry,
@@ -906,10 +906,10 @@ describe('actual Rust readPixels plans', () => {
       ...overrides,
     };
   }
-  it('retains ABI3/resource2 and advertises readback protocol1', () => {
+  it('retains ABI3 and advertises resource3/readback1', () => {
     const exports = new WebAssembly.Instance(module, {}).exports;
     expect((exports.rf_abi_version as () => number)()).toBe(3);
-    expect((exports.rf_resource_protocol_version as () => number)()).toBe(2);
+    expect((exports.rf_resource_protocol_version as () => number)()).toBe(3);
     expect((exports.rf_readback_protocol_version as () => number)()).toBe(1);
   });
   it('rejects stale modules with explicit rebuild guidance', () => {
@@ -931,7 +931,7 @@ describe('actual Rust readPixels plans', () => {
     });
     try {
       expect(() => setup()).toThrow(
-        'Rust drawing module requires ABI3/resource2/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
+        'Rust drawing module requires ABI3/resource3/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
       );
     } finally {
       instance.mockRestore();
@@ -1117,7 +1117,7 @@ describe('DOM texture source protocol', () => {
     delete exports.rf_dom_upload_protocol_version;
     const instance = vi.spyOn(WebAssembly, 'Instance').mockImplementation(function () { return { exports }; });
     try {
-      expect(() => setup()).toThrow('Rust drawing module requires ABI3/resource2/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.');
+      expect(() => setup()).toThrow('Rust drawing module requires ABI3/resource3/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.');
     } finally { instance.mockRestore(); }
   });
   it('prepares owned unpack flags without changing storage or emitting resource operations', () => {
@@ -1283,6 +1283,240 @@ describe('DOM texture source protocol', () => {
       core.markLost();
       expect(core.getError()).toBe(GL.CONTEXT_LOST_WEBGL);
       expect(core.prepareDomTextureUpload(request({ sourceValid: false }))).toBeNull();
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally { core.dispose(); }
+  });
+});
+
+describe('CubeMap resource3 protocol', () => {
+  function bind(core: DrawingCore, target: number = GL.TEXTURE_CUBE_MAP) {
+    const texture = core.invoke('createTexture', []);
+    core.invoke('bindTexture', [target, texture]);
+    return texture;
+  }
+  function define(core: DrawingCore, target: number, size: number, format: number = GL.RGBA,
+    bytes: number[] | null = null) {
+    core.invoke('texImage2D', [target, 0, format, size, size, 0, format, GL.UNSIGNED_BYTE,
+      bytes ? { bytes: new Uint8Array(bytes), viewType: 'Uint8Array' } : null]);
+  }
+  function faces(core: DrawingCore, size = 1, format: number = GL.RGBA) {
+    for (const face of CUBE_FACES) define(core, face, size, format);
+  }
+  function sampled(types: number[] = [GL.SAMPLER_CUBE]) {
+    const state = setup();
+    state.setLayout({ samplers: types.map((type, index) => ({ name: `u_tex${index}`, type, size: 1,
+      samplerBinding: index * 2, textureBinding: index * 2 + 1 })) });
+    const program = scene(state.core).program;
+    return { ...state, program };
+  }
+  function draw(state: ReturnType<typeof setup>, count = 3) {
+    state.core.invoke('drawArrays', [GL.TRIANGLES, 0, count]);
+    return state.draws.at(-1)?.textures[0];
+  }
+
+  it('rejects resource2 modules before state initialization', () => {
+    const exports = new WebAssembly.Instance(module, {}).exports;
+    const initialize = vi.fn();
+    const instance = vi.spyOn(WebAssembly, 'Instance').mockImplementation(function () {
+      return { exports: { ...exports, rf_resource_protocol_version: () => 2, rf_init: initialize } };
+    });
+    try {
+      expect(() => setup()).toThrow('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
+      expect(initialize).not.toHaveBeenCalled();
+    } finally { instance.mockRestore(); }
+  });
+
+  it('fixes first binding targets and preserves independent bindings across units', () => {
+    const { core } = setup();
+    try {
+      const cube = core.invoke('createTexture', []);
+      core.invoke('bindTexture', [CUBE_FACES[0], cube]);
+      expect(core.getError()).toBe(GL.INVALID_ENUM);
+      expect(core.invoke('isTexture', [cube])).toBe(false);
+      core.invoke('bindTexture', [GL.TEXTURE_CUBE_MAP, cube]);
+      const twoD = bind(core, GL.TEXTURE_2D);
+      core.invoke('bindTexture', [GL.TEXTURE_2D, cube]);
+      expect(core.getError()).toBe(GL.INVALID_OPERATION);
+      expect(core.invoke('getParameter', [GL.TEXTURE_BINDING_2D])).toEqual(twoD);
+      expect(core.invoke('getParameter', [GL.TEXTURE_BINDING_CUBE_MAP])).toEqual(cube);
+      expect(core.invoke('getParameter', [GL.MAX_CUBE_MAP_TEXTURE_SIZE])).toBe(4096);
+      core.invoke('activeTexture', [GL.TEXTURE0 + 1]);
+      expect(core.invoke('getParameter', [GL.TEXTURE_BINDING_CUBE_MAP])).toBeNull();
+      core.invoke('bindTexture', [GL.TEXTURE_CUBE_MAP, cube]);
+      core.invoke('deleteTexture', [cube]);
+      for (const unit of [0, 1]) {
+        core.invoke('activeTexture', [GL.TEXTURE0 + unit]);
+        expect(core.invoke('getParameter', [GL.TEXTURE_BINDING_CUBE_MAP])).toBeNull();
+      }
+      core.invoke('bindTexture', [GL.TEXTURE_CUBE_MAP, cube]);
+      expect(core.getError()).toBe(GL.INVALID_OPERATION);
+      core.invoke('activeTexture', [GL.TEXTURE0]);
+      expect(core.invoke('getParameter', [GL.TEXTURE_BINDING_2D])).toEqual(twoD);
+    } finally { core.dispose(); }
+  });
+
+  it('serializes all six face identities and normalizes each logical format', () => {
+    const state = sampled();
+    const { core, operations } = state;
+    try {
+      bind(core);
+      for (const [format, bytes, expected] of [
+        [GL.RGBA, [11, 77, 203, 0], [11, 77, 203, 0]],
+        [GL.RGB, [11, 77, 203], [11, 77, 203, 255]],
+        [GL.ALPHA, [77], [0, 0, 0, 77]],
+        [GL.LUMINANCE, [77], [77, 77, 77, 255]],
+        [GL.LUMINANCE_ALPHA, [77, 127], [77, 77, 77, 127]],
+      ] as const) {
+        for (const face of CUBE_FACES) {
+          define(core, face, 1, format, [...bytes]);
+          const operation = operations.at(-1)!;
+          if (operation.kind !== 'define-texture') throw new Error('Missing face definition.');
+          expect(operation.version).toMatchObject({ imageTarget: face, level: 0 });
+          expect([...operation.data]).toEqual(expected);
+        }
+        const binding = draw(state)!;
+        expect(binding).toMatchObject({ dimension: 'cube', storage: null });
+        expect(binding.cubeFaces).toHaveLength(6);
+        expect(binding.cubeFaces!.map(face => face.reference?.imageTarget)).toEqual(CUBE_FACES);
+      }
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally { core.dispose(); }
+  });
+
+  it('keeps incomplete cube views typed and recomputes completeness from every face and parameter', () => {
+    const state = sampled();
+    const { core } = state;
+    try {
+      bind(core);
+      expect(draw(state)).toMatchObject({ dimension: 'cube', storage: null });
+      expect(draw(state)!.cubeFaces).toBeUndefined();
+      faces(core);
+      expect(draw(state)!.cubeFaces).toHaveLength(6);
+      define(core, CUBE_FACES[2], 0);
+      expect(draw(state)!.cubeFaces).toBeUndefined();
+      faces(core, 2);
+      expect(draw(state)!.cubeFaces).toBeUndefined();
+      core.invoke('texParameteri', [GL.TEXTURE_CUBE_MAP, GL.TEXTURE_MIN_FILTER, GL.LINEAR]);
+      expect(draw(state)!.cubeFaces).toHaveLength(6);
+      define(core, CUBE_FACES[3], 1);
+      expect(draw(state)!.cubeFaces).toBeUndefined();
+      faces(core, 3);
+      expect(draw(state)!.cubeFaces).toBeUndefined();
+      for (const parameter of [GL.TEXTURE_WRAP_S, GL.TEXTURE_WRAP_T])
+        core.invoke('texParameteri', [GL.TEXTURE_CUBE_MAP, parameter, GL.CLAMP_TO_EDGE]);
+      expect(draw(state)!.cubeFaces).toHaveLength(6);
+      define(core, CUBE_FACES[4], 3, GL.RGB);
+      expect(draw(state)!.cubeFaces).toBeUndefined();
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally { core.dispose(); }
+  });
+
+  it('owns rectangular updates, preserves prior draws, and retires all face records', () => {
+    const state = sampled();
+    const { core, operations } = state;
+    try {
+      const cube = bind(core);
+      faces(core, 2);
+      core.invoke('texParameteri', [GL.TEXTURE_CUBE_MAP, GL.TEXTURE_MIN_FILTER, GL.NEAREST]);
+      const previous = draw(state)!;
+      const oldFaces = previous.cubeFaces!.slice();
+      const bytes = new Uint8Array(8).fill(77);
+      core.invoke('texSubImage2D', [CUBE_FACES[1], 0, 1, 0, 1, 2, GL.RGBA, GL.UNSIGNED_BYTE,
+        { bytes, viewType: 'Uint8Array' }]);
+      bytes.fill(0);
+      const update = operations.at(-1)!;
+      if (update.kind !== 'update-texture') throw new Error('Missing cube update.');
+      expect(update.previous).toEqual(oldFaces[1]!.reference);
+      expect(update.version).toMatchObject({ imageTarget: CUBE_FACES[1], level: 0,
+        storageGeneration: 1, contentVersion: 2 });
+      expect([...update.data]).toEqual(Array(8).fill(77));
+      const current = draw(state)!;
+      expect(current.cubeFaces![1]).not.toBe(oldFaces[1]);
+      for (const face of [0, 2, 3, 4, 5]) expect(current.cubeFaces![face]).toBe(oldFaces[face]);
+      const count = operations.length;
+      core.invoke('texImage2D', [CUBE_FACES[1], 0, GL.RGBA, 1, 2, 0, GL.RGBA, GL.UNSIGNED_BYTE, null]);
+      expect(core.getError()).toBe(GL.INVALID_VALUE);
+      expect(operations).toHaveLength(count);
+      core.invoke('deleteTexture', [cube]);
+      const retired = operations.slice(count);
+      expect(retired).toHaveLength(6);
+      expect(retired.map(operation => operation.kind)).toEqual(Array(6).fill('retire-texture'));
+      expect(retired.map(operation => operation.kind === 'retire-texture' ? operation.version : null))
+        .toEqual(current.cubeFaces!.map(face => face.reference));
+      expect(previous.cubeFaces).toEqual(oldFaces);
+      expect(draw(state)!.cubeFaces).toBeUndefined();
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally { core.dispose(); }
+  });
+
+  it('rejects mixed sampler unit types at validation and zero-count draws', () => {
+    const state = sampled([GL.SAMPLER_2D, GL.SAMPLER_CUBE]);
+    const { core, program, draws } = state;
+    try {
+      core.invoke('validateProgram', [program]);
+      expect(core.invoke('getProgramParameter', [program, GL.VALIDATE_STATUS])).toBe(false);
+      draw(state, 0);
+      expect(core.getError()).toBe(GL.INVALID_OPERATION);
+      expect(draws).toEqual([]);
+      const location = core.invoke('getUniformLocation', [program, 'u_tex1']);
+      core.invoke('uniform1i', [location, 1]);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      core.invoke('uniform1i', [location, 32]);
+      expect(core.getError()).toBe(GL.INVALID_VALUE);
+      expect(core.invoke('getUniform', [program, location])).toBe(1);
+      core.invoke('validateProgram', [program]);
+      expect(core.invoke('getProgramParameter', [program, GL.VALIDATE_STATUS])).toBe(true);
+      draw(state);
+      expect(draws[0]!.textures[0]!.dimension).toBeUndefined();
+      expect(draws[0]!.textures[1]).toMatchObject({ dimension: 'cube', storage: null });
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally { core.dispose(); }
+  });
+
+  it('rejects cube objects as 2D FBO images and diagnoses legal cube attachments without mutation', () => {
+    const { core } = setup();
+    try {
+      const twoD = bind(core, GL.TEXTURE_2D);
+      define(core, GL.TEXTURE_2D, 1);
+      const cube = bind(core);
+      const framebuffer = core.invoke('createFramebuffer', []);
+      core.invoke('bindFramebuffer', [GL.FRAMEBUFFER, framebuffer]);
+      core.invoke('framebufferTexture2D', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, twoD, 0]);
+      core.invoke('framebufferTexture2D', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, cube, 0]);
+      expect(core.getError()).toBe(GL.INVALID_OPERATION);
+      expect(() => core.invoke('framebufferTexture2D', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, CUBE_FACES[0], cube, 0]))
+        .toThrow('cube framebuffer attachments');
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      expect(core.invoke('getFramebufferAttachmentParameter', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0,
+        GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME])).toEqual(twoD);
+      core.invoke('framebufferTexture2D', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, CUBE_FACES[0], null, 0]);
+      expect(core.invoke('checkFramebufferStatus', [GL.FRAMEBUFFER])).toBe(GL.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT);
+    } finally { core.dispose(); }
+  });
+
+  it('prepares and transforms DOM face data while retaining legacy 2D version shapes', () => {
+    const { core, operations } = setup();
+    try {
+      bind(core, GL.TEXTURE_2D);
+      define(core, GL.TEXTURE_2D, 1);
+      const legacy = operations[0]!;
+      if (legacy.kind !== 'define-texture') throw new Error('Missing 2D image.');
+      expect(legacy.version.imageTarget).toBeUndefined();
+      expect(legacy.version.level).toBeUndefined();
+      bind(core);
+      const request: DomTextureUploadRequest = { operation: 'texImage2D', target: CUBE_FACES[2], level: 0,
+        internalFormat: GL.RGBA, x: 0, y: 0, width: 1, height: 2, format: GL.RGBA,
+        type: GL.UNSIGNED_BYTE, sourceValid: true };
+      expect(core.prepareDomTextureUpload(request)).toBeNull();
+      expect(core.getError()).toBe(GL.INVALID_VALUE);
+      core.invoke('pixelStorei', [GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1]);
+      expect(core.prepareDomTextureUpload({ ...request, height: 1 })).not.toBeNull();
+      core.invoke('texImage2D', [CUBE_FACES[2], 0, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE,
+        { bytes: new Uint8Array([200, 100, 50, 128]), viewType: 'Uint8Array', source: 'dom' }]);
+      const operation = operations.at(-1)!;
+      if (operation.kind !== 'define-texture') throw new Error('Missing DOM face image.');
+      expect(operation.version).toMatchObject({ imageTarget: CUBE_FACES[2], level: 0 });
+      expect([...operation.data]).toEqual([100, 50, 25, 128]);
       expect(core.getError()).toBe(GL.NO_ERROR);
     } finally { core.dispose(); }
   });

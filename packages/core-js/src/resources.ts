@@ -1,4 +1,4 @@
-import { GL } from "@refral/core-api";
+import { CUBE_FACES, GL } from "@refral/core-api";
 import type { RenderbufferHandle, TextureHandle, TextureParameters, TextureStorage } from "@refral/core-api";
 export { GL, componentCount, createRasterState, snapshotRaster } from "@refral/core-api";
 export type { AttributeSnapshot, RasterState, TargetSnapshot, TextureParameters, TextureStorage } from "@refral/core-api";
@@ -19,10 +19,20 @@ export class BufferObject extends LogicalObject {
   version = 0;
 }
 
-export class TextureObject extends LogicalObject {
+export interface TextureImage {
+  storage: TextureStorage | null;
+  generation: number;
+  version: number;
+  format: number;
+}
+
+export class TextureObject extends LogicalObject implements TextureImage {
   handle: TextureHandle | null = null;
   initialized = false;
   retired = false;
+  target: number | null = null;
+  readonly cubeImages = new Map<number, TextureImage>();
+  // These fields retain the existing level-zero 2D image and direct CPU callers.
   storage: TextureStorage | null = null;
   generation = 0;
   version = 0;
@@ -33,6 +43,10 @@ export class TextureObject extends LogicalObject {
     wrapS: GL.REPEAT,
     wrapT: GL.REPEAT,
   };
+
+  image(imageTarget: number): TextureImage | undefined {
+    return imageTarget === GL.TEXTURE_2D ? this : this.cubeImages.get(imageTarget);
+  }
 }
 
 export class RenderbufferObject extends LogicalObject {
@@ -76,7 +90,19 @@ export function isPowerOfTwo(value: number): boolean {
 }
 
 export function isTextureComplete(texture: TextureObject): boolean {
-  const storage = texture.storage;
+  let image: TextureImage = texture;
+  if (texture.target === GL.TEXTURE_CUBE_MAP) {
+    const first = texture.cubeImages.get(CUBE_FACES[0]);
+    if (!first?.storage) return false;
+    const { width, height } = first.storage;
+    if (width !== height || CUBE_FACES.some(face => {
+      const other = texture.cubeImages.get(face);
+      return !other?.storage || other.storage.width !== width || other.storage.height !== height
+        || other.format !== first.format;
+    })) return false;
+    image = first;
+  }
+  const storage = image.storage;
   if (!storage || !storage.width || !storage.height) return false;
   const params = texture.parameters;
   if (params.minFilter !== GL.NEAREST && params.minFilter !== GL.LINEAR) {

@@ -20,6 +20,8 @@ The common host can materialize each logical image through its current 2D alloca
 
 The shared compiler accepts scalar sampler2D and samplerCube, reflecting their GL type and assigning split sampler/texture bindings. Other sampler kinds and arrays retain explicit link diagnostics. Vertex implicit texture sampling uses an explicit base LOD in the pinned WGSL backend adaptation, preserving explicit LOD calls.
 
+The original CTS cube shader writes gl_FragData[0]. The pinned backend retains the resource-sized array in private pipeline state and flattens its elements into scalar/vector location outputs at the end of the entry point. Array reads, control flow and returns retain their AST semantics. The current single-color-target profile uses MaxDrawBuffers1.
+
 Task036 retains ABI3/readback1/DOM2 and advances resource capability to3. TextureVersion packets add imageTarget and level u32 fields. Draw bindings carry a dimension and presence flag followed by one 2D version or six cube versions. Incomplete packets still carry dimension. Every consumer, packet capacity calculation, pre-execution output reservation, stale-artifact check and packaged-module check migrates together. Output arenas retain independent ownership before reuse.
 
 ## Validation and acceptance

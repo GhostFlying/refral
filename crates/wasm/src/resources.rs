@@ -1,14 +1,18 @@
 use crate::render::u32_value;
 use refral_core::{ResourceOperation, TextureParameters, TextureVersion};
 
+pub(super) const VERSION_BYTES: usize = 36;
+// A single texture deletion can retire all six images before returning.
+pub(super) const MAX_OPERATION_HEADERS: usize = 8 + 6 * (4 + VERSION_BYTES);
+
 pub(super) fn capacity(operations: &[ResourceOperation]) -> Option<usize> {
     let mut length = 4_usize;
     for operation in operations {
         let size = match operation {
-            ResourceOperation::DefineTexture { .. } => 48,
-            ResourceOperation::UpdateTexture { .. } => 84,
-            ResourceOperation::WriteTexture { .. } => 60,
-            ResourceOperation::RetireTexture { .. } => 32,
+            ResourceOperation::DefineTexture { .. } => 56,
+            ResourceOperation::UpdateTexture { .. } => 100,
+            ResourceOperation::WriteTexture { .. } => 76,
+            ResourceOperation::RetireTexture { .. } => 40,
             ResourceOperation::RetireDepth { .. } => 24,
         };
         length = length.checked_add(size)?;
@@ -25,6 +29,8 @@ pub(super) fn version(output: &mut Vec<u8>, version: TextureVersion) {
     }
     output.extend_from_slice(&version.storage_generation.to_le_bytes());
     output.extend_from_slice(&version.content_version.to_le_bytes());
+    u32_value(output, version.image_target);
+    u32_value(output, version.level);
 }
 pub(super) fn parameters(output: &mut Vec<u8>, parameters: TextureParameters) {
     for value in [
@@ -37,7 +43,11 @@ pub(super) fn parameters(output: &mut Vec<u8>, parameters: TextureParameters) {
     }
 }
 pub(super) fn target_capacity(target: &refral_core::TargetSnapshot) -> usize {
-    20 + if target.color.is_some() { 28 } else { 0 } + if target.depth.is_some() { 20 } else { 0 }
+    20 + if target.color.is_some() {
+        VERSION_BYTES
+    } else {
+        0
+    } + if target.depth.is_some() { 20 } else { 0 }
 }
 pub(super) fn target(output: &mut Vec<u8>, target: refral_core::TargetSnapshot) {
     u32_value(output, target.width);
@@ -120,6 +130,53 @@ pub(super) fn encode(output: &mut Vec<u8>, operations: &[ResourceOperation]) {
                 }
                 output.extend_from_slice(&storage_generation.to_le_bytes());
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use refral_core::{ObjectHandle, ObjectKind};
+
+    #[test]
+    fn six_face_retirement_fits_preexecution_capacity_and_keeps_image_identity() {
+        let operations: Vec<_> = (0..6)
+            .map(|face| ResourceOperation::RetireTexture {
+                version: TextureVersion {
+                    texture: ObjectHandle {
+                        kind: ObjectKind::Texture,
+                        context_id: 7,
+                        slot: 3,
+                        generation: 2,
+                    },
+                    storage_generation: 9,
+                    content_version: 13,
+                    image_target: 0x8515 + face,
+                    level: 0,
+                },
+            })
+            .collect();
+        let expected = capacity(&operations).unwrap();
+        let mut encoded = Vec::with_capacity(MAX_OPERATION_HEADERS);
+        encode(&mut encoded, &operations);
+        encode(&mut encoded, &[]);
+        assert_eq!(encoded.len(), expected + 4);
+        assert_eq!(encoded.len(), MAX_OPERATION_HEADERS);
+        for face in 0..6 {
+            let start = 4 + face * 40;
+            assert_eq!(
+                u32::from_le_bytes(encoded[start..start + 4].try_into().unwrap()),
+                4
+            );
+            assert_eq!(
+                u32::from_le_bytes(encoded[start + 32..start + 36].try_into().unwrap()),
+                0x8515 + face as u32
+            );
+            assert_eq!(
+                u32::from_le_bytes(encoded[start + 36..start + 40].try_into().unwrap()),
+                0
+            );
         }
     }
 }

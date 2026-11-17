@@ -326,7 +326,7 @@ describe('actual Rust drawing Wasm', () => {
   });
 });
 
-describe('typed uniform and raster ABI v3', () => {
+describe('typed uniform and raster draw snapshots', () => {
   it('preserves i32, boolean, matrix/array packing and non-current program queries', () => {
     const state = setup();
     const { core } = state;
@@ -906,11 +906,22 @@ describe('actual Rust readPixels plans', () => {
       ...overrides,
     };
   }
-  it('retains ABI3 and advertises resource3/readback1', () => {
+  it('advertises ABI4 with resource3/readback1', () => {
     const exports = new WebAssembly.Instance(module, {}).exports;
-    expect((exports.rf_abi_version as () => number)()).toBe(3);
+    expect((exports.rf_abi_version as () => number)()).toBe(4);
     expect((exports.rf_resource_protocol_version as () => number)()).toBe(3);
     expect((exports.rf_readback_protocol_version as () => number)()).toBe(1);
+  });
+  it('rejects old draw snapshots before context initialization', () => {
+    const exports = new WebAssembly.Instance(module, {}).exports;
+    const instance = vi.spyOn(WebAssembly, 'Instance').mockImplementation(function () {
+      return { exports: { ...exports, rf_abi_version: () => 3 } };
+    });
+    try {
+      expect(() => setup()).toThrow('Rust drawing ABI version mismatch; expected 4. Rebuild with pnpm rust:build.');
+    } finally {
+      instance.mockRestore();
+    }
   });
   it('rejects stale modules with explicit rebuild guidance', () => {
     const exports = new WebAssembly.Instance(module, {}).exports;
@@ -931,7 +942,7 @@ describe('actual Rust readPixels plans', () => {
     });
     try {
       expect(() => setup()).toThrow(
-        'Rust drawing module requires ABI3/resource3/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
+        'Rust drawing module requires ABI4/resource3/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
       );
     } finally {
       instance.mockRestore();
@@ -1117,7 +1128,7 @@ describe('DOM texture source protocol', () => {
     delete exports.rf_dom_upload_protocol_version;
     const instance = vi.spyOn(WebAssembly, 'Instance').mockImplementation(function () { return { exports }; });
     try {
-      expect(() => setup()).toThrow('Rust drawing module requires ABI3/resource3/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.');
+      expect(() => setup()).toThrow('Rust drawing module requires ABI4/resource3/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.');
     } finally { instance.mockRestore(); }
   });
   it('prepares owned unpack flags without changing storage or emitting resource operations', () => {

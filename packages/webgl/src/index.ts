@@ -6,11 +6,12 @@ import { BrowserHost } from "@refral/browser-host";
 import type { CapturedPixels } from "@refral/browser-host";
 import { createCompiler, createCompilerRegistry, COMPILER_LIMITS } from "@refral/compiler";
 import type { Compiler } from "@refral/compiler";
-import { createBufferFacade, isBufferBinding, requireArguments, toEnum } from "./buffers.js";
+import { createBufferFacade, isBufferBinding, requireArguments, toEnum, toSize } from "./buffers.js";
 import { createProgramFacade } from "./programs.js";
 import { createResourceFacade, isResourceBinding } from './resources.js';
 import { readPixels } from './readback.js';
 import { registerCanvasSource } from './dom-upload.js';
+import { webgl1Methods } from './methods.js';
 
 export interface ContextOptions extends WebGLContextAttributes {
   version: 1;
@@ -39,6 +40,7 @@ export interface PreparedContextFactory {
 }
 
 const hooks = new WeakMap<object, TestingHooks>();
+const constants = Object.freeze({ ...GL });
 const defaults: WebGLContextAttributes = {
   alpha: true, depth: true, stencil: false, antialias: false,
   premultipliedAlpha: true, preserveDrawingBuffer: true,
@@ -89,6 +91,17 @@ function wrapContext(canvas: HTMLCanvasElement, host: BrowserHost,
     if (property === 'getContextAttributes') return core.isContextLost() ? null : { ...attributes };
     if (property === 'getSupportedExtensions') return core.isContextLost() ? null : [];
     if (property === 'getExtension') return null;
+    if (property === 'vertexAttribPointer') {
+      requireArguments(property, args, 6);
+      args = [toEnum(args[0]), +(args[1] as number) | 0, toEnum(args[2]), Boolean(args[3]),
+        +(args[4] as number) | 0, toSize(args[5])];
+    } else if (property === 'drawArrays') {
+      requireArguments(property, args, 3);
+      args = [toEnum(args[0]), +(args[1] as number) | 0, +(args[2] as number) | 0];
+    } else if (property === 'drawElements') {
+      requireArguments(property, args, 4);
+      args = [toEnum(args[0]), +(args[1] as number) | 0, toEnum(args[2]), toSize(args[3])];
+    }
     const facadeMethod = programFacade.methods[property] ?? resourceFacade.methods[property];
     const result = facadeMethod ? facadeMethod(...args) : core.invoke(property, args);
     if (property === 'getVertexAttrib' && toEnum(args[1]) === GL.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) {
@@ -96,15 +109,20 @@ function wrapContext(canvas: HTMLCanvasElement, host: BrowserHost,
     }
     return result;
   };
-  const proxy = new Proxy({}, {
-    get(_target, property) {
-      if (typeof property === "string" && property in GL) return GL[property as keyof typeof GL];
-      if (property === 'canvas') return canvas;
-      if (property === 'drawingBufferWidth') return core.isContextLost() ? 0 : canvas.width;
-      if (property === 'drawingBufferHeight') return core.isContextLost() ? 0 : canvas.height;
-      if (property === 'drawingBufferColorSpace') return 'srgb';
-      if (property === "then") return undefined;
-      if (typeof property !== 'string') return undefined;
+  const surface = Object.setPrototypeOf({
+    get canvas() { return canvas; },
+    get drawingBufferWidth() { return core.isContextLost() ? 0 : canvas.width; },
+    get drawingBufferHeight() { return core.isContextLost() ? 0 : canvas.height; },
+    get drawingBufferColorSpace() { return 'srgb'; },
+  }, constants);
+  const proxy = new Proxy(surface, {
+    has(target, property) {
+      return (typeof property === 'string' && webgl1Methods.has(property)) || Reflect.has(target, property);
+    },
+    get(target, property, receiver) {
+      if (typeof property !== 'string' || !webgl1Methods.has(property) || Object.hasOwn(target, property)) {
+        return Reflect.get(target, property, receiver);
+      }
       if (!methods.has(property)) methods.set(property, (...args) => invoke(property, args));
       return methods.get(property);
     },

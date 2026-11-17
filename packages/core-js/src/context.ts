@@ -1,11 +1,12 @@
 import {
-  CUBE_FACES, GL, createRasterState, snapshotRaster, componentCount,
+  CUBE_FACES, GL, createRasterState, snapshotRaster, componentCount, vertexComponentBytes,
 } from "@refral/core-api";
 import type {
   AttributeSnapshot, RasterState, TargetSnapshot, TextureBinding,
   Compiler, CompiledShader, LinkedProgram, ProgramUniform, DrawingSurface,
   ContextAttributes, RuntimeProfile, SemanticHost, ResourceRegistry, TextureVersion, PixelUpload,
   ReadPixelsPlan, ReadPixelsRequest, DomTextureUploadPlan, DomTextureUploadRequest,
+  DrawOperation,
 } from "@refral/core-api";
 import {
   LogicalObject, BufferObject, TextureObject, RenderbufferObject, FramebufferObject,
@@ -589,9 +590,9 @@ export class SemanticContext {
   vertexAttribPointer(index: number, size: number, type: number, normalized: boolean, stride: number, offset: number): void {
     const attribute = this.attributes[index];
     if (!attribute || size < 1 || size > 4 || stride < 0 || stride > 255 || offset < 0) return this.error(GL.INVALID_VALUE);
-    if (![GL.FLOAT, GL.BYTE, GL.UNSIGNED_BYTE, GL.SHORT, GL.UNSIGNED_SHORT].includes(type as 0x1406)) return this.error(GL.INVALID_ENUM);
-    if (type !== GL.FLOAT) return unsupported("non-FLOAT vertexAttribPointer");
-    if (stride % 4 || offset % 4) return this.error(GL.INVALID_OPERATION);
+    const componentBytes = vertexComponentBytes(type);
+    if (!componentBytes) return this.error(GL.INVALID_ENUM);
+    if (stride % componentBytes || offset % componentBytes) return this.error(GL.INVALID_OPERATION);
     if (!this.arrayBuffer && offset !== 0) return this.error(GL.INVALID_OPERATION);
     Object.assign(attribute, { buffer: this.arrayBuffer, size, type, normalized: !!normalized, stride, offset });
   }
@@ -633,18 +634,28 @@ export class SemanticContext {
 
   drawArrays(mode: number, first: number, count: number): void { this.draw(mode, first, count, null); }
   drawElements(mode: number, count: number, type: number, offset: number): void {
-    if (type !== GL.UNSIGNED_BYTE && type !== GL.UNSIGNED_SHORT) return this.error(GL.INVALID_ENUM);
-    if (!this.elementBuffer) return this.error(GL.INVALID_OPERATION);
-    if (offset < 0 || !Number.isInteger(offset) || (type === GL.UNSIGNED_SHORT && offset % 2)) return this.error(GL.INVALID_OPERATION);
-    this.draw(mode, 0, count, { data: this.elementBuffer.data, type, offset });
+    this.draw(mode, 0, count, { type, offset });
   }
   private draw(mode: number, first: number, count: number,
-    indices: { data: Uint8Array; type: number; offset: number } | null): void {
+    elements: { type: number; offset: number } | null): void {
     if (this.lost) return;
     if (mode < GL.POINTS || mode > GL.TRIANGLE_FAN) return this.error(GL.INVALID_ENUM);
-    if (mode !== GL.TRIANGLES) return unsupported("non-triangle draw");
     if (first < 0 || count < 0 || !Number.isInteger(first) || !Number.isInteger(count)) return this.error(GL.INVALID_VALUE);
+    let indices: DrawOperation['indices'] = null;
+    if (elements) {
+      const { type, offset } = elements;
+      if (type !== GL.UNSIGNED_BYTE && type !== GL.UNSIGNED_SHORT) return this.error(GL.INVALID_ENUM);
+      if (offset < 0) return this.error(GL.INVALID_VALUE);
+      if (!this.elementBuffer || !Number.isInteger(offset) || offset % vertexComponentBytes(type)) {
+        return this.error(GL.INVALID_OPERATION);
+      }
+      indices = { data: this.elementBuffer.data, type, offset };
+    }
+    if (mode !== GL.TRIANGLES && mode !== GL.TRIANGLE_STRIP) {
+      return unsupported("drawing mode other than TRIANGLES or TRIANGLE_STRIP");
+    }
     if (!this.program?.linkStatus || !this.program.executable) return this.error(GL.INVALID_OPERATION);
+    if (this.attributes.some(attribute => attribute.enabled && !attribute.buffer)) return this.error(GL.INVALID_OPERATION);
     if (this.samplerTypeConflict(this.program)) return this.error(GL.INVALID_OPERATION);
     const target = this.target(); if (!target) return;
     let vertices = first + count;
@@ -652,7 +663,7 @@ export class SemanticContext {
       const bytes = indices.type === GL.UNSIGNED_BYTE ? 1 : 2;
       if (indices.offset + count * bytes > indices.data.byteLength) return this.error(GL.INVALID_OPERATION);
       const view = new DataView(indices.data.buffer, indices.data.byteOffset, indices.data.byteLength);
-      let maximum = 0;
+      let maximum = -1;
       for (let i = 0; i < count; i++) {
         const value = bytes === 1 ? view.getUint8(indices.offset + i) : view.getUint16(indices.offset + i * 2, true);
         maximum = Math.max(maximum, value);
@@ -667,12 +678,14 @@ export class SemanticContext {
       const attribute = this.attributes[active.location]!;
       if (attribute.enabled) {
         if (!attribute.buffer) return this.error(GL.INVALID_OPERATION);
-        const stride = attribute.stride || attribute.size * 4;
-        const required = count ? attribute.offset + (vertices - 1) * stride + attribute.size * 4 : 0;
+        const elementBytes = attribute.size * vertexComponentBytes(attribute.type);
+        const stride = attribute.stride || elementBytes;
+        const required = count ? attribute.offset + (vertices - 1) * stride + elementBytes : 0;
         if (required > attribute.buffer.data.byteLength) return this.error(GL.INVALID_OPERATION);
       }
       attributes.push({ location: active.location, shaderType: active.type,
-        size: attribute.size, stride: attribute.stride, offset: attribute.offset,
+        size: attribute.size, type: attribute.type, normalized: attribute.normalized,
+        stride: attribute.stride, offset: attribute.offset,
         data: attribute.enabled ? attribute.buffer!.data : null, constant: [...attribute.constant] });
     }
     const textures: TextureBinding[] = [];
@@ -694,7 +707,7 @@ export class SemanticContext {
     }
     if (!count || !target.width || !target.height ||
         (this.state.cull && this.state.cullFace === GL.FRONT_AND_BACK)) return;
-    this.host.draw({ program: this.program.executable, target, state: snapshotRaster(this.state),
+    this.host.draw({ program: this.program.executable, mode, target, state: snapshotRaster(this.state),
       attributes, vertexCount: vertices, first, count, indices,
       vertexUniforms: this.program.vertexUniforms.slice(), fragmentUniforms: this.program.fragmentUniforms.slice(),
       textures });

@@ -44,6 +44,8 @@ export interface AttributeSnapshot {
   location: number;
   shaderType: number;
   size: number;
+  type: number;
+  normalized: boolean;
   stride: number;
   offset: number;
   data: Uint8Array | null;
@@ -124,6 +126,7 @@ export interface TextureBinding {
 
 export interface DrawOperation {
   program: LinkedProgram;
+  mode: typeof GL.TRIANGLES | typeof GL.TRIANGLE_STRIP;
   target: TargetSnapshot;
   state: RasterState;
   attributes: AttributeSnapshot[];

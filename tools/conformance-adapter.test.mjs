@@ -179,6 +179,25 @@ test('explicit undefined is converted while an absent argument remains an error'
   assert.throws(() => new Canvas().getContext(), { name: 'TypeError' });
 });
 
+test('selected realm branding does not expose native getters, setters or methods on the facade', () => {
+  const raw = { actualCore: 'js' };
+  const { Canvas, scope } = fixture('js', { context: raw });
+  const nativePrototype = scope.WebGLRenderingContext.prototype;
+  Object.defineProperty(nativePrototype, 'unpackColorSpace', {
+    get() { throw new Error('native getter executed'); },
+    set() { throw new Error('native setter executed'); },
+  });
+  nativePrototype.nativeOnly = () => {};
+  const context = new Canvas().getContext('webgl');
+  assert.ok(context instanceof scope.WebGLRenderingContext);
+  assert.equal(Object.getPrototypeOf(raw), Object.prototype);
+  assert.equal('unpackColorSpace' in context, false);
+  assert.equal(context.unpackColorSpace, undefined);
+  assert.equal(context.nativeOnly, undefined);
+  context.unpackColorSpace = 'srgb';
+  assert.equal(raw.unpackColorSpace, 'srgb');
+});
+
 test('intrinsic brand checks accept a genuine canvas from another realm', () => {
   const { Canvas, calls, canvasBrands } = fixture();
   const foreign = vm.runInNewContext('new (class ForeignCanvas {})()');

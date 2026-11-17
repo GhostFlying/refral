@@ -31,6 +31,7 @@ export async function runCts(path: string, requestedBackend: CtsBackend) {
   const assertions: Assertion[] = [];
   const errors: HarnessError[] = [];
   const contexts: ReturnType<NonNullable<typeof factory>>[] = [];
+  const canvasContexts = new WeakMap<HTMLCanvasElement, WebGLRenderingContext>();
   let finish!: (status: CompletionStatus) => void;
   let completed: CompletionStatus | null = null;
   const completion = new Promise<CompletionStatus>((resolve) => {
@@ -77,15 +78,18 @@ export async function runCts(path: string, requestedBackend: CtsBackend) {
         if (kind !== 'webgl' && kind !== 'experimental-webgl') {
           return Reflect.apply(original, this, [kind, attributes]);
         }
-        const existing = contexts.find((context) => context.canvas === this);
+        const existing = canvasContexts.get(this);
         if (existing) return existing;
         const context = factory ? factory(this, attributes)
           : Reflect.apply(original, this, [kind, attributes]) as WebGLRenderingContext | null;
-        if (context) {
-          if (factory) Object.setPrototypeOf(context, frame.WebGLRenderingContext.prototype);
-          contexts.push(context);
-        }
-        return context;
+        if (!context) return null;
+        contexts.push(context);
+        const exposed = factory ? new Proxy(context, {
+          getPrototypeOf: target => Reflect.isExtensible(target)
+            ? frame.WebGLRenderingContext.prototype : Reflect.getPrototypeOf(target),
+        }) : context;
+        canvasContexts.set(this, exposed);
+        return exposed;
       },
       configurable: true,
     });

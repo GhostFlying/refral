@@ -5,6 +5,7 @@ export const dualCoreCaseNames = [
   'float-uniform-setters', 'indexed-update-u8', 'indexed-update-u16', 'upload-view-snapshot',
   'attribute-layout-and-constants', 'buffer-reallocation-and-delete', 'resize-attribute-size',
   'automatic-submit-and-flush', 'viewport-clear-regions', 'draw-validation-state',
+  'triangle-strip-modes', 'integer-vertex-attributes', 'enabled-array-validation',
   'retained-deletion-and-retirement', ...programCaseNames,
 ] as const;
 export type DrawingCaseName = typeof dualCoreCaseNames[number];
@@ -76,6 +77,11 @@ function regions(name: DrawingCaseName): PixelRegion[] {
         { x: 32, y: 32, width: 32, height: 32, color: green }];
     case 'resize-attribute-size': return [band(0, 96, blue, 32)];
     case 'draw-validation-state': return [band(0, 64, [255, 255, 0, 255])];
+    case 'triangle-strip-modes':
+      return [red, green, blue, [255, 255, 0, 255]].map((color, index) => band(index * 16, 16, color));
+    case 'integer-vertex-attributes':
+      return [red, [127, 0, 0, 255], red, green].map((color, index) => band(index * 16, 16, color));
+    case 'enabled-array-validation': return [band(0, 64, green)];
     case 'failed-current-program-relink': return [band(0, 64, [255, 127, 0, 255])];
     case 'successful-relink-reset':
       return [band(0, 16, red), band(16, 16, black), band(32, 32, green)];
@@ -134,6 +140,74 @@ async function execute(name: DrawingCaseName, gl: WebGLRenderingContext, canvas:
     gl.getShaderParameter(shader, gl.SHADER_TYPE) === gl.FRAGMENT_SHADER)!;
 
   switch (name) {
+    case 'triangle-strip-modes': {
+      const positions = new Float32Array(65536 * 2);
+      positions.set([-1, -1, 1, -1, -1, 1, 1, 1], 2);
+      positions.set([1, 1], 65535 * 2);
+      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+      gl.enable(gl.CULL_FACE);
+      gl.viewport(0, 0, 16, 64);
+      gl.uniform4f(color, 1, 0, 0, 1);
+      expectError('strip first vertex', () => gl.drawArrays(gl.TRIANGLE_STRIP, 1, 4), gl.NO_ERROR);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+      const paths = [
+        [gl.UNSIGNED_BYTE, new Uint8Array([0, 1, 2, 3, 4]), 1, green],
+        [gl.UNSIGNED_SHORT, new Uint16Array([0, 1, 2, 3, 4]), 2, blue],
+        [gl.UNSIGNED_SHORT, new Uint16Array([0, 1, 2, 3, 65535]), 2, [255, 255, 0, 255]],
+      ] as const;
+      for (const [index, [type, data, offset, rgba]] of paths.entries()) {
+        gl.viewport((index + 1) * 16, 0, 16, 64);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, gl.STATIC_DRAW);
+        gl.uniform4f(color, rgba[0]! / 255, rgba[1]! / 255, rgba[2]! / 255, 1);
+        expectError(`indexed strip ${index}`, () => gl.drawElements(gl.TRIANGLE_STRIP, 4, type, offset), gl.NO_ERROR);
+      }
+      if (!hooks) {
+        const lastBand = new Uint8Array(16 * 64 * 4);
+        gl.readPixels(48, 0, 16, 64, gl.RGBA, gl.UNSIGNED_BYTE, lastBand);
+        let yellowPixels = 0;
+        for (let offset = 0; offset < lastBand.length; offset += 4) {
+          if (lastBand[offset] === 255 && lastBand[offset + 1] === 255) yellowPixels++;
+        }
+        result.observations.index65535YellowPixels = yellowPixels;
+      }
+      expectError('indexed strip negative offset', () => gl.drawElements(gl.TRIANGLE_STRIP, 4, gl.UNSIGNED_SHORT, -1), gl.INVALID_VALUE);
+      expectError('indexed strip byte alignment', () => gl.drawElements(gl.TRIANGLE_STRIP, 4, gl.UNSIGNED_SHORT, 1), gl.INVALID_OPERATION);
+      break;
+    }
+    case 'integer-vertex-attributes': {
+      const positions = new Int16Array([
+        0, -32768, -32768, 0, 32767, -32768, 0, -32768, 32767, 0, 32767, 32767,
+      ]);
+      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+      gl.vertexAttribPointer(position, 2, gl.SHORT, true, 6, 2);
+      const colorAttribute = gl.getAttribLocation(program, 'a_color');
+      gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+      gl.enableVertexAttribArray(colorAttribute);
+      gl.bufferData(gl.ARRAY_BUFFER, new Uint8Array(Array.from({ length: 4 }, () => [5, 127, 0, 0, 5]).flat()), gl.STATIC_DRAW);
+      const formats = [[gl.BYTE, true], [gl.UNSIGNED_BYTE, true], [gl.UNSIGNED_BYTE, false]] as const;
+      for (const [index, [type, normalized]] of formats.entries()) {
+        gl.vertexAttribPointer(colorAttribute, 3, type, normalized, 5, 1);
+        check(`query type ${index}`, gl.getVertexAttrib(colorAttribute, gl.VERTEX_ATTRIB_ARRAY_TYPE), type);
+        check(`query normalization ${index}`, gl.getVertexAttrib(colorAttribute, gl.VERTEX_ATTRIB_ARRAY_NORMALIZED), normalized);
+        gl.viewport(index * 16, 0, 16, 64);
+        expectError(`integer strip ${index}`, () => gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4), gl.NO_ERROR);
+      }
+      gl.bufferData(gl.ARRAY_BUFFER, new Uint16Array([0, 65535, 0, 0, 65535, 0, 0, 65535, 0, 0, 65535, 0]), gl.STATIC_DRAW);
+      gl.vertexAttribPointer(colorAttribute, 3, gl.UNSIGNED_SHORT, true, 0, 0);
+      gl.viewport(48, 0, 16, 64);
+      expectError('packed ushort strip', () => gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4), gl.NO_ERROR);
+      expectError('ushort offset alignment', () => gl.vertexAttribPointer(colorAttribute, 3, gl.UNSIGNED_SHORT, true, 0, 1), gl.INVALID_OPERATION);
+      break;
+    }
+    case 'enabled-array-validation': {
+      gl.enableVertexAttribArray(1);
+      expectError('unused enabled array without a buffer', () => gl.drawArrays(gl.TRIANGLES, 0, 6), gl.INVALID_OPERATION);
+      gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(gl.ARRAY_BUFFER, new Int16Array([1]), gl.STATIC_DRAW);
+      gl.vertexAttribPointer(1, 1, gl.SHORT, false, 0, 0);
+      expectError('unused enabled array with short storage', () => draw(0, 1, 0), gl.NO_ERROR);
+      break;
+    }
     case 'float-uniform-setters': {
       const locations = ['u_r', 'u_gb', 'u_rgb', 'u_rgba'].map(name => gl.getUniformLocation(program, name)!);
       check('all float uniform locations exist', locations.every(location => location !== null), true);
@@ -406,7 +480,7 @@ export async function runDrawingCase(name: DrawingCaseName, backend: DrawingBack
   document.body.append(canvas);
   const shaders = { vertex, fragment };
   if (name === 'float-uniform-setters') shaders.fragment = uniformsFragment;
-  if (name === 'attribute-layout-and-constants') {
+  if (name === 'attribute-layout-and-constants' || name === 'integer-vertex-attributes') {
     shaders.vertex = colorsVertex; shaders.fragment = colorsFragment;
   }
   const result: DrawingResult = {

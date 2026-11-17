@@ -575,8 +575,8 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             json!({"type":"clear"})
         }
         Reply::Draw(snapshot) => {
-            u32_value(output, 0x33444652);
-            u32_value(output, 3);
+            u32_value(output, 0x34444652);
+            u32_value(output, 4);
             u32_value(output, snapshot.artifact_id);
             for value in [
                 snapshot.program.context_id,
@@ -589,6 +589,7 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             crate::resources::target(output, snapshot.target);
             raster(output, snapshot.state);
             for value in [
+                snapshot.mode,
                 snapshot.vertex_count,
                 snapshot.first,
                 snapshot.count,
@@ -601,6 +602,8 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
                     attribute.location,
                     attribute.shader_type,
                     attribute.size,
+                    attribute.ty,
+                    u32::from(attribute.normalized),
                     attribute.stride,
                     attribute.offset as u32,
                 ] {

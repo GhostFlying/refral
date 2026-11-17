@@ -2,9 +2,17 @@
   "version": 2,
   "profile": "webgl1-prototype",
   "updated": "2026-11-18",
-  "implementationRevision": "task-037 original DOM CubeMap CTS and deployment from main5b59508; delivery identifies integrated heads",
+  "implementationRevision": "task-039 WebGL1 operation detection and typed triangle-strip drawing from main ce0566a",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
+    "chrome158-macos-arm64": {
+      "browser": "Google Chrome 158.0.8127.36",
+      "osArchitecture": "macOS arm64",
+      "adapterVendor": "apple",
+      "adapterArchitecture": "metal-3",
+      "scope": "Headless task 039 vertex input and strip checks on a hardware adapter.",
+      "evidence": "artifacts/dual-core-drawing/triangle-strip-modes/result.json"
+    },
     "chrome-macos-arm64": {
       "browser": "Google Chrome 157.0.8103.79",
       "osArchitecture": "macOS arm64",
@@ -426,17 +434,22 @@
       "api": "vertexAttribPointer, enableVertexAttribArray, disableVertexAttribArray, vertexAttrib*f",
       "cores": {
         "js": {
-          "status": "differential-verified",
+          "status": "cts-verified",
           "environments": [
-            "chrome-macos-arm64"
+            "chrome-macos-arm64",
+            "chrome158-macos-arm64"
           ],
-          "coverage": "FLOAT attributes with sizes 1-4, aligned offsets/strides and constant attributes. Shared three-path fixtures verify enabled vec2 inputs and constant vec4 values, caller snapshots, layout and queries.",
+          "coverage": "FLOAT, BYTE, UNSIGNED_BYTE, SHORT and UNSIGNED_SHORT arrays with sizes 1–4, type-aligned byte offsets and strides, numeric and normalized conversion, and constant attributes. Tests cover format and normalization cache identity and all enabled-array bindings.",
           "tests": [
+            "sdk/tests/conformance/attribs/gl-enable-vertex-attrib.html",
+            "sdk/tests/conformance/attribs/gl-vertexattribpointer.html",
+            "sdk/tests/conformance/attribs/gl-vertexattribpointer-offsets.html",
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update",
             "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
+            "artifacts/vertex-input/geometry-summary.json",
             {
               "path": "artifacts/differential/uniform-snapshot/result.json",
               "passed": true,
@@ -453,25 +466,29 @@
           "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "limits": [
             "Maximum 8 attribute locations, matching the initial host buffer slots",
-            "Non-FLOAT vertexAttribPointer raises NotSupportedError",
             "Matrix attributes support compilation/linking/reflection; drawing them raises NotSupportedError in the initial runtime profile."
           ],
           "overloadStates": {
             "vertexAttribPointer_FLOAT_vec2": "differential-verified",
+            "integerVertexAttributes": "differential-verified",
             "vertexAttribPointer_FLOAT_otherSizes": "implemented-unverified",
             "constantVertexAttributes": "implemented-unverified",
             "matrixAttributeDrawing": "unimplemented"
           }
         },
         "rust": {
-          "status": "differential-verified",
-          "coverage": "FLOAT array attributes and constants, enable/disable, size/stride/offset, null Buffer at offset zero, short constant-list rejection and Buffer query identity. Other vertex formats remain outside the Rust profile.",
+          "status": "cts-verified",
+          "coverage": "FLOAT, BYTE, UNSIGNED_BYTE, SHORT and UNSIGNED_SHORT arrays with sizes 1–4, type-aligned byte offsets and strides, numeric and normalized conversion, and constant attributes. Rust ABI4 carries component type and normalization through owned draw snapshots.",
           "tests": [
+            "sdk/tests/conformance/attribs/gl-enable-vertex-attrib.html",
+            "sdk/tests/conformance/attribs/gl-vertexattribpointer.html",
+            "sdk/tests/conformance/attribs/gl-vertexattribpointer-offsets.html",
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
             "packages/core-wasm/tests/render.integration.ts"
           ],
           "evidence": [
+            "artifacts/vertex-input/geometry-summary.json",
             {
               "path": "artifacts/dual-core-drawing/",
               "passed": true
@@ -496,9 +513,10 @@
         "js": {
           "status": "differential-verified",
           "environments": [
-            "chrome-macos-arm64"
+            "chrome-macos-arm64",
+            "chrome158-macos-arm64"
           ],
-          "coverage": "TRIANGLES arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws on default and declared offscreen targets, with owned draw-time state, resources and typed uniforms. Bounds/alignment, multipass depth/cull/blend and native comparisons pass.",
+          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update",
@@ -528,6 +546,8 @@
           "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "overloadStates": {
             "drawArrays_TRIANGLES": "differential-verified",
+            "drawArrays_TRIANGLE_STRIP": "differential-verified",
+            "drawElements_TRIANGLE_STRIP": "differential-verified",
             "drawElements_UNSIGNED_SHORT": "differential-verified",
             "drawElements_UNSIGNED_BYTE": "differential-verified"
           },
@@ -538,7 +558,7 @@
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "TRIANGLES arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws on default and declared offscreen targets, with owned draw-time state, resources and typed uniforms. Bounds/alignment, multipass depth/cull/blend and native comparisons pass.",
+          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels.",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
@@ -2241,7 +2261,7 @@
       "implementation": "packages/core-js",
       "contract": "packages/core-api",
       "facade": "packages/webgl",
-      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT vertex inputs, typed uniforms/matrices, level-zero five-format Texture2D/CubeMap, RGBA/depth FBO and raster profile. Public synchronous RGBA/UNSIGNED_BYTE readPixels through Canvas2D."
+      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT and 8-/16-bit integer vertex inputs, triangle lists/strips, typed uniforms/matrices, level-zero five-format Texture2D/CubeMap, RGBA/depth FBO and raster profile. Public synchronous RGBA/UNSIGNED_BYTE readPixels through Canvas2D."
     },
     "rust": {
       "profile": "webgl1-render-to-texture",
@@ -2249,7 +2269,7 @@
       "binding": "crates/wasm + packages/core-wasm",
       "contract": "packages/core-api",
       "facade": "packages/webgl",
-      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT vertex inputs, typed uniforms/matrices, level-zero five-format Texture2D/CubeMap, RGBA/depth FBO and raster profile. Public synchronous RGBA/UNSIGNED_BYTE readPixels through Canvas2D."
+      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT and 8-/16-bit integer vertex inputs, triangle lists/strips, typed uniforms/matrices, level-zero five-format Texture2D/CubeMap, RGBA/depth FBO and raster profile. Public synchronous RGBA/UNSIGNED_BYTE readPixels through Canvas2D."
     }
   },
   "officialConformance": {
@@ -2303,6 +2323,32 @@
     "dependencies": "artifacts/conformance/baseline/failure-clusters.json",
     "report": "docs/validation/2026-11-18-official-conformance.md",
     "scope": "Exploratory outcomes for the full original file inventory. Capability termination, timeouts and adapter gaps remain visible."
+  },
+  "vertexInputConformance": {
+    "baseRevision": "ce0566aa778fa6184f63966c620548f83280b942",
+    "task": "docs/tasks/039-webgl1-surface-and-vertex-input.md",
+    "environment": "chrome158-macos-arm64",
+    "headless": true,
+    "filesPerBackend": 187,
+    "oglesFilesPerBackend": 141,
+    "surfaceFilesPerBackend": 21,
+    "rustAbi": 4,
+    "pass": {
+      "native": 187,
+      "js": 156,
+      "rust": 157
+    },
+    "baselinePass": {
+      "native": 187,
+      "js": 40,
+      "rust": 41
+    },
+    "oglesPass": {
+      "native": 141,
+      "js": 127,
+      "rust": 127
+    },
+    "evidence": "artifacts/vertex-input/geometry-summary.json"
   },
   "coreVerification": {
     "report": "docs/validation/2026-11-18-cubemap.md",

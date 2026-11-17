@@ -43,3 +43,5 @@ ADR 009 records [texture image subresources and CubeMap sampling](adr/009-textur
 The [CubeMap and original DOM CTS report](validation/2026-11-18-cubemap.md) records task034 acceptance, the21-file original set, resource capability3 and built CubeMap verification.
 
 ADR 010 records the [official conformance runner adapter](adr/010-official-conformance-adapter.md), full pinned source acquisition, per-file core initialization and resumable baseline execution. [Task 038](tasks/038-official-conformance-baseline.md) tracks the 971-entry, three-backend baseline and its failure dependencies.
+
+ADR 011 records [vertex component formats, triangle strips and the ABI4 draw snapshot](adr/011-vertex-input-and-topology.md) introduced by task 039.

@@ -37,11 +37,12 @@ function expectedPixels(result: DrawingResult) {
   return expected;
 }
 
-function difference(actual: number[], expected: number[]) {
+function difference(actual: number[], expected: number[], include = (_: number) => true) {
   let mismatchedChannels = 0;
   let maxDifference = 0;
   const pixels = actual.map((value, index) => {
     const delta = Math.abs(value - expected[index]!);
+    if (!include(index)) return index % 4 === 3 ? 255 : 0;
     if (delta > 1) mismatchedChannels++;
     maxDifference = Math.max(maxDifference, delta);
     return index % 4 === 3 ? 255 : delta;
@@ -66,11 +67,17 @@ for (const name of dualCoreCaseNames) {
     await mkdir(directory, { recursive: true });
     const comparisons = [];
     const native = results[0]!;
+    // Chrome 158 on Metal produced only the first triangle in the maximum-index strip.
+    // Assert all Refral pixels against the spec and compare the first three bands to native.
+    const nativeComparedWidth = name === 'triangle-strip-modes' ? 48 : native.width;
+    const withinNativeComparison = (channel: number) => Math.floor(channel / 4) % native.width < nativeComparedWidth;
     for (const result of results) {
       const hasPixels = result.pixels.length === result.width * result.height * 4;
-      const expected = hasPixels ? difference(result.pixels, expectedPixels(result)) : null;
+      const expected = hasPixels ? difference(result.pixels, expectedPixels(result),
+        result.backend === 'native' ? withinNativeComparison : undefined) : null;
       const reference = hasPixels && result.width === native.width && result.height === native.height
-        && native.pixels.length === result.pixels.length ? difference(result.pixels, native.pixels) : null;
+        && native.pixels.length === result.pixels.length
+        ? difference(result.pixels, native.pixels, withinNativeComparison) : null;
       comparisons.push({ backend: result.backend,
         expected: expected && { mismatchedChannels: expected.mismatchedChannels, maxDifference: expected.maxDifference },
         native: reference && { mismatchedChannels: reference.mismatchedChannels, maxDifference: reference.maxDifference } });
@@ -88,7 +95,7 @@ for (const name of dualCoreCaseNames) {
     await writeFile(`${directory}/result.json`, JSON.stringify({
       specificationRevision: fixtures.cts.revision, browserVersion: browser.version(), builds, tolerance: 1,
       configuration: { channel, headless, launchOptions: launchOptions ?? {}, deviceScaleFactor },
-      comparisons, results,
+      nativeComparedWidth, comparisons, results,
     }, null, 2) + '\n');
     for (const result of results) {
       expect(result.failure, `${result.backend} execution`).toBeNull();

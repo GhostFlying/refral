@@ -121,3 +121,7 @@ The pinned texture IDL declares a nullable pixel view for texSubImage2D. A null 
 ## Complete original DOM texture acceptance
 
 Task037 executes unchanged image_data/canvas/image RGBA UBYTE originals at the pinned revision through native, JS and actual Rust. Per backend they pass226/1570/122 assertions, including2D and six-face CubeMap paths and the exposed OffscreenCanvas branch. The whole21-file set passes2433 assertions per backend. Source provenance, actual-core/context metadata, original messages and resource/Promise/GPU diagnostics are recorded under artifacts/cubemap/pr3/cts. [CubeMap report](validation/2026-11-18-cubemap.md)
+
+## Official runner bootstrap
+
+Task038 executes the pinned original webgl-conformance-tests.html and its own list parser/report scheduler. HTMLCanvas context bootstrap preserves receiver-brand checks, a single contextId DOMString conversion, repeated acquisition and context mode conflicts before calling the already initialized selected factory. Selected-core worker/Offscreen acquisition gaps retain explicit provenance. Original scripts and assertions are served unchanged. Native completion metadata leaves the original context-loss/restoration sequence under test control. [Official runner decision](adr/010-official-conformance-adapter.md)

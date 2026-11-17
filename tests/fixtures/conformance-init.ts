@@ -1,0 +1,251 @@
+export type ConformanceBackend = 'native' | 'js' | 'rust';
+
+export interface OfficialFile { url: string }
+export interface OfficialTest { iframe: HTMLIFrameElement; testFile: OfficialFile }
+export type OfficialReport = (type: number, url: string, message: unknown,
+  success?: boolean, skipped?: boolean) => unknown;
+export interface OfficialHarness {
+  files: OfficialFile[];
+  runningTests: Record<string, OfficialTest>;
+  reportFunc: OfficialReport;
+  runTests(options: { start: number; count: number }): void;
+  startTest(iframe: HTMLIFrameElement, file: OfficialFile, version: number): void;
+  notifyFinished(url: string): void;
+  timeout(test: OfficialTest): void;
+  clearTimeout(test: OfficialTest): void;
+  setTimeoutDelay(value: number): void;
+}
+export interface ConformanceDiagnostic {
+  kind: string; name: string; message: string; url: string; level?: 'observed'; frameUrl?: string;
+}
+export interface ConformanceGap { kind: string; message: string; url: string }
+export interface ConformanceBridge {
+  acquire(canvas: HTMLCanvasElement, kind: string, attributes: WebGLContextAttributes | undefined,
+    url: string): WebGLRenderingContext | null;
+  context(context: WebGLRenderingContext, kind: string, attributes: WebGLContextAttributes | undefined,
+    url: string): void;
+  error(value: ConformanceDiagnostic): void;
+  gap(value: ConformanceGap): void;
+  realmTransfer?(url: string): void;
+  attach(harness: OfficialHarness): void;
+  report: OfficialReport;
+  start(harness: OfficialHarness, original: OfficialHarness['startTest'],
+    iframe: HTMLIFrameElement, file: OfficialFile, version: number): void;
+  finish(harness: OfficialHarness, original: (argument: never) => void,
+    argument: string | OfficialTest, completion: 'finished' | 'timeout'): void;
+}
+
+/** Serialized into every browser document by Playwright. Keep runtime helpers inside this function. */
+export function installConformanceBridge(options: { backend: ConformanceBackend }): void {
+  Reflect.set(window, '__refralConformanceInitBackend', options.backend);
+  const runnerPath = '/third_party/cts/sdk/tests/webgl-conformance-tests.html';
+  const testsPath = '/third_party/cts/sdk/tests/';
+  const isRunner = location.pathname === runnerPath;
+  let isChild = location.pathname.startsWith(testsPath);
+  try { isChild ||= window.parent.location.pathname.startsWith(testsPath); } catch { /* Cross-origin frame. */ }
+  if (!isRunner && !isChild) return;
+
+  function bridge(): ConformanceBridge | null {
+    let current: Window = window;
+    for (let depth = 0; depth < 12; depth++) {
+      try {
+        const value = Reflect.get(current, '__refralConformanceBridge') as ConformanceBridge | undefined;
+        if (value) return value;
+        if (current === current.parent) break;
+        current = current.parent;
+      } catch { break; }
+    }
+    return null;
+  }
+
+  function diagnostic(kind: string, reason: unknown, url = location.href): void {
+    const detail = reason && typeof reason === 'object'
+      ? reason as { name?: unknown; message?: unknown } : null;
+    const value: ConformanceDiagnostic = { kind,
+      name: typeof detail?.name === 'string' ? detail.name : 'Error',
+      message: typeof detail?.message === 'string' ? detail.message : String(reason), url,
+      frameUrl: location.href, ...(kind === 'resource' ? { level: 'observed' as const } : {}) };
+    const target = bridge();
+    if (target) target.error(value);
+    else console.error('[RefralConformanceBridgeError]', JSON.stringify(value));
+  }
+
+  function requiredBridge(): ConformanceBridge {
+    const value = bridge();
+    if (value) return value;
+    const error = new DOMException('Selected-core conformance parent bridge is unavailable.', 'NotSupportedError');
+    diagnostic('bridge-missing', error);
+    throw error;
+  }
+
+  window.addEventListener('error', event => {
+    if (event.target instanceof Element) {
+      const source = event.target.getAttribute('src') ?? event.target.getAttribute('href');
+      const url = source ? new URL(source, event.target.baseURI).href : location.href;
+      diagnostic('resource', { name: 'ResourceLoadError',
+        message: `Failed to load ${event.target.tagName.toLowerCase()} dependency.` }, url);
+    } else {
+      diagnostic('page', event.error ?? { name: 'Error', message: event.message }, event.filename || location.href);
+    }
+  }, true);
+  window.addEventListener('unhandledrejection', event => diagnostic('promise', event.reason));
+
+  const ChildArray = Array;
+  const isArray = Array.isArray;
+  const isView = ArrayBuffer.isView;
+  const ChildBytes = Uint8Array;
+  const copyBytes = Uint8Array.prototype.set;
+  const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
+  const viewTag = Object.getOwnPropertyDescriptor(typedArrayPrototype, Symbol.toStringTag)!.get!;
+  const viewBuffer = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'buffer')!.get!;
+  const viewOffset = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'byteOffset')!.get!;
+  const viewBytes = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'byteLength')!.get!;
+  const viewLength = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'length')!.get!;
+  const viewConstructors = new Map<string, new (length: number) => ArrayBufferView>([
+    ['Int8Array', Int8Array], ['Uint8Array', Uint8Array], ['Uint8ClampedArray', Uint8ClampedArray],
+    ['Int16Array', Int16Array], ['Uint16Array', Uint16Array], ['Int32Array', Int32Array],
+    ['Uint32Array', Uint32Array], ['Float32Array', Float32Array], ['Float64Array', Float64Array],
+    ['BigInt64Array', BigInt64Array], ['BigUint64Array', BigUint64Array],
+  ]);
+  const realmGetters = new Set(['getParameter', 'getVertexAttrib', 'getUniform',
+    'getAttachedShaders', 'getSupportedExtensions']);
+  const childContexts = new WeakMap<WebGLRenderingContext, WebGLRenderingContext>();
+
+  function childResult(value: unknown): unknown {
+    if (isArray(value)) {
+      const result = new ChildArray(value.length);
+      for (let index = 0; index < value.length; index++) result[index] = value[index];
+      bridge()?.realmTransfer?.(location.href);
+      return result;
+    }
+    if (isView(value)) {
+      const Constructor = viewConstructors.get(Reflect.apply(viewTag, value, []));
+      if (Constructor) {
+        const result = new Constructor(Reflect.apply(viewLength, value, []));
+        const source = new ChildBytes(Reflect.apply(viewBuffer, value, []),
+          Reflect.apply(viewOffset, value, []), Reflect.apply(viewBytes, value, []));
+        const destination = new ChildBytes(Reflect.apply(viewBuffer, result, []));
+        Reflect.apply(copyBytes, destination, [source]);
+        bridge()?.realmTransfer?.(location.href);
+        return result;
+      }
+    }
+    return value;
+  }
+
+  function childContext(raw: WebGLRenderingContext): WebGLRenderingContext {
+    const existing = childContexts.get(raw);
+    if (existing) return existing;
+    const methods = new Map<PropertyKey, { original: unknown; wrapped: (...args: unknown[]) => unknown }>();
+    const context = new Proxy(raw, { get(target, property) {
+      const original = Reflect.get(target, property, target);
+      if (typeof property !== 'string' || !realmGetters.has(property) || typeof original !== 'function') return original;
+      let method = methods.get(property);
+      if (!method || method.original !== original) {
+        method = { original, wrapped: (...args) => childResult(Reflect.apply(original, target, args)) };
+        methods.set(property, method);
+      }
+      return method.wrapped;
+    } });
+    childContexts.set(raw, context);
+    return context;
+  }
+
+  const originalGetContext = HTMLCanvasElement.prototype.getContext;
+  const canvasWidth = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'width')!.get!;
+  const toString = String;
+  const selectedCanvases = new WeakSet<HTMLCanvasElement>();
+  Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, writable: true,
+    value(this: HTMLCanvasElement, contextId: unknown, attributes?: WebGLContextAttributes) {
+      Reflect.apply(canvasWidth, this, []);
+      if (arguments.length === 0 || typeof contextId === 'symbol') {
+        return Reflect.apply(originalGetContext, this, [...arguments]);
+      }
+      const kind = toString(contextId);
+      if (kind !== 'webgl' && kind !== 'experimental-webgl' && kind !== 'webgl2') {
+        if (selectedCanvases.has(this)
+          && (kind === '2d' || kind === 'bitmaprenderer' || kind === 'webgpu')) return null;
+        return Reflect.apply(originalGetContext, this, [kind, attributes]);
+      }
+      if (options.backend === 'native') {
+        const context = Reflect.apply(originalGetContext, this, [kind, attributes]) as WebGLRenderingContext | null;
+        if (context) requiredBridge().context(context, kind, attributes, location.href);
+        return context;
+      }
+      try {
+        const context = requiredBridge().acquire(this, kind, attributes, location.href);
+        if (context) {
+          selectedCanvases.add(this);
+          Object.setPrototypeOf(context, WebGLRenderingContext.prototype);
+          return childContext(context);
+        }
+        return context;
+      } catch (error) {
+        diagnostic('context-acquisition', error);
+        throw error;
+      }
+    } });
+
+  if (options.backend !== 'native' && typeof OffscreenCanvas !== 'undefined') {
+    const originalOffscreen = OffscreenCanvas.prototype.getContext;
+    const offscreenWidth = Object.getOwnPropertyDescriptor(OffscreenCanvas.prototype, 'width')!.get!;
+    Object.defineProperty(OffscreenCanvas.prototype, 'getContext', { configurable: true, writable: true,
+      value(this: OffscreenCanvas, contextId: unknown, attributes?: unknown) {
+        Reflect.apply(offscreenWidth, this, []);
+        if (arguments.length === 0 || typeof contextId === 'symbol') {
+          return Reflect.apply(originalOffscreen, this, [...arguments]);
+        }
+        const kind = toString(contextId);
+        if (kind !== 'webgl' && kind !== 'experimental-webgl' && kind !== 'webgl2') {
+          return Reflect.apply(originalOffscreen, this, [kind, attributes]);
+        }
+        requiredBridge().gap({ kind: 'offscreen-webgl', url: location.href,
+          message: 'Selected-core OffscreenCanvas WebGL acquisition is unavailable.' });
+        throw new DOMException('Selected-core OffscreenCanvas WebGL acquisition is unavailable.', 'NotSupportedError');
+      } });
+  }
+
+  if (options.backend !== 'native' && typeof Worker !== 'undefined') {
+    const OriginalWorker = Worker;
+    window.Worker = new Proxy(OriginalWorker, { construct(target, args, newTarget) {
+      requiredBridge().gap({ kind: 'worker-webgl-provenance', url: location.href,
+        message: `Worker execution retains its original implementation. Selected-core WebGL provenance is unavailable for ${String(args[0])}.` });
+      return Reflect.construct(target, args, newTarget);
+    } });
+  }
+
+  if (!isRunner) return;
+  type HarnessConstructor = (new (...args: unknown[]) => OfficialHarness) & { prototype: OfficialHarness };
+  let harnessModule: { TestHarness: HarnessConstructor } | undefined;
+  Object.defineProperty(window, 'WebGLTestHarnessModule', { configurable: true,
+    get() { return harnessModule; },
+    set(value: { TestHarness: HarnessConstructor }) {
+      const Original = value.TestHarness;
+      const Wrapped = function(this: OfficialHarness, ...args: unknown[]) {
+        const originalReport = args[2] as OfficialReport;
+        args[2] = function(this: unknown, ...reportArgs: Parameters<OfficialReport>) {
+          requiredBridge().report(...reportArgs);
+          return Reflect.apply(originalReport, this, reportArgs);
+        };
+        const instance = Reflect.construct(Original, args) as OfficialHarness;
+        const originalStart = instance.startTest;
+        const originalFinish = instance.notifyFinished;
+        const originalTimeout = instance.timeout;
+        instance.startTest = function(iframe, file, version) {
+          requiredBridge().start(this, originalStart, iframe, file, version);
+        };
+        instance.notifyFinished = function(url) {
+          requiredBridge().finish(this, originalFinish as (argument: never) => void, url, 'finished');
+        };
+        instance.timeout = function(test) {
+          requiredBridge().finish(this, originalTimeout as (argument: never) => void, test, 'timeout');
+        };
+        requiredBridge().attach(instance);
+        return instance;
+      };
+      Wrapped.prototype = Original.prototype;
+      Object.setPrototypeOf(Wrapped, Original);
+      value.TestHarness = Wrapped as unknown as HarnessConstructor;
+      harnessModule = value;
+    } });
+}

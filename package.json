@@ -23,9 +23,13 @@
     "typecheck": "tsc --noEmit",
     "ci:check": "node --test tools/ci.test.mjs && node tools/ci.mjs verify && node tools/check-support.mjs",
     "test:unit": "vitest run",
+    "test:tools": "node --test tools/conformance-adapter.test.mjs tools/conformance-assets.test.mjs tools/conformance-run-state.test.mjs tools/conformance-report.test.mjs tools/deps-conformance.test.mjs",
     "test:chrome": "playwright test",
     "test:probe": "playwright test probe.spec.ts",
     "test:cts": "playwright test cts.spec.ts",
+    "conformance:deps": "node --use-env-proxy tools/deps-conformance.mjs",
+    "conformance:run": "node tools/conformance-run.mjs",
+    "conformance:report": "node tools/conformance-report.mjs",
     "test:buffers": "playwright test buffers.spec.ts",
     "test:drawing": "playwright test dual-core-drawing.spec.ts",
     "test:readback": "playwright test -c experiments/readback/playwright.config.ts",
@@ -37,7 +41,7 @@
     "snapshot": "node tools/snapshot.mjs",
     "bench:chrome": "playwright test -c benchmarks/playwright.config.ts rtt-benchmark.spec.ts",
     "bench:rtt": "playwright test -c benchmarks/playwright.config.ts rtt-benchmark.spec.ts",
-    "check": "pnpm typecheck && pnpm test:unit && pnpm rust:check && pnpm rust:test && node tools/check-support.mjs",
+    "check": "pnpm typecheck && pnpm test:unit && pnpm test:tools && pnpm rust:check && pnpm rust:test && node tools/check-support.mjs",
     "bench:dom": "playwright test -c benchmarks/dom-upload.config.ts"
   },
   "devDependencies": {

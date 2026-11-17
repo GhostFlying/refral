@@ -48,6 +48,9 @@ The build produces a standalone `dist` tree containing the browser bundles, comp
 | `pnpm test:probe` | Actual Chrome WebGPU/native WebGL environment probe |
 | `pnpm test:chrome` | Chrome compiler, core selection, semantics, CTS, and three-path demo correctness |
 | `pnpm test:cts` | Original-assertion pinned Khronos cases through the recorded test adapter |
+| `pnpm conformance:deps` | Full pinned Khronos suite and source provenance |
+| `pnpm conformance:run` | Official WebGL1 runner on native, JS and Rust in headless Chrome |
+| `pnpm conformance:report` | Per-file and per-module outcomes, paired native results and failure dependencies |
 | `pnpm test:buffers` | Shared native/JS/Rust public Buffer, handle, ownership, and loss fixtures |
 | `pnpm test:drawing` | Shared native/JS/Rust drawing, state/error, pixel and minimal-example checks |
 | `pnpm test:readback` | Experimental synchronous readback placements, shared-memory conditions and existing CTS/demo smoke |
@@ -108,3 +111,17 @@ Raw outputs are under ignored `artifacts/`. They include environment reports, co
 ANGLE and Emscripten revisions are pinned in `packages/compiler/dependencies.json`. Demo and Khronos WebGL revisions are pinned in `fixtures.lock.json`. Compiler adaptation patches and licenses are described in the compiler package. Original demo/CTS license files are fetched with the corresponding source. See `THIRD_PARTY.md`.
 
 The [CubeMap milestone](docs/validation/2026-11-18-cubemap.md) adds level-zero six-face sampling to both actual cores, with129 exact shared draw samples per backend and resource capability3. Twenty-one complete original CTS files pass2433 assertions per backend, including the unchanged ImageData, Canvas and HTMLImage RGBA generators with their2D/Cube branches. Built CubeMap verification retains58 additional draw samples per backend.
+
+## Official conformance baseline
+
+After the compiler and Rust Wasm builds in Setup, run the original Khronos WebGL1 runner through the installed headless Chrome channel.
+
+```sh
+pnpm conformance:deps
+pnpm conformance:run
+pnpm conformance:report
+```
+
+The source command acquires the complete pinned suite and validates Git blobs. The runner uses the original version 1.0.4 inventory, including slow tests, with one iframe. It selects native, JS and Rust sequentially and saves checkpoints under `artifacts/conformance/baseline`. The selected-core entry uses the CLI's document-start bootstrap. Its marker reports an explicit initialization error when the local integration page is opened without that installation.
+
+Use `--backend js` to select a backend, `--include 'conformance/uniforms/'` to select a directory, and `--start` and `--count` to select an official index range. Reports retain the complete inventory denominator. Exploratory selected-core files can stop 100 ms after an uncaught `NotSupportedError`. Results retain observed counters and mark the original file unfinished. Use `--wait-unsupported` to retain the official idle watchdog for those cases. Native always uses the original watchdog. Repeating a command resumes compatible saved results. A changed runtime/browser fingerprint requires a new `--output` directory or `--fresh`. Interruption closes the owned Chrome and Vite processes. [Adapter decision](docs/adr/010-official-conformance-adapter.md)

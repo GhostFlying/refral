@@ -29,3 +29,5 @@ Task 012 records initial workflow validation, repository configuration, and the 
 ## Initial runner observation
 
 On 2026-11-14, the first required PR job passed in 27 seconds with JS and native Rust checks selected. The first main push job passed in 28 seconds. These individual job durations include setup and execution and exclude runner queue time. The manual optional Wasm job passed in 22 seconds. Task 012 links the corresponding runs and repository settings verification.
+
+Run the official conformance baseline locally with `pnpm conformance:deps`, `pnpm conformance:run` and `pnpm conformance:report`. Required JS verification includes `pnpm test:tools` for deterministic source acquisition, static serving, adapter, checkpoint and reporting regressions.

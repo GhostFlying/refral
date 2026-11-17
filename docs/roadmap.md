@@ -42,11 +42,13 @@ Acceptance requires actual Chrome rendering, passing supported differential case
 
 Grow a pinned suite by semantic dependency. Retain test identities, assertions, adapter changes, and pass/fail/unsupported/timeout outcomes. Expand formats, extensions, context behavior, and synchronous GPU-dependent APIs as implementation permits.
 
-After the RTT milestone, organize the next bounded tasks around the recorded upstream prerequisites.
+Task 038 establishes the original official runner and records the 971-entry WebGL1 baseline on native, JS and Rust. Native passes 968 files, JS 566 and Rust 571. The 21-file accepted set remains a focused regression entry. The full inventory prioritizes WebGL1 API surface corrections, vertex inputs and primitive modes, ANGLE WGSL lowering and packed pixel types. [Baseline and implementation order](validation/2026-11-18-official-conformance.md)
+
+The completed milestones and subsequent compatibility dependencies follow.
 
 1. Task 025 establishes synchronous readback feasibility using actual JS/Rust cores and an independent GPU worker. Task 027 adds a main-thread Canvas2D candidate, byte-exact shared rendering corpus and matched latency/process CPU comparison. Task028 implements the user-selected Canvas2D path through both public cores, including destination ownership, packing, clipping, ordering and loss handling. The original program-handling, feedback-loop and read-pixels-pack-alignment files execute unchanged through a recorded iframe prototype adapter. ADR 007 records the accepted backend.
 2. Tasks029–033 complete the declared DOM input profile. Task034 extends texture-image identities, samplerCube and six-face level-zero sampling, then runs the three unchanged original RGBA DOM upload files. Tasks035–037 preserve both cores and the common host.
-3. After the CubeMap DOM milestone, expand packed pixel types, mip levels, mipmap generation and framebuffer formats with per-core support entries. Use the pinned dependency audit to activate complete original scripts as their prerequisites become available.
+3. Use the official baseline to order semantic corrections and capability work, including packed pixel types, mip levels, mipmap generation, vertex inputs and framebuffer formats. Attach specification assertions and affected original directories to each task, then rerun those directories and the complete baseline as appropriate.
 4. Extend context restoration, extensions and remaining state according to the fixed CTS dependency graph.
 
 Use the repeated drawing baseline to choose separate optimization tasks for the measured CPU, bridge, allocation and host costs. Preserve workload sizes, raw samples and image assertions when comparing changes.

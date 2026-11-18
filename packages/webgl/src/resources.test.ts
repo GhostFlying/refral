@@ -16,6 +16,19 @@ function setup(contextId = 1) {
 }
 
 describe('resource facade conversion and identity', () => {
+  it('converts hint enums and unrestricted line width before core dispatch', () => {
+    const { methods, invoke } = setup();
+    expect(() => methods.hint!(GL.GENERATE_MIPMAP_HINT)).toThrow(TypeError);
+    expect(() => methods.lineWidth!()).toThrow(TypeError);
+    expect(invoke).not.toHaveBeenCalled();
+    methods.hint!(2 ** 32 + GL.GENERATE_MIPMAP_HINT, String(GL.FASTEST));
+    expect(invoke).toHaveBeenLastCalledWith('hint', [GL.GENERATE_MIPMAP_HINT, GL.FASTEST]);
+    methods.lineWidth!('1.1');
+    expect(invoke).toHaveBeenLastCalledWith('lineWidth', [Math.fround(1.1)]);
+    methods.lineWidth!(undefined);
+    expect(invoke).toHaveBeenLastCalledWith('lineWidth', [NaN]);
+  });
+
   it('returns existing wrappers through bindings and attachment queries', () => {
     const facade = setup();
     const texture = facade.methods.createTexture!();

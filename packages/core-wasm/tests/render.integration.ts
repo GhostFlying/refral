@@ -16,6 +16,7 @@ import type {
   PixelUpload,
 } from '@refral/core-api';
 import { createRustDrawingCoreFromModule } from '../src/render';
+import { checkHintAndLineWidth } from '../../../tests/core/raster-queries';
 import { runBufferCoreContract } from '../../../tests/core/buffer-contract';
 
 let module: WebAssembly.Module;
@@ -327,6 +328,14 @@ describe('actual Rust drawing Wasm', () => {
 });
 
 describe('typed uniform and raster draw snapshots', () => {
+  it('preserves hint and requested line width through invalid mutations', () => {
+    const { core } = setup();
+    try {
+      checkHintAndLineWidth(core);
+    } finally {
+      core.dispose();
+    }
+  });
   it('preserves i32, boolean, matrix/array packing and non-current program queries', () => {
     const state = setup();
     const { core } = state;

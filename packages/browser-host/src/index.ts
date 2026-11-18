@@ -144,6 +144,7 @@ export class BrowserHost implements SemanticHost {
   private driverGroups = new WeakMap<LinkedProgram, Map<string, GPUBindGroup>>();
   private mipPipeline: GPURenderPipeline | null = null;
   private textureCopyPipeline: GPURenderPipeline | null = null;
+  private presentationConfigured = false;
   private presentationPipeline: GPURenderPipeline | null = null;
   private blackTexture: GPUTexture | null = null;
   private blackCubeTexture: GPUTexture | null = null;
@@ -183,6 +184,7 @@ export class BrowserHost implements SemanticHost {
       canvasFormat: format,
       coordinateConvention: "GL row zero in offscreen surfaces, flipped on presentation",
     };
+    this.configurePresentation();
     device.addEventListener("uncapturederror", this.handleError);
   }
 
@@ -205,7 +207,6 @@ export class BrowserHost implements SemanticHost {
     const factory: PreparedHostFactory = (canvas, attributes, ownsDevice = false) => {
       const context = canvas.getContext("webgpu");
       if (!context) throw new DOMException("Canvas is already bound to another context", "InvalidStateError");
-      context.configure({ device, format, alphaMode: attributes.alpha ? "premultiplied" : "opaque" });
       return new BrowserHost(canvas, device, context, format, adapter, attributes.alpha, attributes.depth, attributes.stencil ?? false, ownsDevice);
     };
     factory.dispose = () => device.destroy();
@@ -852,11 +853,20 @@ export class BrowserHost implements SemanticHost {
     if (snapshot.isDefault) this.defaultDirty = true;
   }
 
+  private configurePresentation(): boolean {
+    // WebGPU validates the requested canvas size during configure as well as getCurrentTexture.
+    if (this.canvas.width !== this.surface.width || this.canvas.height !== this.surface.height) return false;
+    if (!this.presentationConfigured) {
+      this.context.configure({ device: this.device, format: this.format, alphaMode: this.alpha ? "premultiplied" : "opaque" });
+      this.presentationConfigured = true;
+    }
+    return true;
+  }
+
   private present(): void {
     const target = this.defaultTarget;
-    if (!target || !this.defaultDirty || !this.canvas.width || !this.canvas.height) return;
-    if (this.canvas.width !== this.surface.width || this.canvas.height !== this.surface.height
-      || target.width !== this.surface.width || target.height !== this.surface.height) return;
+    if (!target || !this.defaultDirty || target.width !== this.surface.width || target.height !== this.surface.height
+      || !this.configurePresentation()) return;
     this.endPass();
     if (!this.presentationPipeline) {
       const module = this.device.createShaderModule({ code: `

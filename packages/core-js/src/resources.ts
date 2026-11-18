@@ -77,6 +77,18 @@ export class FramebufferObject extends LogicalObject {
   get colorRenderbuffer(): RenderbufferObject | null { return this.color instanceof RenderbufferObject ? this.color : null; }
   get colorImage(): TextureImage | undefined { return this.colorTexture?.image(this.colorTarget); }
   depth: RenderbufferObject | null = null;
+  stencil: RenderbufferObject | null = null;
+  depthStencil: RenderbufferObject | null = null;
+}
+
+export function framebufferAttachmentPoint(attachment: number) {
+  switch (attachment) {
+    case GL.COLOR_ATTACHMENT0: return "color";
+    case GL.DEPTH_ATTACHMENT: return "depth";
+    case GL.STENCIL_ATTACHMENT: return "stencil";
+    case GL.DEPTH_STENCIL_ATTACHMENT: return "depthStencil";
+    default: return undefined;
+  }
 }
 
 export interface VertexAttribute {

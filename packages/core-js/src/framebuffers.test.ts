@@ -82,7 +82,8 @@ describe("JS framebuffer and resource lifetime semantics", () => {
     expect(core.getError()).toBe(GL.INVALID_ENUM);
     core.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_COMPONENT16, -1, 5);
     expect(core.getError()).toBe(GL.INVALID_VALUE);
-    expect(() => core.renderbufferStorage(GL.RENDERBUFFER, GL.STENCIL_INDEX8, 4, 5)).toThrow(/outside/);
+    core.renderbufferStorage(GL.RENDERBUFFER, GL.DEPTH_STENCIL, 5000, 5);
+    expect(core.getError()).toBe(GL.INVALID_VALUE);
     expect(core.getError()).toBe(GL.NO_ERROR);
     expect(depth).toMatchObject({ width: 2, height: 3, format: GL.DEPTH_COMPONENT16, generation });
     expect(host.retireDepth.mock.calls).toHaveLength(retirements);

@@ -83,7 +83,7 @@ pub(super) fn target(output: &mut Vec<u8>, target: refral_core::TargetSnapshot) 
     } else {
         u32_value(output, 0);
     }
-    u32_value(output, u32::from(target.depth.is_some()));
+    u32_value(output, target.depth.map_or(0, |depth| depth.format));
     if let Some(depth) = target.depth {
         for value in [
             depth.renderbuffer.context_id,

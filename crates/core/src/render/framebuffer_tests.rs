@@ -276,14 +276,17 @@ fn initial_renderbuffer_queries_and_storage_failures_preserve_state() {
         &[number(RENDERBUFFER), number(0xdead), number(4), number(5)],
     );
     assert_eq!(core.get_error(), INVALID_ENUM);
-    assert!(matches!(
-        invoke(
-            &mut core,
-            "renderbufferStorage",
-            &[number(RENDERBUFFER), number(0x8d48), number(4), number(5)]
-        ),
-        Reply::Unsupported(_)
-    ));
+    invoke(
+        &mut core,
+        "renderbufferStorage",
+        &[
+            number(RENDERBUFFER),
+            number(DEPTH_STENCIL),
+            number(u32::MAX),
+            number(5),
+        ],
+    );
+    assert_eq!(core.get_error(), INVALID_VALUE);
     for (parameter, expected) in [
         (0x8d42, 2),
         (0x8d43, 3),

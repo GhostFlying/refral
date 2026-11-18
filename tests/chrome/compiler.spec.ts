@@ -1,3 +1,4 @@
+import expressionShaders from "../../packages/compiler/test/expression-shaders.json" with { type: "json" };
 import { test, expect } from "@playwright/test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import essl100Shader from "../../packages/compiler/test/essl100-shader.json" with { type: "json" };
@@ -333,5 +334,60 @@ test("sampler array elements retain independent units and draw bindings", async 
     expect(report.pixel).toEqual([17, 81, 0, 255]);
     expect(report.error).toBe(0);
     expect(report.diagnostics).toEqual([]);
+  }
+});
+
+test("ESSL expression and function side effects survive WGSL lowering", async ({ page }) => {
+
+  await page.goto("/packages/compiler/test/browser.html");
+  const reports = await page.evaluate(async ({ expressionFragments, expressionVertex }) => {
+    const path = "/packages/webgl/src/index.ts";
+    const { createWebGLOnWebGPU, getTestingHooks } = await import(/* @vite-ignore */ path) as typeof import("../../packages/webgl/src/index.js");
+    const reports = [];
+    for (const backend of ["native", "js", "rust"] as const) {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 4;
+      const gl = backend === "native" ? canvas.getContext("webgl", { antialias: false })! :
+        await createWebGLOnWebGPU(canvas, { version: 1, core: backend, antialias: false });
+      const hooks = backend === "native" ? undefined : getTestingHooks(gl);
+      try {
+        gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+        for (const [name, fragment] of Object.entries(expressionFragments)) {
+          const program = gl.createProgram()!;
+          for (const [stage, source] of [[gl.VERTEX_SHADER, expressionVertex], [gl.FRAGMENT_SHADER, fragment]] as const) {
+            const shader = gl.createShader(stage)!;
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) ?? name);
+            gl.attachShader(program, shader);
+            gl.deleteShader(shader);
+          }
+          gl.linkProgram(program);
+          if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? name);
+          gl.useProgram(program);
+          const position = gl.getAttribLocation(program, "position");
+          gl.enableVertexAttribArray(position);
+          gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+          gl.clearColor(1, 0, 1, 1);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+          const pixel = new Uint8Array(4);
+          gl.readPixels(2, 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+          reports.push({ name, backend, actual: hooks?.core ?? "native", pixel: [...pixel], error: gl.getError() });
+          gl.deleteProgram(program);
+        }
+      } finally {
+        await hooks?.dispose();
+      }
+    }
+    return reports;
+  }, expressionShaders);
+  await mkdir("artifacts/compiler", { recursive: true });
+  await writeFile("artifacts/compiler/expression-side-effects.json", JSON.stringify(reports, null, 2) + "\n");
+  for (const report of reports) {
+    expect(report.actual).toBe(report.backend);
+    expect(report.pixel, report.name).toEqual([0, 255, 0, 255]);
+    expect(report.error).toBe(0);
   }
 });

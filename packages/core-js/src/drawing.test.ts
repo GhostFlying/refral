@@ -12,7 +12,7 @@ function createContext() {
   const host = {
     limits: { maxTextureDimension2D: 4096, maxBufferSize: 4096 },
     draw: vi.fn<SemanticHost["draw"]>(), clear: vi.fn<SemanticHost["clear"]>(),
-    flush: vi.fn<SemanticHost["flush"]>(), replaceStorage: vi.fn<SemanticHost["replaceStorage"]>(),
+    flush: vi.fn<SemanticHost["flush"]>(), finish: vi.fn<SemanticHost["finish"]>(), replaceStorage: vi.fn<SemanticHost["replaceStorage"]>(),
     retireStorage: vi.fn<SemanticHost["retireStorage"]>(), retireDepth: vi.fn<SemanticHost["retireDepth"]>(),
   } satisfies SemanticHost;
   let nextExecutable = 1;

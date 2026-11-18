@@ -2524,8 +2524,43 @@
       }
     },
     {
+      "id": "finish-confirmed-idle",
+      "api": "finish",
+      "cores": {
+        "js": {
+          "status": "differential-verified",
+          "coverage": "finish returns synchronously on an untouched queue and after a fulfilled queue fence covers every GPU operation issued by this context. State-only changes preserve idle status.",
+          "tests": [
+            "tests/chrome/finish.spec.ts",
+            "packages/browser-host/src/queue-completion.test.ts"
+          ],
+          "evidence": [
+            "docs/tasks/079-synchronous-queue-completion.md",
+            "artifacts/conformance/campaign/queue-completion/"
+          ],
+          "unsupportedBehavior": "Pending GPU work is submitted and raises NotSupportedError while a synchronous queue-wide completion guarantee is unavailable.",
+          "environments": [
+            "chrome-macos-arm64"
+          ]
+        },
+        "rust": {
+          "status": "differential-verified",
+          "coverage": "finish returns synchronously on an untouched queue and after a fulfilled queue fence covers every GPU operation issued by this context. State-only changes preserve idle status.",
+          "tests": [
+            "tests/chrome/finish.spec.ts",
+            "packages/browser-host/src/queue-completion.test.ts"
+          ],
+          "evidence": [
+            "docs/tasks/079-synchronous-queue-completion.md",
+            "artifacts/conformance/campaign/queue-completion/"
+          ],
+          "unsupportedBehavior": "Pending GPU work is submitted and raises NotSupportedError while a synchronous queue-wide completion guarantee is unavailable."
+        }
+      }
+    },
+    {
       "id": "public-synchronous-gpu-readback",
-      "api": "getBufferSubData, finish, sync/query completion APIs",
+      "api": "getBufferSubData, sync/query completion APIs",
       "cores": {
         "js": {
           "status": "unimplemented",

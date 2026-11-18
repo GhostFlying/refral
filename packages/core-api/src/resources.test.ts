@@ -8,7 +8,7 @@ import type { RenderbufferHandle, TextureHandle } from './index.js';
 function setup(contextId = 1) {
   const host = {
     limits: { maxTextureDimension2D: 4096 },
-    draw: vi.fn(), clear: vi.fn(), flush: vi.fn(),
+    draw: vi.fn(), clear: vi.fn(), flush: vi.fn(), finish: vi.fn(),
     replaceStorage: vi.fn<SemanticHost['replaceStorage']>(),
     retireStorage: vi.fn<SemanticHost['retireStorage']>(),
     retireDepth: vi.fn<SemanticHost['retireDepth']>(),

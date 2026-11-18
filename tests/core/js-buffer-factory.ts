@@ -8,7 +8,7 @@ export function createJsContractCore(options: BufferCoreOptions) {
   const compiler: Compiler = { compile: unexpected, link: unexpected };
   const host: SemanticHost = {
     limits: { maxTextureDimension2D: 4096, maxBufferSize: options.maxBufferBytes },
-    draw: unexpected, clear: unexpected, flush: unexpected, replaceStorage: unexpected,
+    draw: unexpected, clear: unexpected, flush: unexpected, finish: unexpected, replaceStorage: unexpected,
     retireStorage: unexpected, retireDepth: unexpected,
   };
   const context = new SemanticContext({ width: 8, height: 8 }, host, compiler, {}, {

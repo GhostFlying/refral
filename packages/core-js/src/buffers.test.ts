@@ -10,7 +10,7 @@ import { BufferObject } from "./resources.js";
 function createContext(maxBufferBytes = 32) {
   const host: SemanticHost = {
     limits: { maxTextureDimension2D: 4096, maxBufferSize: maxBufferBytes },
-    draw() {}, clear() {}, flush() {}, replaceStorage() {}, retireStorage() {}, retireDepth() {},
+    draw() {}, clear() {}, flush() {}, finish() {}, replaceStorage() {}, retireStorage() {}, retireDepth() {},
   };
   const compiler: Compiler = {
     compile() { throw new Error("Buffer tests must not compile shaders."); },

@@ -197,6 +197,8 @@ export interface SemanticHost {
   draw(operation: DrawOperation): void;
   clear(target: TargetSnapshot, state: RasterState, mask: number, color: readonly number[], depth: number): void;
   flush(): void;
+  /** Return synchronously only after all preceding GL work has completed. */
+  finish(): void;
   replaceStorage(previous: TextureStorage | null, next: TextureStorage): void;
   retireStorage(storage: TextureStorage): void;
   retireDepth(id: number, generation: number): void;

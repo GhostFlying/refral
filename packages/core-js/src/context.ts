@@ -250,7 +250,7 @@ export class SemanticContext {
   getSupportedExtensions(): string[] | null { return this.lost ? null : []; }
   getExtension(_name: string): null { return null; }
   flush(): void { if (!this.lost) this.host.flush(); }
-  finish(): never { return unsupported("finish"); }
+  finish(): void { if (!this.lost) this.host.finish(); }
 
   createBuffer(): BufferObject | null { return this.lost ? null : this.track(new BufferObject(this.owner)); }
   bindBuffer(target: number, buffer: BufferObject | null): void {

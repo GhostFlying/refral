@@ -27,8 +27,10 @@ export interface WorkerContextRecord {
   attributes: WebGLContextAttributes | null;
   adapter: Record<string, unknown>;
 }
+export type WorkerExit = 'owner-discarded' | 'terminated' | 'self-closed';
 export type WorkerObservation =
   | { type: 'ready' | 'finished' }
+  | { type: 'exit'; reason: WorkerExit }
   | { type: 'context'; context: WorkerContextRecord }
   | { type: 'error'; name?: string; message: string }
   | { type: 'gap'; message: string };
@@ -243,14 +245,16 @@ export function installConformanceBridge(options: { backend: ConformanceBackend;
       const terminate = worker.terminate.bind(worker);
       let ready = false;
       let closed = false;
+      let startup: (() => void) | undefined;
       let drained: (() => void) | undefined;
       const pending: { message: unknown; transfer: Transferable[] }[] = [];
       const observe = requiredBridge().worker(location.href, source.href, async () => {
         if (closed) return;
         try {
-          if (ready) await new Promise<void>((resolve, reject) => {
-            const deadline = setTimeout(() => reject(new Error('Worker resource finalization timed out.')), 2000);
-            drained = () => { clearTimeout(deadline); resolve(); };
+          if (!ready) await new Promise<void>(resolve => { startup = resolve; });
+          if (closed) return;
+          await new Promise<void>(resolve => {
+            drained = resolve;
             post({ __refralFinish: token });
           });
         } finally { terminate(); }
@@ -264,14 +268,27 @@ export function installConformanceBridge(options: { backend: ConformanceBackend;
             ? transferOrOptions as Iterable<Transferable> : (transferOrOptions as StructuredSerializeOptions | undefined)?.transfer ?? []);
           pending.push(structuredClone({ message, transfer }, { transfer }));
         } });
-      worker.terminate = () => { closed = true; pending.length = 0; terminate(); };
+      function ended(reason: WorkerExit) {
+        if (closed) return;
+        closed = true;
+        pending.length = 0;
+        startup?.();
+        drained?.();
+        observe({ type: 'exit', reason });
+      }
+      if (!options.worker) window.addEventListener('pagehide', event => {
+        if (!event.persisted) ended('owner-discarded');
+      });
+      worker.terminate = () => { ended('terminated'); terminate(); };
       worker.addEventListener('message', event => {
         if (event.data?.__refralWorker !== token) return;
         event.stopImmediatePropagation();
         const detail = event.data.detail as WorkerObservation;
+        if (detail.type === 'exit') { ended(detail.reason); return; }
         observe(detail);
         if (detail.type === 'ready') {
           ready = true;
+          startup?.();
           delete (worker as Partial<Worker>).postMessage;
           for (const item of pending) post(item.message, item.transfer);
           pending.length = 0;

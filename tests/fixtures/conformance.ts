@@ -1,7 +1,7 @@
 import { prepareContextFactory, getTestingHooks } from '@refral/webgl';
 import type { PreparedContextFactory } from '@refral/webgl';
 import type { CanvasSurface, ConformanceBackend, ConformanceBridge, ConformanceDiagnostic, ConformanceGap,
-  OfficialFile, OfficialHarness, OfficialReport, OfficialTest, WorkerObservation } from './conformance-init.js';
+  OfficialFile, OfficialHarness, OfficialReport, OfficialTest, WorkerExit, WorkerObservation } from './conformance-init.js';
 
 interface ContextRecord {
   requestedCore: ConformanceBackend;
@@ -36,14 +36,14 @@ interface CaseResult {
   lateDiagnostics?: ConformanceDiagnostic[];
   contexts: ContextRecord[];
   adapterGaps: ConformanceGap[];
-  workers?: { script: string; ready: boolean; contexts: number }[];
+  workers?: { script: string; ready: boolean; exit?: WorkerExit; contexts: number }[];
   durationMs: number;
   realmTransfers: number;
   screenshot?: CaseScreenshot;
 }
 interface Scope {
   factory: PreparedContextFactory | null;
-  workers: { script: string; ready: boolean; contexts: ContextRecord[]; finish(): Promise<void> }[];
+  workers: { script: string; ready: boolean; exit?: WorkerExit; contexts: ContextRecord[]; finish(): Promise<void> }[];
   canvases: WeakMap<HTMLCanvasElement | OffscreenCanvas, WebGLRenderingContext>;
   contexts: Map<WebGLRenderingContext, ContextRecord>;
   errors: ConformanceDiagnostic[];
@@ -191,12 +191,19 @@ function captureContext(target: Scope, context: WebGLRenderingContext, kind: str
 }
 
 async function finalizeResources(target: Scope, url: string, beforeDispose?: () => Promise<void>): Promise<void> {
-  for (const worker of target.workers) {
-    try { await worker.finish(); }
-    catch (error) { addError(target, diagnostic(error, 'worker-finalization', url)); }
-    if (!worker.ready) addGap(target, { kind: 'worker-webgl-provenance', url,
+  await Promise.all(target.workers.map(async worker => {
+    if (worker.exit) return;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      // A discarded child document can no longer settle its own timers or promises.
+      await Promise.race([worker.finish(), new Promise<never>((_, reject) => {
+        deadline = setTimeout(() => reject(new Error(`Worker finalization timed out: ${worker.script}`)), 3000);
+      })]);
+    } catch (error) { addError(target, diagnostic(error, 'worker-finalization', url)); }
+    finally { clearTimeout(deadline); }
+    if (!worker.ready && !worker.exit) addGap(target, { kind: 'worker-webgl-provenance', url,
       message: `Worker did not acknowledge execution of its original entry: ${worker.script}` });
-  }
+  }));
   if (backend === 'native') {
     for (const [context, record] of target.contexts) {
       try {
@@ -272,8 +279,8 @@ async function finishCase(instance: OfficialHarness, original: (argument: never)
     assertionTimeouts: active.assertionTimeouts,
     failures: active.failures.slice(), failuresTruncated: active.failuresTruncated,
     errors: active.errors.slice(), contexts: [...active.contexts.values(), ...active.workers.flatMap(worker => worker.contexts)],
-    ...(active.workers.length ? { workers: active.workers.map(({ script, ready, contexts }) =>
-      ({ script, ready, contexts: contexts.length })) } : {}),
+    ...(active.workers.length ? { workers: active.workers.map(({ script, ready, exit, contexts }) =>
+      ({ script, ready, ...(exit ? { exit } : {}), contexts: contexts.length })) } : {}),
     adapterGaps: active.adapterGaps.slice(), durationMs: performance.now() - active.started - captureDuration,
     realmTransfers: active.realmTransfers, ...(screenshot ? { screenshot } : {}) };
   results.push(result);
@@ -363,10 +370,11 @@ const bridge: ConformanceBridge = {
   worker(url, script, finish) {
     const target = selectedScope(url);
     if (!target) throw new Error('Missing scope for official worker.');
-    const worker = { script, ready: false, contexts: [] as ContextRecord[], finish };
+    const worker: Scope['workers'][number] = { script, ready: false, contexts: [] as ContextRecord[], finish };
     target.workers.push(worker);
     return (event: WorkerObservation) => {
       if (event.type === 'ready') worker.ready = true;
+      else if (event.type === 'exit') worker.exit ??= event.reason;
       else if (event.type === 'error') addError(target, { kind: 'worker', name: event.name ?? 'WorkerError', message: event.message, url });
       else if (event.type === 'gap') addGap(target, { kind: 'worker-webgl-provenance', message: event.message, url });
       else if (event.type === 'context') {

@@ -9,6 +9,11 @@ use serde_json::{json, Value};
 const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
 
 #[no_mangle]
+pub extern "C" fn rf_vertex_array_protocol_version() -> u32 {
+    1
+}
+
+#[no_mangle]
 pub extern "C" fn rf_resource_protocol_version() -> u32 {
     8
 }
@@ -123,6 +128,7 @@ fn parse_handle(value: &Value) -> Option<ObjectHandle> {
         "texture" => ObjectKind::Texture,
         "renderbuffer" => ObjectKind::Renderbuffer,
         "framebuffer" => ObjectKind::Framebuffer,
+        "vertex-array" => ObjectKind::VertexArray,
         _ => return None,
     };
     Some(ObjectHandle {
@@ -133,7 +139,7 @@ fn parse_handle(value: &Value) -> Option<ObjectHandle> {
     })
 }
 fn handle_json(handle: ObjectHandle) -> Value {
-    json!({"kind":match handle.kind { ObjectKind::Buffer=>"buffer", ObjectKind::Shader=>"shader", ObjectKind::Program=>"program", ObjectKind::UniformLocation=>"uniform-location", ObjectKind::Texture=>"texture", ObjectKind::Renderbuffer=>"renderbuffer", ObjectKind::Framebuffer=>"framebuffer" },"contextId":handle.context_id,"slot":handle.slot,"generation":handle.generation})
+    json!({"kind":match handle.kind { ObjectKind::Buffer=>"buffer", ObjectKind::Shader=>"shader", ObjectKind::Program=>"program", ObjectKind::UniformLocation=>"uniform-location", ObjectKind::Texture=>"texture", ObjectKind::Renderbuffer=>"renderbuffer", ObjectKind::Framebuffer=>"framebuffer", ObjectKind::VertexArray=>"vertex-array" },"contextId":handle.context_id,"slot":handle.slot,"generation":handle.generation})
 }
 fn range<'a>(value: &Value, tag: &str, bytes: &'a [u8], width: usize) -> Option<&'a [u8]> {
     let values = value.get(tag)?.as_array()?;

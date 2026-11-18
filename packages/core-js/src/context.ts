@@ -1,5 +1,5 @@
 import {
-  CUBE_FACES, GL, createRasterState, snapshotRaster, componentCount, vertexComponentBytes, isColorRenderbufferFormat,
+  CUBE_FACES, GL, VERTEX_ARRAY_BINDING_OES, createRasterState, snapshotRaster, componentCount, vertexComponentBytes, isColorRenderbufferFormat,
   isStencilRenderbufferFormat, stencilReference, isDrawMode,
 } from "@refral/core-api";
 import type {
@@ -10,7 +10,7 @@ import type {
   DrawOperation,
 } from "@refral/core-api";
 import {
-  LogicalObject, BufferObject, TextureObject, RenderbufferObject, FramebufferObject,
+  LogicalObject, BufferObject, VertexArrayObject, TextureObject, RenderbufferObject, FramebufferObject,
   ErrorState, framebufferAttachmentPoint, isPowerOfTwo, textureBase, textureSamplingLevelCount, textureTargets,
 } from "./resources.js";
 import type { TextureImage, VertexAttribute } from "./resources.js";
@@ -79,13 +79,18 @@ export class SemanticContext {
   private readonly objects = new Set<LogicalObject>();
   private readonly state: RasterState;
   private arrayBuffer: BufferObject | null = null;
-  private elementBuffer: BufferObject | null = null;
+  private readonly defaultArray: VertexArrayObject;
+  private currentArray: VertexArrayObject;
+  private arraysEnabled = false;
+  private get elementBuffer() { return this.currentArray.element; }
+  private set elementBuffer(buffer: BufferObject | null) { this.currentArray.element = buffer; }
+  private get attributes(): VertexAttribute[] { return this.currentArray.attributes; }
   private program: ProgramObject | null = null;
   private framebuffer: FramebufferObject | null = null;
   private renderbuffer: RenderbufferObject | null = null;
   private activeUnit = 0;
   private readonly textureUnits: TextureUnit[];
-  private readonly attributes: VertexAttribute[];
+  private readonly constants: [number, number, number, number][];
   private clearColorValue: [number, number, number, number] = [0, 0, 0, 0];
   private clearDepthValue = 1;
   private unpackAlignment = 4;
@@ -110,8 +115,8 @@ export class SemanticContext {
     this.maxBufferBytes = host.limits.maxBufferSize ?? Number.MAX_SAFE_INTEGER;
     this.state = createRasterState(canvas.width, canvas.height);
     this.textureUnits = Array.from({ length: profile.combinedTextureUnits }, () => ({ texture2D: null, cubeMap: null }));
-    this.attributes = Array.from({ length: profile.vertexAttributes }, () => ({ enabled: false, buffer: null, size: 4,
-      type: GL.FLOAT, normalized: false, stride: 0, offset: 0, constant: [0, 0, 0, 1] }));
+    this.currentArray = this.defaultArray = new VertexArrayObject(this.owner, profile.vertexAttributes);
+    this.constants = Array.from({ length: profile.vertexAttributes }, () => [0, 0, 0, 1]);
 
   }
 
@@ -306,7 +311,7 @@ export class SemanticContext {
     if (this.arrayBuffer === buffer) this.arrayBuffer = null;
     if (this.elementBuffer === buffer) this.elementBuffer = null;
     for (const attribute of this.attributes) if (attribute.buffer === buffer) attribute.buffer = null;
-    buffer.data = new Uint8Array(0);
+    // Other vertex arrays retain this storage through their element/attribute references.
   }
   isBuffer(buffer: unknown): boolean {
     return !this.lost && buffer instanceof BufferObject && buffer.owner === this.owner && !buffer.deleted && buffer.target !== null;
@@ -621,6 +626,23 @@ export class SemanticContext {
     return boolean ? [...result].map(value => !!value) : result;
   }
 
+  supportsVertexArrayObjects(): boolean { return true; }
+  enableVertexArrayObjects(): void { this.arraysEnabled = true; }
+  createVertexArrayOES(): VertexArrayObject { return this.track(new VertexArrayObject(this.owner, this.profile.vertexAttributes)); }
+  bindVertexArrayOES(array: VertexArrayObject | null): boolean {
+    if (array) array.boundOnce = true;
+    this.currentArray = array ?? this.defaultArray;
+    return true;
+  }
+  isVertexArrayOES(array: VertexArrayObject): boolean { return array.boundOnce && !array.deleted; }
+  deleteVertexArrayOES(array: VertexArrayObject): void {
+    if (this.currentArray === array) this.currentArray = this.defaultArray;
+    this.objects.delete(array);
+    array.deleted = true;
+    array.attributes.length = 0;
+    array.element = null;
+  }
+
   enableVertexAttribArray(index: number): void {
     const attribute = this.attributes[index];
     if (!attribute) return this.error(GL.INVALID_VALUE); attribute.enabled = true;
@@ -642,7 +664,7 @@ export class SemanticContext {
     const attribute = this.attributes[index];
     if (!attribute) return this.error(GL.INVALID_VALUE);
     if (values.length < components) return this.error(GL.INVALID_VALUE);
-    attribute.constant = [values[0] ?? 0, components > 1 ? values[1] ?? 0 : 0,
+    this.constants[index] = [values[0] ?? 0, components > 1 ? values[1] ?? 0 : 0,
       components > 2 ? values[2] ?? 0 : 0, components > 3 ? values[3] ?? 1 : 1];
   }
   vertexAttrib1f(index: number, x: number): void { this.constantAttribute(index, [x], 1); }
@@ -662,7 +684,7 @@ export class SemanticContext {
       [GL.VERTEX_ATTRIB_ARRAY_TYPE]: attribute.type, [GL.VERTEX_ATTRIB_ARRAY_NORMALIZED]: attribute.normalized,
       [GL.VERTEX_ATTRIB_ARRAY_STRIDE]: attribute.stride,
       [GL.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING]: attribute.buffer,
-      [GL.CURRENT_VERTEX_ATTRIB]: new Float32Array(attribute.constant),
+      [GL.CURRENT_VERTEX_ATTRIB]: new Float32Array(this.constants[index]!),
     };
     if (parameter in values) return values[parameter];
     this.error(GL.INVALID_ENUM); return null;
@@ -730,7 +752,7 @@ export class SemanticContext {
       attributes.push({ location: active.location, shaderType: active.type,
         size: attribute.size, type: attribute.type, normalized: attribute.normalized,
         stride: attribute.stride, offset: attribute.offset,
-        data: attribute.enabled ? attribute.buffer!.data : null, constant: [...attribute.constant] });
+        data: attribute.enabled ? attribute.buffer!.data : null, constant: [...this.constants[active.location]!] });
     }
     const textures: TextureBinding[] = [];
     for (const sampler of this.program.executable.samplers) {
@@ -1488,6 +1510,8 @@ export class SemanticContext {
       : (this.contextAttributes.depth ? 24 : 0);
     const stencilBits = this.framebuffer ? (stencil?.width && stencil.height && isStencilRenderbufferFormat(stencil.format) ? 8 : 0)
       : (this.contextAttributes.stencil ? 8 : 0);
+    if (parameter === VERTEX_ARRAY_BINDING_OES && this.arraysEnabled)
+      return this.currentArray === this.defaultArray ? null : this.currentArray;
     const { stencilFront: front, stencilBack: back } = this.state;
     const values: Record<number, unknown> = {
       [GL.ARRAY_BUFFER_BINDING]: this.arrayBuffer, [GL.ELEMENT_ARRAY_BUFFER_BINDING]: this.elementBuffer,

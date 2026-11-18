@@ -99,7 +99,6 @@ export interface VertexAttribute {
   normalized: boolean;
   stride: number;
   offset: number;
-  constant: [number, number, number, number];
 }
 
 export class ErrorState {
@@ -157,4 +156,15 @@ export function textureSamplingLevelCount(texture: TextureObject): number {
 
 export function isTextureComplete(texture: TextureObject): boolean {
   return textureSamplingLevelCount(texture) > 0;
+}
+
+export class VertexArrayObject extends LogicalObject {
+  boundOnce = false;
+  element: BufferObject | null = null;
+  readonly attributes: VertexAttribute[];
+  constructor(owner: object, count: number) {
+    super(owner);
+    this.attributes = Array.from({ length: count }, () => ({ enabled: false, buffer: null, size: 4,
+      type: GL.FLOAT, normalized: false, stride: 0, offset: 0 }));
+  }
 }

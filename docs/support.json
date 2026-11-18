@@ -2387,6 +2387,48 @@
       }
     },
     {
+      "id": "vertex-array-objects",
+      "api": "OES_vertex_array_object, VERTEX_ARRAY_BINDING_OES, createVertexArrayOES, bindVertexArrayOES, deleteVertexArrayOES, isVertexArrayOES",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Real vertex and indexed draws with independent default/named array state, context-global constant attributes, retained deleted buffers on unbound arrays, wrapper identity and loss generations.",
+          "tests": [
+            "tests/core/vertex-arrays.ts",
+            "sdk/tests/conformance/extensions/oes-vertex-array-object.html",
+            "sdk/tests/conformance/offscreencanvas/context-lost.html",
+            "sdk/tests/conformance/offscreencanvas/context-lost-worker.html"
+          ],
+          "evidence": [
+            "docs/tasks/083-vertex-array-objects.md",
+            "artifacts/conformance/campaign/vertex-arrays-on-main/js/results.json"
+          ],
+          "unsupportedBehavior": "The binding query generates INVALID_ENUM before enabling the extension. Foreign bind/delete and binding a deleted object generate INVALID_OPERATION."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Real vertex and indexed draws with independent default/named array state, context-global constant attributes, retained deleted buffers on unbound arrays, wrapper identity and loss generations.",
+          "tests": [
+            "tests/core/vertex-arrays.ts",
+            "sdk/tests/conformance/extensions/oes-vertex-array-object.html",
+            "sdk/tests/conformance/offscreencanvas/context-lost.html",
+            "sdk/tests/conformance/offscreencanvas/context-lost-worker.html"
+          ],
+          "evidence": [
+            "docs/tasks/083-vertex-array-objects.md",
+            "artifacts/conformance/campaign/vertex-arrays-on-main/rust/results.json"
+          ],
+          "unsupportedBehavior": "The binding query generates INVALID_ENUM before enabling the extension. Foreign bind/delete and binding a deleted object generate INVALID_OPERATION."
+        }
+      }
+    },
+    {
       "id": "extension-discovery",
       "api": "getSupportedExtensions, getExtension and compressed texture queries and uploads with no enabled format",
       "cores": {
@@ -2395,7 +2437,7 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Empty supported-extension list, null extension results and a fresh empty Uint32Array for COMPRESSED_TEXTURE_FORMATS. Both compressed uploads validate the required WebGL1 view, target and binding before rejecting unavailable formats.",
+          "coverage": "Case-insensitive extension discovery, null unavailable-extension results and a fresh empty Uint32Array for COMPRESSED_TEXTURE_FORMATS. Both compressed uploads validate the required WebGL1 view, target and binding before rejecting unavailable formats.",
           "tests": [
             "packages/webgl/src/resources.test.ts",
             "tests/chrome/compressed-texture.spec.ts",
@@ -2409,7 +2451,7 @@
         },
         "rust": {
           "status": "cts-verified",
-          "coverage": "Empty supported-extension list, null extension results and a fresh empty Uint32Array for COMPRESSED_TEXTURE_FORMATS. Both compressed uploads validate the required WebGL1 view, target and binding before rejecting unavailable formats.",
+          "coverage": "Case-insensitive extension discovery, null unavailable-extension results and a fresh empty Uint32Array for COMPRESSED_TEXTURE_FORMATS. Both compressed uploads validate the required WebGL1 view, target and binding before rejecting unavailable formats.",
           "tests": [
             "packages/webgl/src/resources.test.ts",
             "tests/chrome/compressed-texture.spec.ts",

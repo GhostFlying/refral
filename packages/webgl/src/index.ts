@@ -1,5 +1,6 @@
 import { createContextInterface, webglInterfaces } from './interfaces.js';
-import { GL, allocateContextId, ExecutionResources } from "@refral/core-api";
+import { createVertexArrayExtension } from './vertex-arrays.js';
+import { GL, VERTEX_ARRAY_BINDING_OES, allocateContextId, ExecutionResources } from "@refral/core-api";
 import type { BufferHandle, BufferSnapshot, CoreKind, DrawingCore } from "@refral/core-api";
 import { createJsDrawingCore } from "@refral/core-js";
 import { prepareRustDrawingCores, prepareRustModule } from "@refral/core-wasm";
@@ -92,6 +93,8 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
   const resourceFacade = createResourceFacade(core,
     (source, width, height, plan) => host.captureDomCanvas(source, width, height, plan),
     realm.TypeError, interfaces);
+  const supportsArrays = core.invoke('supportsVertexArrayObjects', []) === true;
+  let arrays: ReturnType<typeof createVertexArrayExtension> | undefined;
   let releasing: Promise<void> | undefined;
   let disposed = false;
   function releaseGPU() {
@@ -99,6 +102,13 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
     return releasing;
   }
   return { core, host, interfaces, bufferFacade, programFacade, resourceFacade, releaseGPU,
+    supportsArrays,
+    enableVertexArrays() {
+      if (!supportsArrays) return null;
+      arrays ??= createVertexArrayExtension(core, interfaces.buffer, realm.TypeError);
+      return arrays.extension;
+    },
+    vertexArrayBinding() { return arrays ? arrays.binding() : core.invoke('getParameter', [VERTEX_ARRAY_BINDING_OES]); },
     dispose() {
       if (!disposed) {
         disposed = true;
@@ -160,17 +170,21 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: We
     if (property === 'getParameter') {
       requireArguments(property, args, 1);
       const parameter = toEnum(args[0]);
+      if (parameter === VERTEX_ARRAY_BINDING_OES) return current.vertexArrayBinding();
       if (isBufferBinding(parameter)) return bufferFacade.binding(parameter);
       if (parameter === GL.CURRENT_PROGRAM) return programFacade.current();
       if (isResourceBinding(parameter)) return resourceFacade.binding(parameter);
       args = [parameter];
     }
     if (property === 'getContextAttributes') return core.isContextLost() ? null : { ...attributes };
-    if (property === 'getSupportedExtensions') return core.isContextLost() ? null : ['WEBGL_lose_context'];
+    if (property === 'getSupportedExtensions') return core.isContextLost() ? null :
+      (current.supportsArrays ? ['OES_vertex_array_object', 'WEBGL_lose_context'] : ['WEBGL_lose_context']);
     if (property === 'getExtension') {
       requireArguments(property, args, 1);
       const name = `${args[0]}`.toLowerCase();
-      return !core.isContextLost() && name === 'webgl_lose_context' ? lost.extension : null;
+      if (core.isContextLost()) return null;
+      if (name === 'oes_vertex_array_object') return current.enableVertexArrays();
+      return name === 'webgl_lose_context' ? lost.extension : null;
     }
     if (property === 'vertexAttribPointer') {
       requireArguments(property, args, 6);

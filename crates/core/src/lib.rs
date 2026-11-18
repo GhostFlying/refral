@@ -51,6 +51,8 @@ pub enum InitializationError {
 }
 
 struct Buffer {
+    deleted: bool,
+    vertex_references: u64,
     target: Option<u32>,
     usage: u32,
     storage_generation: u64,
@@ -61,6 +63,8 @@ struct Buffer {
 impl Buffer {
     fn new() -> Self {
         Self {
+            deleted: false,
+            vertex_references: 0,
             target: None,
             usage: STATIC_DRAW,
             storage_generation: 0,
@@ -80,7 +84,6 @@ pub struct ContextCore {
     max_buffer_bytes: u64,
     slots: Vec<Slot>,
     array_binding: Option<BufferHandle>,
-    element_binding: Option<BufferHandle>,
     errors: [u32; 5],
     error_count: usize,
     lost: bool,
@@ -103,7 +106,6 @@ impl ContextCore {
             max_buffer_bytes,
             slots: Vec::new(),
             array_binding: None,
-            element_binding: None,
             errors: [NO_ERROR; 5],
             error_count: 0,
             lost: false,
@@ -170,7 +172,6 @@ impl ContextCore {
         self.lost_error_pending = true;
         self.error_count = 0;
         self.array_binding = None;
-        self.element_binding = None;
         self.render = RenderState::default();
         for slot in &mut self.slots {
             slot.buffer = None;
@@ -214,6 +215,11 @@ impl ContextCore {
     }
 
     fn live_index(&self, handle: BufferHandle) -> Option<usize> {
+        self.storage_index(handle)
+            .filter(|&i| !self.slots[i].buffer.as_ref().unwrap().deleted)
+    }
+
+    fn storage_index(&self, handle: BufferHandle) -> Option<usize> {
         if self.lost || handle.context_id != self.context_id || handle.slot == 0 {
             return None;
         }
@@ -236,14 +242,14 @@ impl ContextCore {
         }
         let binding = match target {
             ARRAY_BUFFER => self.array_binding,
-            ELEMENT_ARRAY_BUFFER => self.element_binding,
+            ELEMENT_ARRAY_BUFFER => self.render.arrays.current().element,
             _ => {
                 self.record_error(INVALID_ENUM);
                 return None;
             }
         };
         match binding {
-            Some(handle) => self.valid_index(handle),
+            Some(handle) => self.storage_index(handle),
             None => {
                 self.record_error(INVALID_OPERATION);
                 None
@@ -277,7 +283,8 @@ impl ContextCore {
         if target == ARRAY_BUFFER {
             self.array_binding = handle;
         } else {
-            self.element_binding = handle;
+            let previous = std::mem::replace(&mut self.render.arrays.current_mut().element, handle);
+            self.replace_vertex_reference(previous, handle);
         }
     }
 
@@ -287,7 +294,7 @@ impl ContextCore {
         }
         match parameter {
             ARRAY_BUFFER_BINDING => self.array_binding,
-            ELEMENT_ARRAY_BUFFER_BINDING => self.element_binding,
+            ELEMENT_ARRAY_BUFFER_BINDING => self.render.arrays.current().element,
             _ => {
                 self.record_error(INVALID_ENUM);
                 None
@@ -321,20 +328,53 @@ impl ContextCore {
             self.record_error(INVALID_OPERATION);
             return;
         }
-        if handle.generation < slot.generation || slot.buffer.is_none() {
+        if handle.generation < slot.generation || slot.buffer.as_ref().is_none_or(|b| b.deleted) {
             return;
         }
-        slot.buffer = None;
-        for attribute in &mut self.render.attributes {
+        let buffer = slot.buffer.as_mut().unwrap();
+        buffer.deleted = true;
+        let array = self.render.arrays.current_mut();
+        for attribute in &mut array.attributes {
             if attribute.buffer == Some(handle) {
                 attribute.buffer = None;
+                buffer.vertex_references -= 1;
             }
+        }
+        if array.element == Some(handle) {
+            array.element = None;
+            buffer.vertex_references -= 1;
         }
         if self.array_binding == Some(handle) {
             self.array_binding = None;
         }
-        if self.element_binding == Some(handle) {
-            self.element_binding = None;
+        if buffer.vertex_references == 0 {
+            slot.buffer = None;
+        }
+    }
+
+    // These handles come from validated VAO attachment slots, which keep storage alive.
+    fn replace_vertex_reference(
+        &mut self,
+        previous: Option<BufferHandle>,
+        next: Option<BufferHandle>,
+    ) {
+        if previous == next {
+            return;
+        }
+        if let Some(handle) = previous {
+            let slot = &mut self.slots[handle.slot as usize - 1];
+            let buffer = slot.buffer.as_mut().unwrap();
+            buffer.vertex_references -= 1;
+            if buffer.deleted && buffer.vertex_references == 0 {
+                slot.buffer = None;
+            }
+        }
+        if let Some(handle) = next {
+            self.slots[handle.slot as usize - 1]
+                .buffer
+                .as_mut()
+                .unwrap()
+                .vertex_references += 1;
         }
     }
 
@@ -481,7 +521,12 @@ impl ContextCore {
     }
 
     pub fn inspect_buffer(&self, handle: BufferHandle) -> Option<BufferSnapshot> {
-        let index = self.live_index(handle)?;
+        self.live_index(handle)?;
+        self.inspect_attached_buffer(handle)
+    }
+
+    fn inspect_attached_buffer(&self, handle: BufferHandle) -> Option<BufferSnapshot> {
+        let index = self.storage_index(handle)?;
         let buffer = self.slots[index].buffer.as_ref()?;
         Some(BufferSnapshot {
             metadata: BufferMetadata {

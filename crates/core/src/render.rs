@@ -10,6 +10,7 @@ mod readback;
 #[cfg(test)]
 mod texture_tests;
 mod textures;
+mod vertex_arrays;
 pub use framebuffers::{ColorRenderbufferAttachment, DepthAttachment, TargetSnapshot};
 mod uniforms;
 pub use raster::{RasterState, StencilFace};
@@ -47,6 +48,7 @@ pub enum ObjectKind {
     Texture = 5,
     Renderbuffer = 6,
     Framebuffer = 7,
+    VertexArray = 8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -290,7 +292,6 @@ pub(crate) struct VertexAttribute {
     normalized: bool,
     stride: u32,
     offset: usize,
-    constant: [f32; 4],
 }
 impl Default for VertexAttribute {
     fn default() -> Self {
@@ -302,7 +303,6 @@ impl Default for VertexAttribute {
             normalized: false,
             stride: 0,
             offset: 0,
-            constant: [0.0, 0.0, 0.0, 1.0],
         }
     }
 }
@@ -311,7 +311,8 @@ pub(crate) struct RenderState {
     programs: Vec<RenderSlot<Program>>,
     locations: Vec<RenderSlot<Location>>,
     current: Option<ObjectHandle>,
-    pub(crate) attributes: [VertexAttribute; 16],
+    pub(crate) arrays: vertex_arrays::VertexArrays,
+    constants: [[f32; 4]; 16],
     surface: [u32; 2],
     raster: RasterState,
     dither: bool,
@@ -341,7 +342,8 @@ impl Default for RenderState {
             programs: Vec::new(),
             locations: Vec::new(),
             current: None,
-            attributes: [VertexAttribute::default(); 16],
+            arrays: vertex_arrays::VertexArrays::default(),
+            constants: [[0.0, 0.0, 0.0, 1.0]; 16],
             surface: [0, 0],
             raster: RasterState::default(),
             dither: true,
@@ -817,12 +819,15 @@ impl ContextCore {
         if self.lost {
             return match operation {
                 "isEnabled" | "isShader" | "isProgram" | "isTexture" | "isFramebuffer"
-                | "isRenderbuffer" => Reply::Boolean(false),
+                | "isRenderbuffer" | "isVertexArrayOES" => Reply::Boolean(false),
                 "checkFramebufferStatus" => Reply::Number(0x8cdd as f64),
                 "getAttribLocation" => Reply::Number(-1.0),
                 "getVertexAttribOffset" => Reply::Number(0.0),
                 _ => Reply::Null,
             };
+        }
+        if let Some(reply) = self.vertex_array_invoke(operation, args) {
+            return reply;
         }
         if let Some(reply) = self.readback_invoke(operation, args) {
             return reply;
@@ -1183,7 +1188,7 @@ impl ContextCore {
             }
             "enableVertexAttribArray" | "disableVertexAttribArray" => {
                 if (arg(0).number() as usize) < self.render.attribute_limit {
-                    self.render.attributes[arg(0).number() as usize].enabled =
+                    self.render.arrays.current_mut().attributes[arg(0).number() as usize].enabled =
                         operation == "enableVertexAttribArray";
                 } else {
                     self.record_error(INVALID_VALUE);
@@ -1466,13 +1471,14 @@ impl ContextCore {
             self.record_error(INVALID_OPERATION);
             return Reply::Null;
         }
-        let attribute = &mut self.render.attributes[index];
-        attribute.buffer = self.array_binding;
+        let attribute = &mut self.render.arrays.current_mut().attributes[index];
+        let previous = std::mem::replace(&mut attribute.buffer, self.array_binding);
         attribute.size = size as u32;
         attribute.ty = ty;
         attribute.normalized = args.get(3).is_some_and(Argument::boolean);
         attribute.stride = stride as u32;
         attribute.offset = offset as usize;
+        self.replace_vertex_reference(previous, self.array_binding);
         Reply::Null
     }
     fn constant_attribute(&mut self, operation: &str, args: &[Argument]) {
@@ -1506,12 +1512,14 @@ impl ContextCore {
                 args.get(index + 1).map_or(0.0, Argument::number) as f32
             };
         }
-        self.render.attributes[index].constant = values;
+        self.render.constants[index] = values;
     }
     fn get_attribute(&mut self, operation: &str, args: &[Argument]) -> Reply {
         let index = args.first().map_or(0.0, Argument::number) as usize;
         let Some(attribute) = self
             .render
+            .arrays
+            .current()
             .attributes
             .get(index)
             .filter(|_| index < self.render.attribute_limit)
@@ -1536,7 +1544,7 @@ impl ContextCore {
             0x889f => attribute
                 .buffer
                 .map_or(Reply::Null, |handle| Reply::Handle(handle.into())),
-            0x8626 => Reply::Floats(attribute.constant.to_vec()),
+            0x8626 => Reply::Floats(self.render.constants[index].to_vec()),
             _ => {
                 self.record_error(INVALID_ENUM);
                 Reply::Null
@@ -1572,7 +1580,7 @@ impl ContextCore {
                 self.record_error(INVALID_VALUE);
                 return Reply::Null;
             }
-            if offset % bytes as f64 != 0.0 || self.element_binding.is_none() {
+            if offset % bytes as f64 != 0.0 || self.render.arrays.current().element.is_none() {
                 self.record_error(INVALID_OPERATION);
                 return Reply::Null;
             }
@@ -1592,7 +1600,7 @@ impl ContextCore {
             self.record_error(INVALID_OPERATION);
             return Reply::Null;
         }
-        if self.render.attributes[..self.render.attribute_limit]
+        if self.render.arrays.current().attributes[..self.render.attribute_limit]
             .iter()
             .any(|attribute| attribute.enabled && attribute.buffer.is_none())
         {
@@ -1636,7 +1644,9 @@ impl ContextCore {
                 };
                 vertex_count = vertex_count.max(value + 1);
             }
-            let Some(snapshot) = self.inspect_buffer(self.element_binding.unwrap()) else {
+            let Some(snapshot) =
+                self.inspect_attached_buffer(self.render.arrays.current().element.unwrap())
+            else {
                 self.record_error(OUT_OF_MEMORY);
                 return Reply::Null;
             };
@@ -1676,13 +1686,13 @@ impl ContextCore {
             ) {
                 return Reply::Unsupported("matrix vertex attributes");
             }
-            let attribute = &self.render.attributes[active.location as usize];
+            let attribute = &self.render.arrays.current().attributes[active.location as usize];
             let data = if attribute.enabled {
                 let Some(handle) = attribute.buffer else {
                     self.record_error(INVALID_OPERATION);
                     return Reply::Null;
                 };
-                let Some(index) = self.live_index(handle) else {
+                let Some(index) = self.storage_index(handle) else {
                     self.record_error(INVALID_OPERATION);
                     return Reply::Null;
                 };
@@ -1707,7 +1717,7 @@ impl ContextCore {
                     self.record_error(INVALID_OPERATION);
                     return Reply::Null;
                 }
-                let Some(snapshot) = self.inspect_buffer(handle) else {
+                let Some(snapshot) = self.inspect_attached_buffer(handle) else {
                     self.record_error(OUT_OF_MEMORY);
                     return Reply::Null;
                 };
@@ -1724,7 +1734,7 @@ impl ContextCore {
                 stride: attribute.stride,
                 offset: attribute.offset,
                 data,
-                constant: attribute.constant,
+                constant: self.render.constants[active.location as usize],
             });
         }
         if count == 0.0

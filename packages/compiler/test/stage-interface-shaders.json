@@ -1,0 +1,4 @@
+{
+  "vertex": "attribute vec3 position; invariant gl_Position; varying mediump mat2 unwritten[2]; void main(){ gl_Position=vec4(position,1.); }",
+  "fragment": "precision mediump float; varying mediump mat2 unwritten[2]; void main(){ gl_FragColor=vec4(unwritten[0][0],unwritten[1][1]); }"
+}

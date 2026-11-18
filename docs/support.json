@@ -316,7 +316,7 @@
             "sdk/tests/conformance/programs/gl-get-active-attribute.html"
           ],
           "limits": [
-            "Numeric structure uniforms expose qualified scalar, vector, matrix and basic-array fields with per-stage offsets. Samplers inside structures, sampler arrays and attribute arrays return explicit link diagnostics. ESSL100 scalar/vector/matrix varying arrays occupy distinct WGSL locations per element and column. Independent varyings do not share a physical location.",
+            "Numeric structure uniforms expose qualified scalar, vector, matrix and basic-array fields with per-stage offsets. Samplers inside structures, sampler arrays and attribute arrays return explicit link diagnostics. ESSL100 scalar/vector/matrix varying arrays occupy distinct WGSL locations per element and column. The linker checks ESSL100 varying static use and invariance and supplies matching WGSL inputs for declared, unwritten vertex outputs. Independent varyings do not share a physical location.",
             "WebGL1 link checks each stage with ANGLE uniform packing against 256 MAX_VERTEX_UNIFORM_VECTORS or 64 MAX_FRAGMENT_UNIFORM_VECTORS from packages/compiler/profile-limits.json"
           ],
           "ctsEvidence": {

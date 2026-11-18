@@ -143,9 +143,15 @@ pub struct TextureCopy {
     pub ty: u32,
 }
 
+pub enum TexelFormat {
+    Unorm8,
+    Float32,
+    Srgb8,
+}
+
 pub enum ResourceOperation {
     DefineTexture {
-        float_texels: bool,
+        texel_format: TexelFormat,
         version: TextureVersion,
         width: u32,
         height: u32,
@@ -250,6 +256,7 @@ pub(super) struct TextureState {
     pub(super) units: [TextureUnit; 32],
     pub(super) active: usize,
     float_enabled: bool,
+    pub(super) srgb_enabled: bool,
     unpack_alignment: usize,
     pub(super) pack_alignment: usize,
     unpack_flip: bool,
@@ -296,6 +303,7 @@ impl Default for TextureState {
             units: [TextureUnit::default(); 32],
             active: 0,
             float_enabled: false,
+            srgb_enabled: false,
             unpack_alignment: 4,
             pack_alignment: 4,
             unpack_flip: false,
@@ -467,6 +475,10 @@ impl ContextCore {
     pub(super) fn texture_invoke(&mut self, operation: &str, args: &[Argument]) -> Option<Reply> {
         let arg = |index: usize| args.get(index).unwrap_or(&Argument::Null);
         match operation {
+            "enableSrgbTextures" => {
+                self.render.textures.srgb_enabled = true;
+                return Some(Reply::Null);
+            }
             "enableFloatTextures" => {
                 self.render.textures.float_enabled = true;
                 return Some(Reply::Null);
@@ -687,11 +699,15 @@ impl ContextCore {
             ty,
             UNSIGNED_BYTE | UNSIGNED_SHORT_4_4_4_4 | UNSIGNED_SHORT_5_5_5_1 | UNSIGNED_SHORT_5_6_5
         ) || ty == FLOAT && self.render.textures.float_enabled;
-        if !matches!(format, RGBA | RGB | ALPHA | LUMINANCE | LUMINANCE_ALPHA) || !supported_type {
+        let srgb = matches!(format, SRGB | SRGB_ALPHA) && self.render.textures.srgb_enabled;
+        if !(matches!(format, RGBA | RGB | ALPHA | LUMINANCE | LUMINANCE_ALPHA) || srgb)
+            || !supported_type
+        {
             self.record_error(INVALID_ENUM);
             return false;
         }
-        if ty == UNSIGNED_SHORT_5_6_5 && format != RGB
+        if srgb && ty != UNSIGNED_BYTE
+            || ty == UNSIGNED_SHORT_5_6_5 && format != RGB
             || matches!(ty, UNSIGNED_SHORT_4_4_4_4 | UNSIGNED_SHORT_5_5_5_1) && format != RGBA
         {
             self.record_error(INVALID_OPERATION);
@@ -900,6 +916,11 @@ impl ContextCore {
         source: &Argument,
         allow_null: bool,
     ) -> Option<Vec<u8>> {
+        let format = match format {
+            SRGB => RGB,
+            SRGB_ALPHA => RGBA,
+            other => other,
+        };
         let dom = matches!(source, Argument::DomPixels { .. });
         let converted = matches!(
             source,
@@ -1137,7 +1158,13 @@ impl ContextCore {
             .textures
             .before
             .push(ResourceOperation::DefineTexture {
-                float_texels: ty == FLOAT,
+                texel_format: if ty == FLOAT {
+                    TexelFormat::Float32
+                } else if matches!(format, SRGB | SRGB_ALPHA) {
+                    TexelFormat::Srgb8
+                } else {
+                    TexelFormat::Unorm8
+                },
                 version,
                 width: width as u32,
                 height: height as u32,
@@ -1232,6 +1259,10 @@ impl ContextCore {
             let Some((index, face)) = self.validate_texture_definition(&parameters) else {
                 return Reply::Null;
             };
+            if matches!(sub_format as u32, SRGB | SRGB_ALPHA) {
+                self.record_error(INVALID_ENUM);
+                return Reply::Null;
+            }
             (0, 0, index, face)
         };
         let level = level as usize;
@@ -1260,7 +1291,24 @@ impl ContextCore {
         let Some(source) = self.target_snapshot(true) else {
             return Reply::Null;
         };
-        if (!self.source_has_alpha(&source) && !matches!(storage.format, RGB | LUMINANCE))
+        let source_is_srgb = source
+            .color_renderbuffer
+            .is_some_and(|color| color.format == SRGB8_ALPHA8)
+            || source.color.is_some_and(|image| {
+                let state = &self.render.textures.slots[image.texture.slot as usize - 1];
+                state
+                    .value
+                    .as_ref()
+                    .and_then(|texture| {
+                        texture
+                            .image(image_index(image.image_target)?, image.level as usize)?
+                            .storage
+                    })
+                    .is_some_and(|storage| storage.format == SRGB_ALPHA)
+            });
+        if matches!(storage.format, SRGB | SRGB_ALPHA)
+            || source_is_srgb
+            || (!self.source_has_alpha(&source) && !matches!(storage.format, RGB | LUMINANCE))
             || source.color.is_some_and(|image| {
                 image.texture.slot as usize == index + 1
                     && image.image_target == image_target(face)
@@ -1324,10 +1372,11 @@ impl ContextCore {
             return Reply::Null;
         };
         let texture = self.render.textures.slots[index].value.as_ref().unwrap();
-        let Some(base) = texture
-            .complete_base()
-            .filter(|base| base.width.is_power_of_two() && base.height.is_power_of_two())
-        else {
+        let Some(base) = texture.complete_base().filter(|base| {
+            base.width.is_power_of_two()
+                && base.height.is_power_of_two()
+                && !matches!(base.format, SRGB | SRGB_ALPHA)
+        }) else {
             self.record_error(INVALID_OPERATION);
             return Reply::Null;
         };

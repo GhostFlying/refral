@@ -1,6 +1,11 @@
 import type { QueueCompletion } from './queue-completion.js';
 import type { HostStats } from './index.js';
 
+/** Byte transfers preserve the stored color encoding of an sRGB attachment. */
+function rgba8ByteView(texture: GPUTexture): GPUTextureView {
+  return texture.format === 'rgba8unorm-srgb' ? texture.createView({ format: 'rgba8unorm' }) : texture.createView();
+}
+
 /** RGBA8 transport through opaque sRGB canvas pixels. */
 export class CanvasReadback {
   readonly stats = { captures: 0, tiles: 0, imageBytes: 0, decodedBytes: 0, stagingBytes: 0 };
@@ -67,7 +72,7 @@ export class CanvasReadback {
       binding = this.device.createBindGroup({
         layout: this.pipeline.getBindGroupLayout(0),
         entries: [
-          { binding: 0, resource: texture.createView() },
+          { binding: 0, resource: rgba8ByteView(texture) },
           { binding: 1, resource: { buffer: this.parameters } },
         ],
       });

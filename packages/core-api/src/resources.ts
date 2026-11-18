@@ -1,4 +1,4 @@
-import { GL } from './gl.js';
+import { GL, SRGB } from './gl.js';
 import type { RenderbufferHandle, TextureHandle } from './index.js';
 import type { SemanticHost, TextureCopy, TextureStorage } from './execution.js';
 
@@ -25,7 +25,7 @@ export interface PixelUpload {
 }
 
 export type ResourceOperation =
-  | { kind: 'define-texture'; texelFormat?: 'rgba32float'; version: TextureVersion; width: number; height: number; data: Uint8Array }
+  | { kind: 'define-texture'; texelFormat?: TextureStorage['texelFormat']; version: TextureVersion; width: number; height: number; data: Uint8Array }
   | { kind: 'update-texture'; version: TextureVersion; previous: TextureVersion;
       x: number; y: number; width: number; height: number; data: Uint8Array }
   | { kind: 'generate-texture-mip'; version: TextureVersion; source: TextureVersion; width: number; height: number }
@@ -108,7 +108,7 @@ export class ExecutionResources implements ResourceRegistry {
     return record;
   }
 
-  private pixels(width: number, height: number, data: Uint8Array, texelFormat?: 'rgba32float'): void {
+  private pixels(width: number, height: number, data: Uint8Array, texelFormat?: TextureStorage['texelFormat']): void {
     const bytes = width * height * (texelFormat === 'rgba32float' ? 16 : 4);
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 0 || height < 0
       || !Number.isSafeInteger(bytes) || data.byteLength !== bytes) {
@@ -256,10 +256,11 @@ export class ExecutionResources implements ResourceRegistry {
     if (!versions) this.colors.set(key, versions = new Map());
     let storage = versions.get(storageGeneration);
     const opaque = format === GL.RGB565;
+    const texelFormat = format === SRGB.SRGB8_ALPHA8_EXT ? 'rgba8unorm-srgb' : undefined;
     if (!storage) {
-      storage = { width, height, generation: storageGeneration, opaque };
+      storage = { width, height, generation: storageGeneration, opaque, texelFormat };
       versions.set(storageGeneration, storage);
-    } else if (storage.width !== width || storage.height !== height || storage.opaque !== opaque) {
+    } else if (storage.width !== width || storage.height !== height || storage.opaque !== opaque || storage.texelFormat !== texelFormat) {
       throw new Error('Color renderbuffer storage changed without a new generation.');
     }
     return storage;
@@ -282,5 +283,5 @@ export class ExecutionResources implements ResourceRegistry {
 }
 
 export function isColorRenderbufferFormat(format: number): boolean {
-  return format === GL.RGB565 || format === GL.RGBA4 || format === GL.RGB5_A1;
+  return format === GL.RGB565 || format === GL.RGBA4 || format === GL.RGB5_A1 || format === SRGB.SRGB8_ALPHA8_EXT;
 }

@@ -16,13 +16,17 @@ mod uniforms;
 pub use raster::{RasterState, StencilFace};
 pub use readback::ReadPixelsPlan;
 pub use textures::{
-    ResourceOperation, TextureBinding, TextureCopy, TextureImages, TextureParameters,
+    ResourceOperation, TexelFormat, TextureBinding, TextureCopy, TextureImages, TextureParameters,
     TextureVersion,
 };
 
 pub const VERTEX_SHADER: u32 = 0x8b31;
 pub const FRAGMENT_SHADER: u32 = 0x8b30;
 pub const FLOAT: u32 = 0x1406;
+const SRGB: u32 = 0x8c40;
+const SRGB_ALPHA: u32 = 0x8c42;
+const SRGB8_ALPHA8: u32 = 0x8c43;
+const COLOR_ENCODING: u32 = 0x8210;
 pub const FLOAT_VEC2: u32 = 0x8b50;
 pub const FLOAT_VEC3: u32 = 0x8b51;
 pub const FLOAT_VEC4: u32 = 0x8b52;

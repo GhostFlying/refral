@@ -122,3 +122,13 @@ export function vertexComponentBytes(type: number): number {
       return 0;
   }
 }
+
+/** EXT_sRGB constants are exposed only on the activated extension object. */
+export const SRGB = {
+  SRGB_EXT: 0x8c40, SRGB_ALPHA_EXT: 0x8c42, SRGB8_ALPHA8_EXT: 0x8c43,
+  FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING_EXT: 0x8210,
+} as const;
+
+export function isSrgbTextureFormat(format: number): boolean {
+  return format === SRGB.SRGB_EXT || format === SRGB.SRGB_ALPHA_EXT;
+}

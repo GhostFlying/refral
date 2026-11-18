@@ -1,3 +1,4 @@
+import { checkSrgbTextureState } from '../../../tests/core/srgb-textures';
 import { checkFloatTextureStorage } from '../../../tests/core/float-textures';
 import { checkVertexArrayOwnership } from '../../../tests/core/vertex-arrays';
 import { checkMatrixColumnDraws, checkPrimitiveDraws } from "../../../tests/core/primitive-draw-contract";
@@ -67,6 +68,11 @@ function createLinkedProgram(core: DrawingCore) {
 }
 
 describe("JS DrawingCore logical boundary", () => {
+  it('gates sRGB encodings and preserves upload and attachment state', () => {
+    const { core, resources } = createContext();
+    try { checkSrgbTextureState(core, resources); } finally { core.dispose(); }
+  });
+
   it('retains full-precision float texture updates through the resource transport', () => {
     const { core, resources } = createContext();
     try { checkFloatTextureStorage(core, resources); } finally { core.dispose(); }

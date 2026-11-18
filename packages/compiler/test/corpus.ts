@@ -1,5 +1,6 @@
 import type { Compiler } from "../src/types.js";
 import COMPILER_LIMITS from "../profile-limits.json" with { type: "json" };
+import essl100Shader from "./essl100-shader.json" with { type: "json" };
 import fragmentOutputShaders from "./fragment-output-shaders.json" with { type: "json" };
 
 export interface CompilerCaseResult {
@@ -42,6 +43,8 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
   const matrixProgram = compiler.link(matrixAttribute, plainFragment, { transform: 2 });
   const matrixOverlap = compiler.link(matrixAttribute, plainFragment, { transform: 2, position: 4 });
   const matrixLimit = compiler.link(matrixAttribute, plainFragment, { transform: COMPILER_LIMITS.vertexAttributes - 2 });
+  const lowering = compiler.link(compiler.compile(essl100Shader.vertex, "vertex"),
+    compiler.compile(essl100Shader.fragment, "fragment"));
   const minimumInteger = compiler.compile('precision highp float; precision highp int; uniform int value; void main(){gl_FragColor=vec4(value == (-2147483647 - 1) ? 1.0 : 0.0);}', 'fragment');
   const cubeFragmentSource = 'precision mediump float; uniform samplerCube cube; void main(){gl_FragColor=textureCube(cube,vec3(1.0,0.0,0.0));}';
   const cubeFragment = compiler.compile(cubeFragmentSource, 'fragment');
@@ -97,6 +100,12 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
     { name: "matrix-attribute-column-locations", passed: matrixProgram.success && [2,3,4].every((location) => matrixProgram.vertexWGSL.includes(`@location(${location})`)) && !matrixProgram.vertexWGSL.includes("@@@@@@"), log: matrixProgram.log },
     { name: "matrix-attribute-overlap", passed: !matrixOverlap.success, log: matrixOverlap.log },
     { name: "matrix-attribute-limit", passed: !matrixLimit.success, log: matrixLimit.log },
+    { name: "essl100-expression-lowering", passed: lowering.success
+      && !lowering.fragmentWGSL.includes("TODO_Operator")
+      && !lowering.fragmentWGSL.includes("TODO_operator")
+      && !lowering.fragmentWGSL.includes("gl_DepthRange_")
+      && lowering.uniforms.some(uniform => uniform.name === "gl_DepthRange.near"
+        && uniform.vertexOffset === null && uniform.fragmentOffset === null), log: lowering.log },
     { name: 'integer-minimum-literal', passed: minimumInteger.success
       && minimumInteger.wgsl.includes('(-2147483647i - 1i)')
       && !minimumInteger.wgsl.includes('-2147483648i'), log: minimumInteger.log },

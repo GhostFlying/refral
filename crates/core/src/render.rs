@@ -1292,6 +1292,9 @@ impl ContextCore {
                 }
             }
             _ => {
+                if name.starts_with("gl_") {
+                    return Reply::Null;
+                }
                 let (base, element) = if let Some((base, suffix)) = name
                     .strip_suffix(']')
                     .and_then(|name| name.rsplit_once('['))

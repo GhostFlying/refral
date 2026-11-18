@@ -192,6 +192,15 @@ export function linkShaders(vertex: CompiledShader, fragment: CompiledShader,
         arrayStride: variable.arrayStride, matrixStride: variable.matrixStride });
     }
   }
+  // The built-in belongs to driver state, but GLES exposes it in active-uniform reflection.
+  const depthRange = [...vertex.uniforms, ...fragment.uniforms]
+    .find(variable => variable.active && variable.name === "gl_DepthRange");
+  if (depthRange) {
+    for (const field of depthRange.fields) {
+      uniforms.push({ name: `gl_DepthRange.${field.name}`, type: field.type, size: field.size,
+        vertexOffset: null, fragmentOffset: null, arrayStride: 0, matrixStride: 0 });
+    }
+  }
   if (samplers.length > COMPILER_LIMITS.combinedTextureUnits) {
     return failedProgram("Combined texture count exceeds the initial profile limit.");
   }

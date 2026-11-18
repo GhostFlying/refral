@@ -46,6 +46,8 @@ Task 038 establishes the original official runner and records the 971-entry WebG
 
 Task 039 adds WebGL1 member detection, isolates CTS optional-property lookup, and enables triangle strips and integer vertex attributes in both cores. OGLES passes 127 of 141 originals per Refral core. Twelve remaining OGLES files reach WGSL validation errors. [Targeted comparison and remaining cases](tasks/039-webgl1-surface-and-vertex-input.md)
 
+Task 040 implements shared ESSL expression and depth-range lowering. Both Refral cores pass 140/141 OGLES originals and all 15 focused GLSL originals. The remaining build fixture first encounters a varying-array translation gap. [Compiler results](tasks/040-essl100-wgsl-lowering.md)
+
 The completed milestones and subsequent compatibility dependencies follow.
 
 1. Task 025 establishes synchronous readback feasibility using actual JS/Rust cores and an independent GPU worker. Task 027 adds a main-thread Canvas2D candidate, byte-exact shared rendering corpus and matched latency/process CPU comparison. Task028 implements the user-selected Canvas2D path through both public cores, including destination ownership, packing, clipping, ordering and loss handling. The original program-handling, feedback-loop and read-pixels-pack-alignment files execute unchanged through a recorded iframe prototype adapter. ADR 007 records the accepted backend.

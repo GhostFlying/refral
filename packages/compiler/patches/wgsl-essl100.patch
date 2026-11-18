@@ -1,0 +1,332 @@
+diff --git a/src/compiler/translator/wgsl/TranslatorWGSL.cpp b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
+--- a/src/compiler/translator/wgsl/TranslatorWGSL.cpp
++++ b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
+@@ -44,0 +45 @@
++#include "compiler/translator/tree_util/ReplaceVariable.h"
+@@ -328,2 +328,0 @@
+-    // TODO(anglebug.com/376553328): gl_DepthRange should be handled by referencing driver
+-    // uniforms--then the check for builtin default uniforms can be removed here.
+@@ -372,3 +371 @@
+-                   mRewritePipelineVarOutput->IsOutputVar(var.uniqueId()) ||
+-                   type.getQualifier() == EvqDepthRange);
+-            // TODO(anglebug.com/376553328): support gl_DepthRange.
++                   mRewritePipelineVarOutput->IsOutputVar(var.uniqueId()));
+@@ -579,3 +575,0 @@
+-        // TODO(anglebug.com/42267100): Works different from GLSL for negative numbers.
+-        // https://github.com/gpuweb/gpuweb/discussions/2204#:~:text=not%20WGSL%3B%20etc.-,Inconsistent%20mod/%25%20operator,-At%20first%20glance
+-        // GLSL does `x - y * floor(x/y)`, WGSL does x - y * trunc(x/y).
+@@ -582,0 +577 @@
++            return {"%"};
+@@ -584 +579 @@
+-            return {"%"};
++            return {nullptr, mPrelude->floatModulo(resultType)};
+@@ -694,4 +688,0 @@
+-        // TODO(anglebug.com/42267100): structs, matrices, and arrays are not comparable with WGSL's
+-        // == or !=. Comparing vectors results in a component-wise comparison returning a boolean
+-        // vector, which is different from GLSL (which use equal(vec, vec) for component-wise
+-        // comparison)
+@@ -699,16 +689,0 @@
+-            if (argType0->isVector() && argType1->isVector())
+-            {
+-                return {"==", WGSLWrapperFunction{ImmutableString("all("), ImmutableString(")")}};
+-            }
+-
+-            if ((argType0->getStruct() && argType1->getStruct()) ||
+-                (argType0->isArray() && argType1->isArray()) ||
+-                (argType0->isMatrix() && argType1->isMatrix()))
+-
+-            {
+-                UNIMPLEMENTED();
+-                return {"TODO_operator"};
+-            }
+-
+-            return {"=="};
+-
+@@ -716,14 +691,14 @@
+-            if ((argType0->isVector() && argType1->isVector()))
+-            {
+-                return {"!=", WGSLWrapperFunction{ImmutableString("all("), ImmutableString(")")}};
+-            }
+-
+-            if ((argType0->getStruct() && argType1->getStruct()) ||
+-                (argType0->isArray() && argType1->isArray()) ||
+-                (argType0->isMatrix() && argType1->isMatrix()))
+-            {
+-                UNIMPLEMENTED();
+-                return {"TODO_operator"};
+-            }
+-
+-            return {"!="};
++        {
++            const bool equal = op == TOperator::EOpEqual;
++            if (argType0->isArray() || argType0->isMatrix() || argType0->getStruct())
++            {
++                return {nullptr, mPrelude->aggregateComparison(*argType0, equal)};
++            }
++            if (argType0->isVector())
++            {
++                return {equal ? "==" : "!=",
++                        WGSLWrapperFunction{ImmutableString(equal ? "all(" : "any("),
++                                            ImmutableString(")")}};
++            }
++            return {equal ? "==" : "!="};
++        }
+@@ -745 +720,3 @@
+-            return argType0->isVector() ? OperatorInfo{"refract"} : OperatorInfo{"TODO_operator"};
++            return argType0->isVector()
++                       ? OperatorInfo{"refract"}
++                       : OperatorInfo{nullptr, mPrelude->scalarGeometric(op)};
+@@ -755,2 +732,3 @@
+-            return argType0->isVector() ? OperatorInfo{"faceForward"}
+-                                        : OperatorInfo{"TODO_Operator"};
++            return argType0->isVector()
++                       ? OperatorInfo{"faceForward"}
++                       : OperatorInfo{nullptr, mPrelude->scalarGeometric(op)};
+@@ -758 +736,3 @@
+-            return argType0->isVector() ? OperatorInfo{"reflect"} : OperatorInfo{"TODO_Operator"};
++            return argType0->isVector()
++                       ? OperatorInfo{"reflect"}
++                       : OperatorInfo{nullptr, mPrelude->scalarGeometric(op)};
+@@ -760 +740 @@
+-            return {"TODO_Operator"};
++            return {nullptr, mPrelude->matrixComponentMultiply(resultType)};
+@@ -828,4 +807,0 @@
+-        // TODO(anglebug.com/42267100):
+-        // https://github.com/gpuweb/gpuweb/discussions/2204#:~:text=clamp(vec2%3Cf32%3E%2C%20f32%2C%20f32)%20works%20in%20GLSL%20but%20not%20WGSL%3B%20etc.
+-        // Need to expand clamp(vec<f32>, low : f32, high : f32) ->
+-        // clamp(vec<f32>, vec<f32>(low), vec<f32>(high))
+@@ -2030,0 +2007,27 @@
++    const TType &retType = aggregateNode->getType();
++
++    auto emitArguments = [&](const TType *splatType = nullptr) {
++        for (size_t i = 0; i < args.size(); i++)
++        {
++            if (i != 0)
++            {
++                mSink << ", ";
++            }
++            if (callee && IsParamOut(callee->getParam(i)->getType().getQualifier()))
++            {
++                mSink << "&";
++            }
++            // ESSL permits scalar operands in these vector overloads.
++            const bool splat = splatType && args[i]->getAsTyped()->getType().isScalar();
++            if (splat)
++            {
++                emitType(*splatType);
++                mSink << "(";
++            }
++            args[i]->traverse(this);
++            if (splat)
++            {
++                mSink << ")";
++            }
++        }
++    };
+@@ -2033,18 +2036 @@
+-
+-        bool emitComma = false;
+-        for (size_t i = 0; i < args.size(); i++)
+-        {
+-            if (emitComma)
+-            {
+-                mSink << ", ";
+-            }
+-            emitComma = true;
+-
+-            // If outparams, must pass a pointer.
+-            if (callee && IsParamOut(callee->getParam(i)->getType().getQualifier()))
+-            {
+-                mSink << "&";
+-            }
+-            args[i]->traverse(this);
+-        }
+-
++        emitArguments();
+@@ -2053,2 +2038,0 @@
+-
+-    const TType &retType = aggregateNode->getType();
+@@ -2144,4 +2128,13 @@
+-                    // If the operator is not symbolic then it is a builtin that uses function call
+-                    // syntax: builtin(arg1, arg2, ..);
+-                    mSink << (opInfo.opName == nullptr ? "TODO_Operator" : opInfo.opName);
+-                    emitArgList();
++                    const bool needsSplat = retType.isVector() &&
++                        (op == EOpClamp || op == EOpMin || op == EOpMax || op == EOpStep ||
++                         op == EOpSmoothstep || op == EOpMod);
++                    if (!opInfo.wgslWrapperFn)
++                    {
++                        mSink << (opInfo.opName == nullptr ? "TODO_Operator" : opInfo.opName)
++                              << "(";
++                    }
++                    emitArguments(needsSplat ? &retType : nullptr);
++                    if (!opInfo.wgslWrapperFn)
++                    {
++                        mSink << ")";
++                    }
+@@ -2757,0 +2751,7 @@
++        const TVariable *depthRange =
++            static_cast<const TVariable *>(
++                getSymbolTable().findBuiltIn(ImmutableString("gl_DepthRange"), 0));
++        if (!ReplaceVariableWithTyped(this, root, depthRange, driverUniforms.getDepthRange()))
++        {
++            return false;
++        }
+diff --git a/src/compiler/translator/wgsl/WGSLProgramPrelude.cpp b/src/compiler/translator/wgsl/WGSLProgramPrelude.cpp
+--- a/src/compiler/translator/wgsl/WGSLProgramPrelude.cpp
++++ b/src/compiler/translator/wgsl/WGSLProgramPrelude.cpp
+@@ -12,0 +13 @@
++#include "compiler/translator/Symbol.h"
+@@ -61,0 +63,46 @@
++// Emit early exits for unequal aggregate members. Array lengths can be large, so
++// keep their comparison a loop instead of unrolling it in the generated code.
++void EmitComparison(TInfoSinkBase &sink, const TType &type, const TString &member, size_t depth)
++{
++    TString indent(2 * (depth + 1), ' ');
++    if (type.isArray())
++    {
++        TStringStream index;
++        index << "i" << depth;
++        const TString variable = index.str();
++        sink << indent << "for (var " << variable << " = 0u; " << variable << " < "
++             << type.getOutermostArraySize() << "u; " << variable << "++) {\n";
++        TType element(type);
++        element.toArrayElementType();
++        EmitComparison(sink, element, member + "[" + variable + "]", depth + 1);
++        sink << indent << "}\n";
++    }
++    else if (type.getStruct())
++    {
++        for (const TField *field : type.getStruct()->fields())
++        {
++            TStringStream name;
++            WriteNameOf(name, *field, kUserVariableNamePrefix);
++            EmitComparison(sink, *field->type(), member + "." + name.str(), depth);
++        }
++    }
++    else if (type.isMatrix())
++    {
++        const TType column(EbtFloat, EbpHigh, EvqTemporary, type.getRows());
++        for (unsigned int i = 0; i < type.getCols(); ++i)
++        {
++            TStringStream access;
++            access << member << "[" << i << "]";
++            EmitComparison(sink, column, access.str(), depth);
++        }
++    }
++    else if (type.isVector())
++    {
++        sink << indent << "if (any(a" << member << " != b" << member << ")) { return false; }\n";
++    }
++    else
++    {
++        sink << indent << "if (a" << member << " != b" << member << ") { return false; }\n";
++    }
++}
++
+@@ -146,0 +194,37 @@
++    }
++}
++
++WGSLWrapperFunction WGSLProgramPrelude::aggregateComparison(const TType &type, bool equal)
++{
++    const FuncId id = InsertIntoMapWithUniqueId(mUniqueFuncId, mAggregateComparisons, type);
++    return {BuildConcatenatedImmutableString(equal ? "" : "!", ConcatId("equal", id), "("),
++            kEndParanthesis};
++}
++
++WGSLWrapperFunction WGSLProgramPrelude::matrixComponentMultiply(const TType &type)
++{
++    const FuncId id = InsertIntoMapWithUniqueId(mUniqueFuncId, mMatrixComponentProducts, type);
++    return {BuildConcatenatedImmutableString(ConcatId("matrixCompMult", id), "("),
++            kEndParanthesis};
++}
++
++WGSLWrapperFunction WGSLProgramPrelude::floatModulo(const TType &type)
++{
++    const FuncId id = InsertIntoMapWithUniqueId(mUniqueFuncId, mFloatModuloTypes, type);
++    return {BuildConcatenatedImmutableString(ConcatId("floatMod", id), "("), kEndParanthesis};
++}
++
++WGSLWrapperFunction WGSLProgramPrelude::scalarGeometric(TOperator op)
++{
++    mScalarGeometric.insert(op);
++    switch (op)
++    {
++        case EOpFaceforward:
++            return {ImmutableString("ANGLE_scalarFaceForward("), kEndParanthesis};
++        case EOpReflect:
++            return {ImmutableString("ANGLE_scalarReflect("), kEndParanthesis};
++        case EOpRefract:
++            return {ImmutableString("ANGLE_scalarRefract("), kEndParanthesis};
++        default:
++            UNREACHABLE();
++            return {ImmutableString(""), kEndParanthesis};
+@@ -243,0 +328,53 @@
++
++    for (const auto &[type, id] : mAggregateComparisons)
++    {
++        TStringStream typeName;
++        WriteWgslType(typeName, type, {});
++        sink << "fn " << ConcatId("equal", id) << "(a : " << typeName.str()
++             << ", b : " << typeName.str() << ") -> bool {\n";
++        EmitComparison(sink, type, TString(), 0);
++        sink << "  return true;\n}\n";
++    }
++    for (const auto &[type, id] : mMatrixComponentProducts)
++    {
++        TStringStream typeName;
++        WriteWgslType(typeName, type, {});
++        sink << "fn " << ConcatId("matrixCompMult", id) << "(a : " << typeName.str()
++             << ", b : " << typeName.str() << ") -> " << typeName.str() << " {\n  return "
++             << typeName.str() << "(";
++        for (unsigned int i = 0; i < type.getCols(); ++i)
++        {
++            if (i != 0)
++            {
++                sink << ", ";
++            }
++            sink << "a[" << i << "] * b[" << i << "]";
++        }
++        sink << ");\n}\n";
++    }
++    for (const auto &[type, id] : mFloatModuloTypes)
++    {
++        TStringStream typeName;
++        WriteWgslType(typeName, type, {});
++        sink << "fn " << ConcatId("floatMod", id) << "(x : " << typeName.str()
++             << ", y : " << typeName.str() << ") -> " << typeName.str()
++             << " { return x - y * floor(x / y); }\n";
++    }
++    if (mScalarGeometric.count(EOpFaceforward))
++    {
++        sink << "fn ANGLE_scalarFaceForward(n : f32, i : f32, nref : f32) -> f32 {\n"
++             << "  return select(-n, n, nref * i < 0.0f);\n}\n";
++    }
++    if (mScalarGeometric.count(EOpReflect))
++    {
++        sink << "fn ANGLE_scalarReflect(i : f32, n : f32) -> f32 {\n"
++             << "  return i - 2.0f * (n * i) * n;\n}\n";
++    }
++    if (mScalarGeometric.count(EOpRefract))
++    {
++        sink << "fn ANGLE_scalarRefract(i : f32, n : f32, eta : f32) -> f32 {\n"
++             << "  let ni = n * i;\n"
++             << "  let k = 1.0f - eta * eta * (1.0f - ni * ni);\n"
++             << "  if (k < 0.0f) { return 0.0f; }\n"
++             << "  return eta * i - (eta * ni + sqrt(k)) * n;\n}\n";
++    }
+diff --git a/src/compiler/translator/wgsl/WGSLProgramPrelude.h b/src/compiler/translator/wgsl/WGSLProgramPrelude.h
+--- a/src/compiler/translator/wgsl/WGSLProgramPrelude.h
++++ b/src/compiler/translator/wgsl/WGSLProgramPrelude.h
+@@ -32,0 +33,5 @@
++    WGSLWrapperFunction aggregateComparison(const TType &type, bool equal);
++    WGSLWrapperFunction matrixComponentMultiply(const TType &type);
++    WGSLWrapperFunction scalarGeometric(TOperator op);
++    WGSLWrapperFunction floatModulo(const TType &type);
++
+@@ -56,0 +62,4 @@
++    TMap<TType, FuncId> mAggregateComparisons;
++    TMap<TType, FuncId> mMatrixComponentProducts;
++    TMap<TType, FuncId> mFloatModuloTypes;
++    TSet<TOperator> mScalarGeometric;

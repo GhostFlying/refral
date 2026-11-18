@@ -442,11 +442,11 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
         continue;
       }
       const version = textureVersion(reader);
-      if (kind === 1 || kind === 8) {
+      if (kind === 1 || kind === 8 || kind === 9) {
         const width = reader.u32();
         const height = reader.u32();
         services.resources.apply({ kind: 'define-texture', version, width, height, data: pixels(),
-          ...(kind === 8 && { texelFormat: 'rgba32float' as const }) });
+          texelFormat: kind === 8 ? 'rgba32float' : kind === 9 ? 'rgba8unorm-srgb' : undefined });
       } else if (kind === 2) {
         const previous = textureVersion(reader);
         const x = reader.u32();
@@ -815,6 +815,10 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       return { flipY: values[0] === 1, premultiplyAlpha: values[1] === 1, colorSpaceConversion: values[2]! };
     },
     invoke(operation: string, args: unknown[]): unknown {
+      if (operation === 'supportsSrgbTextures') {
+        const version = exports.rf_srgb_texture_protocol_version;
+        return typeof version === 'function' && version() === 1;
+      }
       if (operation === 'supportsFloatTextures') {
         const version = exports.rf_float_texture_protocol_version;
         return typeof version === 'function' && version() === 1;

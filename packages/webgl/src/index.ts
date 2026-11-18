@@ -1,6 +1,6 @@
 import { createContextInterface, webglInterfaces } from './interfaces.js';
 import { createVertexArrayExtension } from './vertex-arrays.js';
-import { GL, VERTEX_ARRAY_BINDING_OES, allocateContextId, ExecutionResources } from "@refral/core-api";
+import { GL, SRGB, VERTEX_ARRAY_BINDING_OES, allocateContextId, ExecutionResources } from "@refral/core-api";
 import type { BufferHandle, BufferSnapshot, CoreKind, DrawingCore } from "@refral/core-api";
 import { createJsDrawingCore } from "@refral/core-js";
 import { prepareRustDrawingCores, prepareRustModule } from "@refral/core-wasm";
@@ -93,6 +93,8 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
   const resourceFacade = createResourceFacade(core,
     (source, width, height, plan) => host.captureDomCanvas(source, width, height, plan),
     realm.TypeError, interfaces);
+  const supportsSrgb = core.invoke('supportsSrgbTextures', []) === true;
+  let srgbExtension: object | undefined;
   const supportsFloat = core.invoke('supportsFloatTextures', []) === true;
   let floatExtension: object | undefined;
   const supportsArrays = core.invoke('supportsVertexArrayObjects', []) === true;
@@ -104,7 +106,17 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
     return releasing;
   }
   return { core, host, interfaces, bufferFacade, programFacade, resourceFacade, releaseGPU,
-    supportsArrays, supportsFloat,
+    supportsArrays, supportsFloat, supportsSrgb,
+    enableSrgbTextures() {
+      if (!supportsSrgb) return null;
+      if (!srgbExtension) {
+        core.invoke('enableSrgbTextures', []);
+        srgbExtension = new realm.Object();
+        for (const [key, value] of Object.entries(SRGB))
+          Object.defineProperty(srgbExtension, key, { value, enumerable: true });
+      }
+      return srgbExtension;
+    },
     enableFloatTextures() {
       if (!supportsFloat) return null;
       if (!floatExtension) {
@@ -188,11 +200,12 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: We
     }
     if (property === 'getContextAttributes') return core.isContextLost() ? null : { ...attributes };
     if (property === 'getSupportedExtensions') return core.isContextLost() ? null :
-      [...(current.supportsFloat ? ['OES_texture_float'] : []), ...(current.supportsArrays ? ['OES_vertex_array_object'] : []), 'WEBGL_lose_context'];
+      [...(current.supportsSrgb ? ['EXT_sRGB'] : []), ...(current.supportsFloat ? ['OES_texture_float'] : []), ...(current.supportsArrays ? ['OES_vertex_array_object'] : []), 'WEBGL_lose_context'];
     if (property === 'getExtension') {
       requireArguments(property, args, 1);
       const name = `${args[0]}`.toLowerCase();
       if (core.isContextLost()) return null;
+      if (name === 'ext_srgb') return current.enableSrgbTextures();
       if (name === 'oes_texture_float') return current.enableFloatTextures();
       if (name === 'oes_vertex_array_object') return current.enableVertexArrays();
       return name === 'webgl_lose_context' ? lost.extension : null;

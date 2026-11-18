@@ -98,7 +98,7 @@ struct Renderbuffer {
 }
 
 fn is_color_format(format: u32) -> bool {
-    matches!(format, RGBA4 | RGB5_A1 | RGB565)
+    matches!(format, RGBA4 | RGB5_A1 | RGB565 | SRGB8_ALPHA8)
 }
 
 impl Renderbuffer {
@@ -403,7 +403,7 @@ impl ContextCore {
             if storage.width == 0 || storage.height == 0 {
                 return INCOMPLETE_ATTACHMENT;
             }
-            if storage.ty == FLOAT || (storage.format != RGBA && storage.format != RGB) {
+            if storage.ty == FLOAT || !matches!(storage.format, RGBA | RGB | SRGB_ALPHA) {
                 return INCOMPLETE_ATTACHMENT;
             }
             Some((storage.width, storage.height))
@@ -696,7 +696,7 @@ impl ContextCore {
             return 0;
         };
         match color.format {
-            RGBA => 8,
+            RGBA | SRGB_ALPHA => 8,
             RGB if parameter != 0x0d55 => 8,
             _ => 0,
         }
@@ -849,8 +849,9 @@ impl ContextCore {
                     return Some(Reply::Null);
                 }
                 let format = arg(1).number() as u32;
-                if !is_color_format(format)
-                    && !matches!(format, DEPTH_COMPONENT16 | STENCIL_INDEX8 | DEPTH_STENCIL)
+                if (format == SRGB8_ALPHA8 && !self.render.textures.srgb_enabled)
+                    || !is_color_format(format)
+                        && !matches!(format, DEPTH_COMPONENT16 | STENCIL_INDEX8 | DEPTH_STENCIL)
                 {
                     self.record_error(INVALID_ENUM);
                     return Some(Reply::Null);
@@ -1146,6 +1147,31 @@ impl ContextCore {
             self.record_error(INVALID_ENUM);
             return Reply::Null;
         };
+        if parameter == COLOR_ENCODING && self.render.textures.srgb_enabled {
+            let format = if object.kind == ObjectKind::Texture {
+                slot_index(
+                    &self.render.textures.slots,
+                    object,
+                    ObjectKind::Texture,
+                    self.context_id,
+                )
+                .and_then(|index| {
+                    self.render.textures.slots[index].value.as_ref()?.images[framebuffer.color_face]
+                        .storage
+                })
+                .map(|storage| storage.format)
+            } else {
+                self.renderbuffer_value(object)
+                    .map(|storage| storage.format)
+            };
+            return Reply::Number(
+                if matches!(format, Some(SRGB | SRGB_ALPHA | SRGB8_ALPHA8)) {
+                    SRGB
+                } else {
+                    0x2601
+                } as f64,
+            );
+        }
         if parameter == 0x8cd1 {
             return Reply::Handle(object);
         }

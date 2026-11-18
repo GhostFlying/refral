@@ -9,6 +9,11 @@ use serde_json::{json, Value};
 const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
 
 #[no_mangle]
+pub extern "C" fn rf_srgb_texture_protocol_version() -> u32 {
+    1
+}
+
+#[no_mangle]
 pub extern "C" fn rf_float_texture_protocol_version() -> u32 {
     1
 }

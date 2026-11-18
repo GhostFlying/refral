@@ -1,5 +1,5 @@
 use crate::render::u32_value;
-use refral_core::{ResourceOperation, TextureParameters, TextureVersion};
+use refral_core::{ResourceOperation, TexelFormat, TextureParameters, TextureVersion};
 
 pub(super) const VERSION_BYTES: usize = 36;
 // One generation command can replace six faces at every nonzero level.
@@ -104,9 +104,16 @@ pub(super) fn encode(output: &mut Vec<u8>, operations: &[ResourceOperation]) {
                 width,
                 height,
                 data,
-                float_texels,
+                texel_format,
             } => {
-                u32_value(output, if *float_texels { 8 } else { 1 });
+                u32_value(
+                    output,
+                    match texel_format {
+                        TexelFormat::Unorm8 => 1,
+                        TexelFormat::Float32 => 8,
+                        TexelFormat::Srgb8 => 9,
+                    },
+                );
                 version(output, *next);
                 u32_value(output, *width);
                 u32_value(output, *height);

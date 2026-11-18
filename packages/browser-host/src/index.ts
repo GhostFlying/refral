@@ -277,7 +277,8 @@ export class BrowserHost implements SemanticHost {
   private createTexture(width: number, height: number, format: GPUTextureFormat, layers = 1, mipLevelCount = 1): GPUTexture {
     const texture = this.device.createTexture({
       size: { width: Math.max(1, width), height: Math.max(1, height), depthOrArrayLayers: layers }, format, mipLevelCount,
-      usage: format === "rgba8unorm" || format === "rgba32float" ? TEXTURE_USAGE : GPUTextureUsage.RENDER_ATTACHMENT,
+      viewFormats: format === 'rgba8unorm-srgb' ? ['rgba8unorm'] : [],
+      usage: format === "rgba8unorm" || format === 'rgba8unorm-srgb' || format === "rgba32float" ? TEXTURE_USAGE : GPUTextureUsage.RENDER_ATTACHMENT,
     });
     this.textures.add(texture);
     this.stats.allocatedTextureBytes += textureAllocationBytes(texture);
@@ -796,7 +797,7 @@ export class BrowserHost implements SemanticHost {
       return { arrayStride: components * 4, stepMode: points ? "instance" : "vertex",
         attributes: [{ shaderLocation: attribute.location, offset: 0, format }] };
     });
-    const key = JSON.stringify([mode, topology, stripIndexFormat, layouts, target.depth?.format, target.opaque, state.depthTest, state.depthMask,
+    const key = JSON.stringify([mode, topology, stripIndexFormat, layouts, target.color.format, target.depth?.format, target.opaque, state.depthTest, state.depthMask,
       state.depthFunc, depthBias, depthBiasSlopeScale, state.colorMask, state.blend, state.blendSrcRGB, state.blendDstRGB,
       state.blendSrcAlpha, state.blendDstAlpha, state.blendEquationRGB, state.blendEquationAlpha,
       state.cull, state.cullFace, state.frontFace, stencil]);
@@ -811,7 +812,7 @@ export class BrowserHost implements SemanticHost {
       pipeline = this.device.createRenderPipeline({ layout: resources.layout,
         vertex: { module: resources.vertex, entryPoint: points ? "refralPointMain" : program.vertexEntryPoint, buffers: layouts },
         fragment: { module: resources.fragment, entryPoint: points ? "refralPointMain" : program.fragmentEntryPoint,
-          targets: [{ format: "rgba8unorm",
+          targets: [{ format: target.color.format,
             writeMask: colorWriteMask(state.colorMask) & (target.opaque ? 7 : 15), blend }] },
         primitive: { topology, stripIndexFormat,
           frontFace: points || state.frontFace !== GL.CCW ? "ccw" : "cw",
@@ -943,7 +944,7 @@ export class BrowserHost implements SemanticHost {
     const stencilWriteMask = (mask & GL.STENCIL_BUFFER_BIT) && targetHasStencil(target) ? state.stencilFront.writeMask & 0xff : 0;
     if (!writesColor && !writesDepth && !stencilWriteMask) return;
     const writeMask = writesColor ? colorWriteMask(state.colorMask) & (target.opaque ? 7 : 15) : 0;
-    const key = `${target.depth?.format}:${writesDepth}:${writeMask}:${stencilWriteMask}`;
+    const key = `${target.color.format}:${target.depth?.format}:${writesDepth}:${writeMask}:${stencilWriteMask}`;
     let pipeline = this.clearPipelines.get(key);
     if (!pipeline) {
       const code = `struct Clear { color: vec4f, depth: f32 };
@@ -955,7 +956,7 @@ export class BrowserHost implements SemanticHost {
         @fragment fn fs() -> @location(0) vec4f { return value.color; }`;
       const module = this.device.createShaderModule({ code });
       pipeline = this.device.createRenderPipeline({ layout: "auto", vertex: { module, entryPoint: "vs" },
-        fragment: { module, entryPoint: "fs", targets: [{ format: "rgba8unorm", writeMask }] },
+        fragment: { module, entryPoint: "fs", targets: [{ format: target.color.format, writeMask }] },
         primitive: { topology: "triangle-list" },
         depthStencil: target.depth ? { format: target.depth.format,
           ...(stencilWriteMask ? { stencilFront: clearStencilFace, stencilBack: clearStencilFace, stencilWriteMask } : {}),

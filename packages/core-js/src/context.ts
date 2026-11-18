@@ -1,5 +1,5 @@
 import {
-  CUBE_FACES, GL, VERTEX_ARRAY_BINDING_OES, createRasterState, snapshotRaster, componentCount, vertexComponentBytes, isColorRenderbufferFormat,
+  CUBE_FACES, GL, SRGB, isSrgbTextureFormat, VERTEX_ARRAY_BINDING_OES, createRasterState, snapshotRaster, componentCount, vertexComponentBytes, isColorRenderbufferFormat,
   isStencilRenderbufferFormat, stencilReference, isDrawMode,
 } from "@refral/core-api";
 import type {
@@ -84,6 +84,9 @@ export class SemanticContext {
   private currentArray: VertexArrayObject;
   private arraysEnabled = false;
   private floatTextures = false;
+  private srgbTextures = false;
+  supportsSrgbTextures(): boolean { return true; }
+  enableSrgbTextures(): void { this.srgbTextures = true; }
   supportsFloatTextures(): boolean { return true; }
   enableFloatTextures(): void { this.floatTextures = true; }
   private get elementBuffer() { return this.currentArray.element; }
@@ -845,6 +848,8 @@ export class SemanticContext {
     catch { this.error(GL.OUT_OF_MEMORY); return null; }
   }
   private pixelData(width: number, height: number, format: number, type: number, source: unknown): Uint8Array | null {
+    if (format === SRGB.SRGB_EXT) format = GL.RGB;
+    else if (format === SRGB.SRGB_ALPHA_EXT) format = GL.RGBA;
     const float = type === GL.FLOAT;
     const packed = !float && type !== GL.UNSIGNED_BYTE;
     const components = format === GL.RGBA ? 4 : format === GL.RGB ? 3 : format === GL.LUMINANCE_ALPHA ? 2 : 1;
@@ -982,12 +987,13 @@ export class SemanticContext {
     return true;
   }
   private validateTextureFormat(format: number, type: number): boolean {
-    if (![GL.RGBA, GL.RGB, GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA].includes(format as 0x1908) ||
+    const srgb = this.srgbTextures && isSrgbTextureFormat(format);
+    if ((!srgb && ![GL.RGBA, GL.RGB, GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA].includes(format as 0x1908)) ||
         !(type === GL.FLOAT && this.floatTextures) && ![GL.UNSIGNED_BYTE, GL.UNSIGNED_SHORT_5_6_5, GL.UNSIGNED_SHORT_4_4_4_4,
           GL.UNSIGNED_SHORT_5_5_5_1].includes(type as 0x1401)) {
       this.error(GL.INVALID_ENUM); return false;
     }
-    if (type !== GL.FLOAT && type !== GL.UNSIGNED_BYTE && format !== (type === GL.UNSIGNED_SHORT_5_6_5 ? GL.RGB : GL.RGBA)) {
+    if (srgb && type !== GL.UNSIGNED_BYTE || (type !== GL.FLOAT && type !== GL.UNSIGNED_BYTE && format !== (type === GL.UNSIGNED_SHORT_5_6_5 ? GL.RGB : GL.RGBA))) {
       this.error(GL.INVALID_OPERATION); return false;
     }
     return true;
@@ -1046,6 +1052,7 @@ export class SemanticContext {
   copyTexImage2D(target: number, level: number, format: number, x: number, y: number,
     width: number, height: number, border: number): void {
     const texture = this.validateTextureImage(target, level, format, width, height, border, format, GL.UNSIGNED_BYTE);
+    if (texture && isSrgbTextureFormat(format)) return this.error(GL.INVALID_ENUM);
     if (texture) this.copyFramebufferImage(texture, target, level, format, null, 0, 0, x, y, width, height);
   }
 
@@ -1063,7 +1070,8 @@ export class SemanticContext {
     const source = this.target();
     if (!source) return;
     const sourceHasAlpha = source.isDefault ? this.contextAttributes.alpha : !source.colorOpaque;
-    if (parent?.type === GL.FLOAT || (!sourceHasAlpha && format !== GL.RGB && format !== GL.LUMINANCE)
+    if (isSrgbTextureFormat(format) || source.color?.texelFormat === "rgba8unorm-srgb" ||
+        parent?.type === GL.FLOAT || (!sourceHasAlpha && format !== GL.RGB && format !== GL.LUMINANCE)
       || (this.framebuffer?.color === texture && this.framebuffer.colorTarget === target && level === 0)) {
       return this.error(GL.INVALID_OPERATION);
     }
@@ -1113,12 +1121,13 @@ export class SemanticContext {
     const previous = image.storage;
     image.generation++; image.version++; image.format = format; image.type = type;
     texture.setImage(target!, level!, image);
+    const texelFormat = type === GL.FLOAT ? "rgba32float" : isSrgbTextureFormat(format) ? "rgba8unorm-srgb" : undefined;
     if (this.resources) {
       const version = this.textureVersion(texture, target!, level!);
-      this.resources.apply({ kind: "define-texture", version, width, height, data, ...(type === GL.FLOAT ? { texelFormat: "rgba32float" as const } : {}) });
+      this.resources.apply({ kind: "define-texture", version, width, height, data, texelFormat });
       image.storage = this.resources.texture(version);
     } else {
-      image.storage = { width, height, generation: image.generation, data, ...(type === GL.FLOAT ? { texelFormat: "rgba32float" as const } : {}) };
+      image.storage = { width, height, generation: image.generation, data, texelFormat };
       this.host.replaceStorage(previous, image.storage);
     }
     this.schedule();
@@ -1162,7 +1171,7 @@ export class SemanticContext {
     if (texture === undefined) return;
     if (texture === null) return this.error(GL.INVALID_OPERATION);
     const base = textureBase(texture);
-    if (!base?.storage || !isPowerOfTwo(base.storage.width) || !isPowerOfTwo(base.storage.height)) {
+    if (!base?.storage || isSrgbTextureFormat(base.format) || !isPowerOfTwo(base.storage.width) || !isPowerOfTwo(base.storage.height)) {
       return this.error(GL.INVALID_OPERATION);
     }
     const { width, height } = base.storage;
@@ -1287,7 +1296,7 @@ export class SemanticContext {
     if (!this.framebuffer.color && attachments.length === 0) return GL.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
     if (this.framebuffer.color && (!color?.width || !color.height || colorImage?.type === GL.FLOAT ||
         (colorRenderbuffer ? !isColorRenderbufferFormat(colorRenderbuffer.format)
-          : colorImage?.format !== GL.RGB && colorImage?.format !== GL.RGBA) ||
+          : colorImage?.format !== GL.RGB && colorImage?.format !== GL.RGBA && colorImage?.format !== SRGB.SRGB_ALPHA_EXT) ||
         (colorTexture?.target === GL.TEXTURE_CUBE_MAP && !textureBase(colorTexture)))) {
       return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
     }
@@ -1312,6 +1321,11 @@ export class SemanticContext {
     if (parameter === GL.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE) return object === null ? GL.NONE :
       object instanceof TextureObject ? GL.TEXTURE : GL.RENDERBUFFER;
     if (!object) { this.error(GL.INVALID_ENUM); return null; }
+    if (parameter === SRGB.FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING_EXT && this.srgbTextures) {
+      const format = object instanceof TextureObject ? this.framebuffer.colorImage?.format : object.format;
+      return format !== undefined && (isSrgbTextureFormat(format) || format === SRGB.SRGB8_ALPHA8_EXT)
+        ? SRGB.SRGB_EXT : GL.LINEAR;
+    }
     if (parameter === GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME) return object;
     if (object instanceof TextureObject && parameter === GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL) return 0;
     if (object instanceof TextureObject && parameter === GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE) {
@@ -1345,12 +1359,13 @@ export class SemanticContext {
     if (!this.renderbuffer) return this.error(GL.INVALID_OPERATION);
     if (width < 0 || height < 0 || !Number.isInteger(width) || !Number.isInteger(height) || width > this.host.limits.maxTextureDimension2D ||
         height > this.host.limits.maxTextureDimension2D) return this.error(GL.INVALID_VALUE);
-    if (!isColorRenderbufferFormat(format) && format !== GL.DEPTH_COMPONENT16
+    if ((format === SRGB.SRGB8_ALPHA8_EXT && !this.srgbTextures) || !isColorRenderbufferFormat(format) && format !== GL.DEPTH_COMPONENT16
       && format !== GL.STENCIL_INDEX8 && format !== GL.DEPTH_STENCIL) return this.error(GL.INVALID_ENUM);
     this.retireRenderbufferStorage(this.renderbuffer);
     Object.assign(this.renderbuffer, { width, height, format, generation: this.renderbuffer.generation + 1 });
     if (!this.resources && isColorRenderbufferFormat(format)) {
-      this.renderbuffer.colorStorage = { width, height, generation: this.renderbuffer.generation, opaque: format === GL.RGB565 };
+      this.renderbuffer.colorStorage = { width, height, generation: this.renderbuffer.generation, opaque: format === GL.RGB565,
+        texelFormat: format === SRGB.SRGB8_ALPHA8_EXT ? "rgba8unorm-srgb" : undefined };
     }
     this.schedule();
   }
@@ -1541,10 +1556,10 @@ export class SemanticContext {
     const colorRenderbuffer = this.framebuffer?.colorRenderbuffer;
     const colorImage = this.framebuffer?.colorImage;
     const storage = colorRenderbuffer && isColorRenderbufferFormat(colorRenderbuffer.format) ? colorRenderbuffer
-      : colorImage?.format === GL.RGBA || colorImage?.format === GL.RGB ? colorImage.storage : null;
+      : colorImage?.format === GL.RGBA || colorImage?.format === GL.RGB || colorImage?.format === SRGB.SRGB_ALPHA_EXT ? colorImage.storage : null;
     const colorBits = this.framebuffer ? (storage?.width && storage.height ? 8 : 0) : 8;
     const alphaBits = this.framebuffer ? ((colorRenderbuffer ? colorRenderbuffer.format !== GL.RGB565
-      : colorImage?.format === GL.RGBA) ? colorBits : 0)
+      : colorImage?.format === GL.RGBA || colorImage?.format === SRGB.SRGB_ALPHA_EXT) ? colorBits : 0)
       : (this.contextAttributes.alpha ? 8 : 0);
     const depth = this.framebuffer?.depth ?? this.framebuffer?.depthStencil;
     const stencil = this.framebuffer?.stencil ?? this.framebuffer?.depthStencil;

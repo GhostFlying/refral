@@ -1,3 +1,4 @@
+import { checkSrgbTextureState } from '../../../tests/core/srgb-textures';
 import { checkFloatTextureStorage } from '../../../tests/core/float-textures';
 import { checkVertexArrayOwnership } from '../../../tests/core/vertex-arrays';
 import { readFile } from 'node:fs/promises';
@@ -236,6 +237,11 @@ function scene(core: DrawingCore) {
   return { vertex, fragment, program, location, buffer };
 }
 describe('actual Rust drawing Wasm', () => {
+  it('gates sRGB encodings and preserves upload and attachment state', () => {
+    const { core, resources } = setup();
+    try { checkSrgbTextureState(core, resources); } finally { core.dispose(); }
+  });
+
   it('retains full-precision float texture updates through the resource transport', () => {
     const { core, resources } = setup();
     try { checkFloatTextureStorage(core, resources); } finally { core.dispose(); }

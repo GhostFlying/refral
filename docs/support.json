@@ -2389,6 +2389,48 @@
       }
     },
     {
+      "id": "srgb-attachment-encoding",
+      "api": "EXT_sRGB, sRGB texture formats, SRGB8_ALPHA8_EXT renderbuffers and FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING_EXT",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Typed, image and video sRGB uploads, linearized texture sampling, linear blending and sRGB framebuffer encoding for textures and renderbuffers. Reads preserve stored bytes and alpha stays linear.",
+          "tests": [
+            "tests/core/srgb-textures.ts",
+            "tests/chrome/srgb.spec.ts",
+            "sdk/tests/conformance/extensions/ext-sRGB.html",
+            "sdk/tests/conformance/textures/misc/texture-srgb-upload.html"
+          ],
+          "evidence": [
+            "docs/tasks/091-srgb-texture-attachments.md",
+            "artifacts/conformance/campaign/srgb-on-main/js/results.json"
+          ],
+          "unsupportedBehavior": "sRGB textures accept UNSIGNED_BYTE. RGB-only sRGB texture attachments are incomplete. generateMipmap on sRGB textures and copies involving sRGB framebuffer components produce GL errors. DOM source color-space selection is independent."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Typed, image and video sRGB uploads, linearized texture sampling, linear blending and sRGB framebuffer encoding for textures and renderbuffers. Reads preserve stored bytes and alpha stays linear.",
+          "tests": [
+            "tests/core/srgb-textures.ts",
+            "tests/chrome/srgb.spec.ts",
+            "sdk/tests/conformance/extensions/ext-sRGB.html",
+            "sdk/tests/conformance/textures/misc/texture-srgb-upload.html"
+          ],
+          "evidence": [
+            "docs/tasks/091-srgb-texture-attachments.md",
+            "artifacts/conformance/campaign/srgb-on-main/rust/results.json"
+          ],
+          "unsupportedBehavior": "sRGB textures accept UNSIGNED_BYTE. RGB-only sRGB texture attachments are incomplete. generateMipmap on sRGB textures and copies involving sRGB framebuffer components produce GL errors. DOM source color-space selection is independent."
+        }
+      }
+    },
+    {
       "id": "float-texture-sampling",
       "api": "OES_texture_float, FLOAT texImage2D and texSubImage2D, float texture sampler completeness",
       "cores": {

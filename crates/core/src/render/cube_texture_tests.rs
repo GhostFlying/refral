@@ -347,7 +347,7 @@ fn mixed_sampler_types_fail_validation_and_zero_count_draws() {
 }
 
 #[test]
-fn cube_framebuffer_mismatches_and_profile_gaps_preserve_attachments() {
+fn cube_framebuffer_selects_a_face_and_preserves_the_prior_attachment_after_errors() {
     let (mut core, _) = context(&[]);
     let two_d = texture(&mut core, TEXTURE_2D);
     define(&mut core, TEXTURE_2D, 1, 1, RGBA, Argument::Null);
@@ -368,13 +368,11 @@ fn cube_framebuffer_mismatches_and_profile_gaps_preserve_attachments() {
     args[3] = Argument::Handle(cube);
     core.render_invoke("framebufferTexture2D", &args);
     assert_eq!(core.get_error(), INVALID_OPERATION);
-    args[2] = number(FIRST_FACE);
-    assert!(matches!(
-        core.render_invoke("framebufferTexture2D", &args),
-        Reply::Unsupported("cube framebuffer attachments")
-    ));
-    assert_eq!(core.get_error(), NO_ERROR);
     assert_eq!(core.framebuffer_color_texture(), Some(two_d));
+    args[2] = number(FIRST_FACE);
+    core.render_invoke("framebufferTexture2D", &args);
+    assert_eq!(core.get_error(), NO_ERROR);
+    assert_eq!(core.framebuffer_color_texture(), Some(cube));
     args[3] = Argument::Null;
     core.render_invoke("framebufferTexture2D", &args);
     assert_eq!(core.framebuffer_color_texture(), None);

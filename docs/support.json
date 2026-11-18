@@ -1577,6 +1577,56 @@
       }
     },
     {
+      "id": "framebuffer-cube-face",
+      "api": "framebufferTexture2D cube face, checkFramebufferStatus, getFramebufferAttachmentParameter",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Level-zero RGBA CubeMap color attachments, cube completeness, exact face queries, rendering, readback, mipmap generation, and ordered sampling in both cores.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT fbo-cube-face-render-sample",
+            "tests/chrome/cubemap.spec.ts::CubeMap framebuffer-target-boundary",
+            "sdk/tests/conformance/textures/misc/cube-incomplete-fbo.html",
+            "sdk/tests/conformance/textures/misc/mipmap-fbo.html",
+            "sdk/tests/conformance/textures/misc/texture-cube-as-fbo-attachment.html"
+          ],
+          "evidence": [
+            "artifacts/cube-framebuffer/official-final",
+            "artifacts/rtt/fbo-cube-face-render-sample/result.json"
+          ],
+          "limits": [
+            "RGBA color with optional DEPTH_COMPONENT16 is the declared execution profile."
+          ],
+          "unsupportedBehavior": "An incomplete base cube returns FRAMEBUFFER_INCOMPLETE_ATTACHMENT. A texture target mismatch or a rendering feedback loop produces INVALID_OPERATION."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Level-zero RGBA CubeMap color attachments, cube completeness, exact face queries, rendering, readback, mipmap generation, and ordered sampling in both cores.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT fbo-cube-face-render-sample",
+            "tests/chrome/cubemap.spec.ts::CubeMap framebuffer-target-boundary",
+            "sdk/tests/conformance/textures/misc/cube-incomplete-fbo.html",
+            "sdk/tests/conformance/textures/misc/mipmap-fbo.html",
+            "sdk/tests/conformance/textures/misc/texture-cube-as-fbo-attachment.html"
+          ],
+          "evidence": [
+            "artifacts/cube-framebuffer/official-final",
+            "artifacts/rtt/fbo-cube-face-render-sample/result.json"
+          ],
+          "limits": [
+            "RGBA color with optional DEPTH_COMPONENT16 is the declared execution profile."
+          ],
+          "unsupportedBehavior": "An incomplete base cube returns FRAMEBUFFER_INCOMPLETE_ATTACHMENT. A texture target mismatch or a rendering feedback loop produces INVALID_OPERATION."
+        }
+      }
+    },
+    {
       "id": "framebuffer-depth-and-resize",
       "api": "renderbufferStorage DEPTH_COMPONENT16, framebufferRenderbuffer, attachment replacement",
       "cores": {
@@ -2201,7 +2251,7 @@
             }
           ],
           "limits": [
-            "See texture-packed-typed-upload for the verified packed typed CubeMap cases and texture-dom-sources for the supported packed DOM inputs. See texture-mip-levels for explicit levels. See texture-mipmap-generation for mipmap generation. CubeMap framebuffer attachments have a separate acceptance task."
+            "See texture-packed-typed-upload for the verified packed typed CubeMap cases and texture-dom-sources for the supported packed DOM inputs. See texture-mip-levels for explicit levels. See texture-mipmap-generation for mipmap generation. See framebuffer-cube-face for level-zero CubeMap framebuffer attachments."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Valid operations beyond the declared profile report NotSupportedError."
         },
@@ -2234,7 +2284,7 @@
             }
           ],
           "limits": [
-            "See texture-packed-typed-upload for the verified packed typed CubeMap cases and texture-dom-sources for the supported packed DOM inputs. See texture-mip-levels for explicit levels. See texture-mipmap-generation for mipmap generation. CubeMap framebuffer attachments have a separate acceptance task."
+            "See texture-packed-typed-upload for the verified packed typed CubeMap cases and texture-dom-sources for the supported packed DOM inputs. See texture-mip-levels for explicit levels. See texture-mipmap-generation for mipmap generation. See framebuffer-cube-face for level-zero CubeMap framebuffer attachments."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Valid operations beyond the declared profile report NotSupportedError."
         }
@@ -2310,7 +2360,7 @@
             "artifacts/rtt/texture-generate-mip-from-fbo/result.json"
           ],
           "limits": [
-            "Cube framebuffer attachments have a separate acceptance task."
+            "See framebuffer-cube-face for generation following cube face framebuffer writes."
           ],
           "unsupportedBehavior": "Invalid targets produce INVALID_ENUM. Missing, empty, NPOT or cube-incomplete base images produce INVALID_OPERATION."
         },
@@ -2330,7 +2380,7 @@
             "artifacts/rtt/texture-generate-mip-from-fbo/result.json"
           ],
           "limits": [
-            "Cube framebuffer attachments have a separate acceptance task."
+            "See framebuffer-cube-face for generation following cube face framebuffer writes."
           ],
           "unsupportedBehavior": "Invalid targets produce INVALID_ENUM. Missing, empty, NPOT or cube-incomplete base images produce INVALID_OPERATION."
         }

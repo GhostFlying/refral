@@ -50,7 +50,7 @@ The facade preserves the selected typed view's byte offset, byte length and elem
 
 TextureVersion contains a typed texture handle, storageGeneration and contentVersion. The per-context ExecutionResources registry receives ordered define, update, write and retirement operations. Definitions and subimage updates carry owned pixels. Draws carry stable version references and sampler parameters. The registry resolves these references to canonical executor records. Replacement materializes ordered GPU copies before retiring the predecessor. An FBO write advances logical content while retaining its GPU allocation, allowing subsequent sampling to consume rendered contents.
 
-Framebuffer attachments retain logical references independently from GL-visible deletion. A color target is an RGBA texture image with optional DEPTH_COMPONENT16 renderbuffer storage. Completeness, dimensions, feedback checks and attachment queries belong to each core. The host maps depth identity using the complete renderbuffer handle and its storage generation. Queued GPU records retain their resources until submitted work completes.
+Framebuffer attachments retain logical references independently from GL-visible deletion. A color target is a level-zero RGBA 2D image or CubeMap face with optional DEPTH_COMPONENT16 renderbuffer storage. An attached CubeMap must have six matching base faces. The selected face supplies the dimensions and image version for each write and readback. Completeness, feedback checks and attachment queries belong to each core. The host maps depth identity using the complete renderbuffer handle and its storage generation. Queued GPU records retain their resources until submitted work completes.
 
 ## Execution and ownership
 

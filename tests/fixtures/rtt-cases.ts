@@ -7,7 +7,7 @@ export const textureRttCases = ['texture-format-rgba', 'texture-format-rgb', 'te
   'texture-packed-565', 'texture-packed-4444', 'texture-packed-5551', 'texture-packed-cube',
   'texture-manual-mip-2d', 'texture-manual-mip-cube', 'texture-generate-mip-from-fbo',
   'texture-updates-reallocation', 'texture-npot-completeness', 'texture-sampler-units', 'texture-invalid-state'] as const;
-export const framebufferRttCases = ['fbo-depth-render-sample', 'fbo-attachment-resize',
+export const framebufferRttCases = ['fbo-depth-render-sample', 'fbo-cube-face-render-sample', 'fbo-attachment-resize',
   'fbo-deletion-bound-unbound', 'fbo-feedback-loop', 'raster-masks-depth-blend-cull',
   'resources-multiple-contexts', 'canvas-resize-present'] as const;
 export const rttCaseNames = [...uniformRttCases, ...textureRttCases, ...framebufferRttCases] as const;
@@ -509,6 +509,57 @@ gl_FragColor=vec4(u_i[0].x==16777217?1.:0.,u_i[1].w==(-2147483647-1)&&u_b[1].z&&
       check('color-only target remains complete', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_COMPLETE);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.disable(gl.DEPTH_TEST);
       gl.viewport(0, 0, 64, 64); sample(t.texture); full([0, 255, 0, 255]);
+      break;
+    }
+    case 'fbo-cube-face-render-sample': {
+      const cube = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_CUBE_MAP, cube);
+      const first = gl.TEXTURE_CUBE_MAP_POSITIVE_X;
+      for (let face = 0; face < 5; face++) {
+        gl.texImage2D(first + face, 0, gl.RGBA, 4, 4, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      }
+      const fbo = gl.createFramebuffer()!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      const attach = (face: number) => {
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, face, cube, 0);
+        check(`face ${face} attachment enum`, gl.getFramebufferAttachmentParameter(gl.FRAMEBUFFER,
+          gl.COLOR_ATTACHMENT0, gl.FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE), face);
+      };
+      attach(first);
+      check('missing base face makes the attachment incomplete', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+      gl.texImage2D(first + 5, 0, gl.RGBA, 4, 4, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      check('mip-incomplete cube face is framebuffer complete', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_COMPLETE);
+      gl.clearColor(1, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+      attach(first + 1);
+      gl.clearColor(0, 1, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+      attach(first);
+      const texel = new Uint8Array(4);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, texel);
+      check('changing the other face preserves this framebuffer image', Array.from(texel), [255, 0, 0, 255]);
+      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      const p = program('precision mediump float; uniform samplerCube u_cube; uniform float u_face; void main(){gl_FragColor=textureCube(u_cube,vec3(u_face,0.0,0.0));}');
+      gl.uniform1i(gl.getUniformLocation(p, 'u_cube'), 0);
+      const uFace = gl.getUniformLocation(p, 'u_face');
+      gl.uniform1f(uFace, 1);
+      gl.viewport(0, 0, 4, 4);
+      error('attached cube texture cannot be sampled by the draw', () => gl.drawArrays(gl.TRIANGLES, 0, 6), gl.INVALID_OPERATION);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      const draw = (x: number, face: number) => {
+        gl.uniform1f(uFace, face);
+        gl.viewport(x, 0, 16, 64);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      };
+      draw(0, 1);
+      draw(16, -1);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      attach(first + 1);
+      gl.clearColor(0, 0, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      draw(32, -1);
+      draw(48, 1);
+      band(0, 16, [255, 0, 0, 255]); band(16, 16, [0, 255, 0, 255]);
+      band(32, 16, [0, 0, 255, 255]); band(48, 16, [255, 0, 0, 255]);
       break;
     }
     case 'fbo-attachment-resize': {

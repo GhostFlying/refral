@@ -186,7 +186,7 @@ export class SemanticContext {
     if (this.checkFramebufferStatus(GL.FRAMEBUFFER) !== GL.FRAMEBUFFER_COMPLETE) {
       this.error(GL.INVALID_FRAMEBUFFER_OPERATION); return null;
     }
-    const storage = this.framebuffer.color!.storage!;
+    const storage = this.framebuffer.colorImage!.storage!;
     const renderbuffer = this.framebuffer.depth;
     const depth = renderbuffer && this.resources
       ? { id: this.resources.depth(renderbuffer.handle!, renderbuffer.generation).id } : renderbuffer;
@@ -204,13 +204,15 @@ export class SemanticContext {
   }
 
   private wroteColorTarget(): void {
-    const texture = this.framebuffer?.color;
-    if (!this.resources || !texture?.storage || !this.state.colorMask.some(Boolean)) return;
-    const previous = this.textureVersion(texture);
-    texture.version++;
-    const version = this.textureVersion(texture);
+    const framebuffer = this.framebuffer;
+    const texture = framebuffer?.color;
+    const image = framebuffer?.colorImage;
+    if (!this.resources || !framebuffer || !texture || !image?.storage || !this.state.colorMask.some(Boolean)) return;
+    const previous = this.textureVersion(texture, framebuffer.colorTarget);
+    image.version++;
+    const version = this.textureVersion(texture, framebuffer.colorTarget);
     this.resources.apply({ kind: "write-texture", version, previous });
-    texture.storage = this.resources.texture(version);
+    image.storage = this.resources.texture(version);
   }
 
   private retireDepth(renderbuffer: RenderbufferObject): void {
@@ -1094,23 +1096,28 @@ export class SemanticContext {
     if (texture !== null && texture.target !== (cubeFace ? GL.TEXTURE_CUBE_MAP : GL.TEXTURE_2D)) {
       return this.error(GL.INVALID_OPERATION);
     }
-    if (cubeFace) return unsupported("cube framebuffer attachment");
     const previous = this.framebuffer.color;
     this.framebuffer.color = texture;
+    this.framebuffer.colorTarget = texture ? textureTarget : GL.TEXTURE_2D;
     if (previous && previous !== texture) this.releaseTexture(previous);
   }
   checkFramebufferStatus(target: number): number {
     if (this.lost) return GL.FRAMEBUFFER_UNSUPPORTED;
     if (target !== GL.FRAMEBUFFER) { this.error(GL.INVALID_ENUM); return 0; }
     if (!this.framebuffer) return GL.FRAMEBUFFER_COMPLETE;
-    const color = this.framebuffer.color?.storage;
+    const colorTexture = this.framebuffer.color;
+    const colorImage = this.framebuffer.colorImage;
+    const color = colorImage?.storage;
     const depth = this.framebuffer.depth;
-    if (!this.framebuffer.color && !depth) return GL.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
-    if (this.framebuffer.color && (!color || !color.width || !color.height ||
-        !([GL.RGB, GL.RGBA] as number[]).includes(this.framebuffer.color.format))) return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+    if (!colorTexture && !depth) return GL.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
+    if (colorTexture && (!colorImage || !color?.width || !color.height ||
+        (colorImage.format !== GL.RGB && colorImage.format !== GL.RGBA) ||
+        (colorTexture.target === GL.TEXTURE_CUBE_MAP && !textureBase(colorTexture)))) {
+      return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
+    }
     if (depth && (!depth.width || !depth.height)) return GL.FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
     if (color && depth && (depth.width !== color.width || depth.height !== color.height)) return GL.FRAMEBUFFER_INCOMPLETE_DIMENSIONS;
-    if (!color || this.framebuffer.color!.format !== GL.RGBA) return GL.FRAMEBUFFER_UNSUPPORTED;
+    if (!color || colorImage?.format !== GL.RGBA) return GL.FRAMEBUFFER_UNSUPPORTED;
     return GL.FRAMEBUFFER_COMPLETE;
   }
   getFramebufferAttachmentParameter(target: number, attachment: number, parameter: number): unknown {
@@ -1124,7 +1131,9 @@ export class SemanticContext {
     if (!object) { this.error(GL.INVALID_ENUM); return null; }
     if (parameter === GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME) return object;
     if (attachment === GL.COLOR_ATTACHMENT0 && parameter === GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL) return 0;
-    if (attachment === GL.COLOR_ATTACHMENT0 && parameter === GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE) return 0;
+    if (attachment === GL.COLOR_ATTACHMENT0 && parameter === GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE) {
+      return this.framebuffer.colorTarget === GL.TEXTURE_2D ? GL.NONE : this.framebuffer.colorTarget;
+    }
     this.error(GL.INVALID_ENUM); return null;
   }
   deleteFramebuffer(framebuffer: FramebufferObject | null): void {
@@ -1283,8 +1292,9 @@ export class SemanticContext {
       }
       return parameter === GL.IMPLEMENTATION_COLOR_READ_FORMAT ? GL.RGBA : GL.UNSIGNED_BYTE;
     }
-    const colorBits = this.framebuffer ? (this.framebuffer.color?.storage ? 8 : 0) : 8;
-    const alphaBits = this.framebuffer ? (this.framebuffer.color?.format === GL.RGBA ? colorBits : 0)
+    const storage = this.framebuffer?.colorImage?.storage;
+    const colorBits = this.framebuffer ? (storage?.width && storage.height ? 8 : 0) : 8;
+    const alphaBits = this.framebuffer ? (this.framebuffer.colorImage?.format === GL.RGBA ? colorBits : 0)
       : (this.contextAttributes.alpha ? 8 : 0);
     const depthBits = this.framebuffer ? (this.framebuffer.depth?.generation ? 24 : 0)
       : (this.contextAttributes.depth ? 24 : 0);

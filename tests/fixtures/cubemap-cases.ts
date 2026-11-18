@@ -403,26 +403,15 @@ async function execute(result: CubemapResult, context: Context) {
       error('cube object cannot be attached with 2D target', () => gl.framebufferTexture2D(gl.FRAMEBUFFER,
         gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0), gl.INVALID_OPERATION);
       check('rejected target leaves missing attachment', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT);
-      if (result.backend === 'native') {
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, faceTargets[0]!, texture, 0);
-        check('native legal cube face attachment succeeds', gl.getError(), gl.NO_ERROR);
-        check('native cube face framebuffer is complete', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_COMPLETE);
-        result.observations.cubeFaceAttachment = 'supported by native WebGL';
-      } else {
-        let diagnostic: { name: string; message: string } | null = null;
-        try {
-          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, faceTargets[0]!, texture, 0);
-        } catch (caught) {
-          diagnostic = caught instanceof Error ? { name: caught.name, message: caught.message }
-            : { name: 'Error', message: String(caught) };
-        }
-        check('legal cube face attachment reports profile gap', diagnostic?.name, 'NotSupportedError');
-        check('profile diagnostic leaves GL errors clear', gl.getError(), gl.NO_ERROR);
-        check('profile diagnostic preserves missing attachment', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT);
-        result.observations.cubeFaceAttachment = diagnostic;
-      }
+      const target = faceTargets[0]!;
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, target, texture, 0);
+      check('legal cube face attachment succeeds', gl.getError(), gl.NO_ERROR);
+      check('cube face framebuffer is complete', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_COMPLETE);
+      const attachedFace = gl.getFramebufferAttachmentParameter(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE);
+      check('query returns the attached face', attachedFace, target);
+      result.observations.cubeFaceAttachment = attachedFace;
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      sample('rejected target and profile diagnostic preserve sampling', red);
+      sample('changing the attachment preserves sampling', red);
       break;
     }
   }

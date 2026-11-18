@@ -173,7 +173,7 @@ impl Texture {
         std::iter::once(&self.images).chain(&self.mips)
     }
 
-    fn defined_image_count(&self) -> usize {
+    pub(super) fn defined_image_count(&self) -> usize {
         self.levels()
             .flatten()
             .filter(|image| image.storage.is_some())
@@ -198,7 +198,7 @@ pub(super) struct TextureUnit {
     pub(super) texture_cube: Option<ObjectHandle>,
 }
 
-fn image_index(target: u32) -> Option<usize> {
+pub(super) fn image_index(target: u32) -> Option<usize> {
     match target {
         TEXTURE_2D => Some(0),
         CUBE_POSITIVE_X..=CUBE_NEGATIVE_Z => Some((target - CUBE_POSITIVE_X + 1) as usize),
@@ -206,7 +206,7 @@ fn image_index(target: u32) -> Option<usize> {
     }
 }
 
-fn image_target(index: usize) -> u32 {
+pub(super) fn image_target(index: usize) -> u32 {
     if index == 0 {
         TEXTURE_2D
     } else {
@@ -322,7 +322,12 @@ impl ContextCore {
     pub(super) fn texture_version(&self, index: usize) -> TextureVersion {
         self.texture_image_version(index, 0, 0)
     }
-    fn texture_image_version(&self, index: usize, image: usize, level: usize) -> TextureVersion {
+    pub(super) fn texture_image_version(
+        &self,
+        index: usize,
+        image: usize,
+        level: usize,
+    ) -> TextureVersion {
         let slot = &self.render.textures.slots[index];
         let storage = slot.value.as_ref().unwrap().image(image, level).unwrap();
         TextureVersion {
@@ -1260,7 +1265,7 @@ impl Texture {
         }
     }
 
-    fn complete_base(&self) -> Option<TextureStorage> {
+    pub(super) fn complete_base(&self) -> Option<TextureStorage> {
         let faces = self.faces();
         let base = self.images[faces.start].storage?;
         if base.width == 0

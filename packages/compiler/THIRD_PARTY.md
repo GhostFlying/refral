@@ -23,3 +23,5 @@ The project linker finalizes ANGLE's documented WGSL location and sampler placeh
 The webgl1-double-underscore patch permits consecutive underscores in identifiers under the WebGL1 language profile. ANGLE keeps the original names in reflection and emits WGSL identifiers in its user namespace.
 
 - `patches/wgsl-point-primitives.patch` maps the ESSL fragment point coordinate into ANGLE's private input and emits separate WebGL1 shader entries for instanced point quads. The vertex entry reads the reserved WebGL1 driver uniform words for viewport size and writes sprite coordinates above the eight advertised varying locations. The normal entries preserve the existing shader path.
+
+- `patches/wgsl-expression-statements.patch` preserves ESSL expression-statement side effects with WGSL discard assignments.

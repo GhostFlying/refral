@@ -1,3 +1,4 @@
+import expressionShaders from "./expression-shaders.json" with { type: "json" };
 import type { Compiler } from "../src/types.js";
 import COMPILER_LIMITS from "../profile-limits.json" with { type: "json" };
 import essl100Shader from "./essl100-shader.json" with { type: "json" };
@@ -191,6 +192,10 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
     { name: "uniform-struct-type-and-field-precision", passed: mismatchedStruct.success && mismatchedPrecision.success &&
       !compiler.link(structVertex, mismatchedStruct).success && !compiler.link(structVertex, mismatchedPrecision).success,
       log: [mismatchedStruct.log, mismatchedPrecision.log].join("\n") },
+    ...Object.entries(expressionShaders.expressionFragments).map(([name, source]) => {
+      const program = compiler.link(compiler.compile(expressionShaders.expressionVertex, "vertex"), compiler.compile(source, "fragment"));
+      return { name, passed: program.success, log: program.log };
+    }),
     { name: "indexed-sampler-stage-budget", passed: boundary.success && boundary.samplers[0]?.size === limit &&
       boundary.fragmentWGSL.includes("switch index") && !overBudget.success && overBudget.log.includes("Combined texture count"),
       log: [boundary.log, overBudget.log].join(" ") },

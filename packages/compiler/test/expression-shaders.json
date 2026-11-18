@@ -1,0 +1,6 @@
+{
+  "expressionFragments": {
+    "discarded-short-circuit": "\n    precision mediump float;\n    uniform bool gate;\n    float calls;\n    bool left() { calls += 1.; return gate; }\n    bool right() { calls += 2.; return true; }\n    void main() {\n      calls = 0.;\n      if (!gate) left() && right();\n      if (!gate) left() || right();\n      for (int i = 0; i < 2; ++i) left() && right();\n      if (gate) right();\n      gl_FragColor = calls == 6. ? vec4(0.,1.,0.,1.) : vec4(1.,0.,0.,1.);\n    }"
+  },
+  "expressionVertex": "attribute vec2 position; void main(){gl_Position=vec4(position,0.,1.);}"
+}

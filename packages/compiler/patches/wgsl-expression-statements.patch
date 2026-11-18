@@ -1,0 +1,54 @@
+--- a/src/compiler/translator/wgsl/TranslatorWGSL.cpp
++++ b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
+@@ -210,2 +210,3 @@
+     bool emitBlock(angle::Span<TIntermNode *> nodes);
++    void emitStatement(TIntermNode &node);
+     void emitFunctionName(const TFunction &func);
+@@ -518,7 +519,6 @@
+ {
+-    if (getParentNode()->getAsLoopNode() != nullptr || getParentNode()->getAsBlock() != nullptr)
+-    {
+-        return current->getAsBlock() == nullptr;
++    if (TIntermLoop *loop = getParentNode()->getAsLoopNode()) {
++      return current == loop->getInit() || current == loop->getExpression();
+     }
+-    return false;
++    return getParentNode()->getAsBlock() && !current->getAsBlock();
+ }
+@@ -2217,3 +2217,17 @@
+         }
++    }
++}
++
++// ESSL permits any expression as a statement. WGSL requires the unused value
++// of an ordinary expression to be explicitly discarded. Preserve side effects.
++void OutputWGSLTraverser::emitStatement(TIntermNode &node)
++{
++    TIntermTyped *value = node.getAsTyped();
++    TIntermBinary *binary = node.getAsBinaryNode();
++    TIntermUnary *unary = node.getAsUnaryNode();
++    if (value && value->getBasicType() != EbtVoid &&
++        !(binary && binary->isAssignment()) && !(unary && unary->isAssignment())) {
++      mSink << "_ = ";
+     }
++    node.traverse(this);
+ }
+@@ -2249,3 +2263,7 @@
+         mIndentLevel += isCase;
+-        stmtNode.traverse(this);
++        if (isGlobalScope) {
++          stmtNode.traverse(this);
++        } else {
++          emitStatement(stmtNode);
++        }
+         if (RequiresSemicolonTerminator(stmtNode))
+@@ -2540,3 +2558,3 @@
+     {
+-        initNode->traverse(this);
++        emitStatement(*initNode);
+     }
+@@ -2558,3 +2576,3 @@
+     {
+-        exprNode->traverse(this);
++        emitStatement(*exprNode);
+     }

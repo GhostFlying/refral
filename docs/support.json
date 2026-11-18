@@ -2834,7 +2834,38 @@
     "evidence": "artifacts/conformance/baseline/summary.json",
     "dependencies": "artifacts/conformance/baseline/failure-clusters.json",
     "report": "docs/validation/2026-11-18-official-conformance.md",
-    "scope": "Exploratory outcomes for the full original file inventory. Capability termination, timeouts and adapter gaps remain visible."
+    "scope": "Exploratory outcomes for the full original file inventory. Capability termination, timeouts and adapter gaps remain visible.",
+    "latestRefresh": {
+      "runtimeBase": "2a519f2cbc701328df85e2b4c523b1a4cf9b9b34",
+      "browserVersion": "158.0.8127.36",
+      "idleTimeoutMs": 5000,
+      "inventoryFilesPerBackend": 971,
+      "results": {
+        "native": {
+          "pass": 968,
+          "fail": 3,
+          "unsupported": 0,
+          "timeout": 0,
+          "harnessError": 0
+        },
+        "js": {
+          "pass": 785,
+          "fail": 52,
+          "unsupported": 39,
+          "timeout": 78,
+          "harnessError": 17
+        },
+        "rust": {
+          "pass": 788,
+          "fail": 49,
+          "unsupported": 39,
+          "timeout": 78,
+          "harnessError": 17
+        }
+      },
+      "report": "docs/validation/2026-11-18-stencil-rgb-conformance.md",
+      "evidence": "artifacts/conformance/stencil-rgb-refresh/summary.json"
+    }
   },
   "vertexInputConformance": {
     "baseRevision": "ce0566aa778fa6184f63966c620548f83280b942",

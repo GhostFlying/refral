@@ -13,3 +13,5 @@ RGB color targets retain their implicit opaque alpha while exposing zero alpha b
 Eight targeted original files pass on all three backends. Both the copy-tex-image-2d-formats and texture-attachment-formats files now execute the RGB branch, passing 51 and 14 assertions per backend. Raw results are under `artifacts/rgb-framebuffer/official` and `artifacts/rtt/fbo-rgb-texture`.
 
 The full pinned refresh uses `pnpm conformance:run --backend all --timeout-ms 5000 --output artifacts/conformance/stencil-rgb-refresh`. It retains the original inventory and test scripts and uses a five-second per-case idle window for exploratory triage. The previous full run used 20 seconds. Files that regress to a timeout are eligible for targeted reruns with the previous window.
+
+The refresh completed for all three backends on 2a519f2. [Full results, comparison and reproduction](../validation/2026-11-18-stencil-rgb-conformance.md)

@@ -33,12 +33,22 @@ function active(variables: ShaderVariable[]): ShaderVariable[] {
   return variables.filter((variable) => variable.active && !variable.name.startsWith("gl_"));
 }
 
-function sameType(left: ShaderVariable, right: ShaderVariable): boolean {
+function sameType(left: ShaderVariable, right: ShaderVariable, matchPrecision = false): boolean {
   return left.type === right.type && left.size === right.size && left.isArray === right.isArray &&
+    (!matchPrecision || left.precision === right.precision) && left.structName === right.structName &&
     left.fields.length === right.fields.length && left.fields.every((field, index) => {
       const other = right.fields[index];
-      return other !== undefined && field.name === other.name && sameType(field, other);
+      return other !== undefined && field.name === other.name && sameType(field, other, matchPrecision);
     });
+}
+
+function containsSampler(variable: ShaderVariable): boolean {
+  return isSampler(variable) || variable.fields.some(containsSampler);
+}
+
+function numericUniforms(shader: CompiledShader) {
+  const variables = active(shader.uniforms).filter(variable => !isSampler(variable) && !variable.fields.length);
+  return new Map([...variables, ...(shader.structUniforms ?? [])].map(variable => [variable.name, variable]));
 }
 
 function failedProgram(log: string): LinkedProgram {
@@ -92,11 +102,11 @@ export function linkShaders(vertex: CompiledShader, fragment: CompiledShader,
   const allUniforms = new Map<string, ShaderVariable>();
   for (const variable of [...active(vertex.uniforms), ...active(fragment.uniforms)]) {
     const previous = allUniforms.get(variable.name);
-    if (previous && (!sameType(previous, variable) || previous.precision !== variable.precision)) {
+    if (previous && !sameType(previous, variable, true)) {
       return failedProgram(`Uniform interface mismatch for ${variable.name}.`);
     }
-    if (variable.fields.length !== 0) {
-      return failedProgram(`Struct uniform ${variable.name} is outside the initial compiler profile.`);
+    if (variable.fields.some(containsSampler)) {
+      return failedProgram(`Samplers inside struct uniform ${variable.name} require an unsupported binding layout.`);
     }
     if (isSampler(variable) && (variable.size !== 1 ||
         (variable.type !== 0x8b5e && variable.type !== 0x8b60))) {
@@ -195,13 +205,14 @@ export function linkShaders(vertex: CompiledShader, fragment: CompiledShader,
         map.set(`ANGLE_sampler_${variable.name}`, samplerBinding);
         map.set(`ANGLE_texture_${variable.name}`, textureBinding);
       }
-    } else {
-      const vertexVariable = active(vertex.uniforms).find((candidate) => candidate.name === variable.name);
-      const fragmentVariable = active(fragment.uniforms).find((candidate) => candidate.name === variable.name);
-      uniforms.push({ name: variable.name, type: variable.type, size: variable.size,
-        vertexOffset: vertexVariable?.offset ?? null, fragmentOffset: fragmentVariable?.offset ?? null,
-        arrayStride: variable.arrayStride, matrixStride: variable.matrixStride });
     }
+  }
+  const vertexUniforms = numericUniforms(vertex);
+  const fragmentUniforms = numericUniforms(fragment);
+  for (const [name, variable] of new Map([...vertexUniforms, ...fragmentUniforms])) {
+    uniforms.push({ name, type: variable.type, size: variable.size,
+      vertexOffset: vertexUniforms.get(name)?.offset ?? null, fragmentOffset: fragmentUniforms.get(name)?.offset ?? null,
+      arrayStride: variable.arrayStride, matrixStride: variable.matrixStride });
   }
   // The built-in belongs to driver state, but GLES exposes it in active-uniform reflection.
   const depthRange = [...vertex.uniforms, ...fragment.uniforms]
@@ -243,7 +254,8 @@ export async function createCompiler(baseURL = "/artifacts/compiler/"): Promise<
         : JSON.parse(module.ccall("RefralCompile", "string", ["string", "number", "number"],
           [source, stage === "vertex" ? 0 : 1, version]));
       return { source, stage, version, success: raw.success ?? false, log: raw.log ?? "",
-        wgsl: raw.wgsl ?? "", uniformPackingError: raw.uniformPackingError, attributes: raw.attributes ?? [], uniforms: raw.uniforms ?? [],
+        wgsl: raw.wgsl ?? "", uniformPackingError: raw.uniformPackingError, structUniforms: raw.structUniforms,
+        attributes: raw.attributes ?? [], uniforms: raw.uniforms ?? [],
         varyings: raw.varyings ?? [], outputs: raw.outputs ?? [], uniformBufferSize: raw.uniformBufferSize ?? 0 };
     },
     link: linkShaders,

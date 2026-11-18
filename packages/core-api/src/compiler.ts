@@ -1,16 +1,20 @@
 export type ShaderStage = "vertex" | "fragment";
 
-export interface ShaderVariable {
+export interface UniformBlockMember {
   name: string;
-  mappedName: string;
   type: number;
   size: number;
-  isArray: boolean;
-  active: boolean;
-  precision: number;
   offset: number;
   arrayStride: number;
   matrixStride: number;
+}
+
+export interface ShaderVariable extends UniformBlockMember {
+  mappedName: string;
+  structName?: string;
+  isArray: boolean;
+  active: boolean;
+  precision: number;
   fields: ShaderVariable[];
 }
 
@@ -27,6 +31,7 @@ export interface CompiledShader {
   outputs: ShaderVariable[];
   uniformBufferSize: number;
   uniformPackingError?: string;
+  structUniforms?: UniformBlockMember[];
 }
 
 export interface ProgramAttribute {

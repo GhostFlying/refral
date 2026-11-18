@@ -1,0 +1,4 @@
+{
+  "vertex": "precision mediump float; attribute vec3 position; uniform mat4 transform; struct S { float gain; mat2 m; vec4 colors[2]; }; uniform S records[2]; void main(){ gl_Position=transform*vec4(position,1.0)+records[1].colors[1]*records[0].gain; }",
+  "fragment": "precision mediump float; struct S { float gain; mat2 m; vec4 colors[2]; }; uniform S records[2]; void main(){ gl_FragColor=vec4(records[1].m[1],records[0].gain,1.0)+records[0].colors[0]; }"
+}

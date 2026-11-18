@@ -60,6 +60,43 @@ class DefaultUniformEncoder : public sh::Std140BlockEncoder {
   }
 };
 
+// A WebGL default block exposes every element of an array of structures.
+// ANGLE's storage-block visitor only publishes element zero and its stride.
+class UniformLayoutVisitor : public sh::BlockEncoderVisitor {
+ public:
+  UniformLayoutVisitor(sh::BlockLayoutEncoder* encoder, sh::BlockLayoutMap* layout)
+      : sh::BlockEncoderVisitor("", "", encoder), layout_(layout) {}
+
+  void enterArrayElement(const sh::ShaderVariable& array, unsigned int index) override {
+    sh::VariableNameVisitor::enterArrayElement(array, index);
+  }
+  void exitArrayElement(const sh::ShaderVariable& array, unsigned int index) override {
+    sh::VariableNameVisitor::exitArrayElement(array, index);
+  }
+  void encodeVariable(const sh::ShaderVariable& variable, const sh::BlockMemberInfo& info,
+                      const std::string& name, const std::string&) override {
+    if (!gl::IsOpaqueType(variable.type)) (*layout_)[name] = info;
+  }
+
+ private:
+  sh::BlockLayoutMap* layout_;
+};
+
+void WriteStructUniforms(std::ostream& output, const sh::BlockLayoutMap& layout) {
+  output << '[';
+  bool first = true;
+  for (const auto& [name, field] : layout) {
+    if (name.find('.') == std::string::npos) continue;
+    if (!first) output << ',';
+    output << "{\"name\":" << Quote(name) << ",\"type\":" << field.type
+           << ",\"size\":" << field.arraySize << ",\"offset\":" << field.offset
+           << ",\"arrayStride\":" << field.arrayStride
+           << ",\"matrixStride\":" << field.matrixStride << '}';
+    first = false;
+  }
+  output << ']';
+}
+
 // ANGLE's register packer works on numeric uniforms. A struct array supplies
 // one copy of each field per element. Keep basic arrays intact so their
 // elements occupy distinct rows even when the shader only reads element zero.
@@ -101,6 +138,7 @@ void WriteVariable(std::ostream& output, const sh::ShaderVariable& variable,
       position == layout.end() ? sh::BlockMemberInfo() : position->second;
   output << "{\"name\":" << Quote(variable.name)
          << ",\"mappedName\":" << Quote(variable.mappedName)
+         << ",\"structName\":" << Quote(variable.getStructName())
          << ",\"type\":" << variable.type
          << ",\"size\":" << variable.getBasicTypeElementCount()
          << ",\"isArray\":" << (variable.isArray() ? "true" : "false")
@@ -182,8 +220,12 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char* RefralCompile(const char* source,
   sh::BlockLayoutMap uniform_layout;
   DefaultUniformEncoder encoder;
   if (success && packing_error.empty()) {
-    sh::GetActiveUniformBlockInfo(*sh::GetUniforms(compiler), "", &encoder,
-                                  &uniform_layout);
+    UniformLayoutVisitor visitor(&encoder, &uniform_layout);
+    for (const auto& uniform : *sh::GetUniforms(compiler)) {
+      if (uniform.active && !uniform.isBuiltIn()) {
+        sh::TraverseShaderVariable(uniform, false, &visitor);
+      }
+    }
   }
   std::ostringstream output;
   output << "{\"success\":" << (success ? "true" : "false")
@@ -196,6 +238,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char* RefralCompile(const char* source,
   output << ",\"uniforms\":";
   WriteVariables(output, success ? sh::GetUniforms(compiler) : nullptr,
                  uniform_layout);
+  output << ",\"structUniforms\":";
+  WriteStructUniforms(output, uniform_layout);
   output << ",\"varyings\":";
   WriteVariables(output, success ? sh::GetVaryings(compiler) : nullptr, {});
   output << ",\"outputs\":";

@@ -1,0 +1,10 @@
+--- a/src/compiler/translator/wgsl/TranslatorWGSL.cpp
++++ b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
+@@ -2271,2 +2271,7 @@
+                 mWGSLGenerationMetadataForUniforms->arrayElementTypesInUniforms.insert(innerType);
++            } else if (IsMatCx2(fieldType)) {
++              // A retained matCx2 member needs a wrapped vec2 column type even
++              // when this shader never reads it and needs no conversion helper.
++              mWGSLGenerationMetadataForUniforms->arrayElementTypesInUniforms.insert(
++                  TType(EbtFloat, 2));
+             }

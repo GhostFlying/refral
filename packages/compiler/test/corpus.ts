@@ -1,6 +1,7 @@
 import type { Compiler } from "../src/types.js";
 import COMPILER_LIMITS from "../profile-limits.json" with { type: "json" };
 import essl100Shader from "./essl100-shader.json" with { type: "json" };
+import structUniformShaders from "./struct-uniform-shaders.json" with { type: "json" };
 import varyingArrayShaders from "./varying-array-shaders.json" with { type: "json" };
 import fragmentOutputShaders from "./fragment-output-shaders.json" with { type: "json" };
 
@@ -131,8 +132,30 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
     /@location\((\d+)\) (ANGLE_varying_\w+) :/g)].map(match => [match[2], match[1]]));
   const vertexFields = fields(arrayInterface.vertexWGSL);
   const fragmentFields = fields(arrayInterface.fragmentWGSL);
+  const structVertex = compiler.compile(structUniformShaders.vertex, "vertex");
+  const structFragment = compiler.compile(structUniformShaders.fragment, "fragment");
+  const structProgram = compiler.link(structVertex, structFragment);
+  const structMatrix = structProgram.uniforms.find(uniform => uniform.name === "records[1].m");
+  const structColors = structProgram.uniforms.find(uniform => uniform.name === "records[1].colors");
+  const mismatchedStruct = compiler.compile(structUniformShaders.fragment
+    .replace("struct S", "struct Other").replace("uniform S", "uniform Other"), "fragment");
+  const mismatchedPrecision = compiler.compile(structUniformShaders.fragment
+    .replace("float gain", "highp float gain"), "fragment");
+  const opaqueStruct = compiler.compile("precision mediump float; struct S { sampler2D image; vec4 color; }; uniform S s; void main(){gl_FragColor=s.color+texture2D(s.image,vec2(0.0));}", "fragment");
+  const opaqueStructProgram = compiler.link(vertex, opaqueStruct);
   return [
     ...uniformPackingCases(compiler),
+    { name: "struct-array-uniform-stage-layouts", passed: structProgram.success && structProgram.uniforms.length === 7 &&
+      [structProgram.vertexWGSL, structProgram.fragmentWGSL].every(source => source.includes("struct ANGLE_wrapped_vec2")) &&
+      structProgram.vertexUniformBufferSize === 224 && structProgram.fragmentUniformBufferSize === 160 &&
+      structMatrix?.type === 0x8b5a && structMatrix.vertexOffset === 160 && structMatrix.fragmentOffset === 96 &&
+      structMatrix.matrixStride === 16 && structColors?.size === 2 && structColors.arrayStride === 16 &&
+      structColors.vertexOffset === 192 && structColors.fragmentOffset === 128, log: JSON.stringify(structProgram.uniforms) },
+    { name: "uniform-struct-type-and-field-precision", passed: mismatchedStruct.success && mismatchedPrecision.success &&
+      !compiler.link(structVertex, mismatchedStruct).success && !compiler.link(structVertex, mismatchedPrecision).success,
+      log: [mismatchedStruct.log, mismatchedPrecision.log].join("\n") },
+    { name: "uniform-struct-sampler-diagnostic", passed: opaqueStruct.success && !opaqueStructProgram.success &&
+      opaqueStructProgram.log.includes("Samplers inside struct"), log: opaqueStructProgram.log },
     { name: "varying-arrays-matching-stage-locations", passed: arrayInterface.success &&
       vertexFields.size === 7 && fragmentFields.size === 7 && new Set(vertexFields.values()).size === 7 &&
       [...vertexFields].every(([name, location]) => fragmentFields.get(name) === location),

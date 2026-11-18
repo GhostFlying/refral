@@ -33,7 +33,19 @@ export interface PreparedHostFactory {
   dispose(): void;
 }
 
-interface HostContextAttributes { alpha: boolean; depth: boolean; stencil?: boolean | undefined; premultipliedAlpha?: boolean | undefined; errors?: string[] }
+interface HostContextAttributes {
+  alpha: boolean;
+  depth: boolean;
+  stencil?: boolean | undefined;
+  premultipliedAlpha?: boolean | undefined;
+  preserveDrawingBuffer?: boolean | undefined;
+  errors?: string[];
+}
+interface RetainedSurface {
+  producer: OffscreenCanvas;
+  destination: ImageBitmapRenderingContext;
+}
+
 
 interface Target {
   presentationGroup?: GPUBindGroup;
@@ -163,6 +175,7 @@ export class BrowserHost implements SemanticHost {
   private mipPipeline: GPURenderPipeline | null = null;
   private textureCopyPipeline: GPURenderPipeline | null = null;
   private presentationConfigured = false;
+  private lastPresentedTexture: GPUTexture | null = null;
   private presentationPipeline: GPURenderPipeline | null = null;
   private blackTexture: GPUTexture | null = null;
   private blackCubeTexture: GPUTexture | null = null;
@@ -180,6 +193,7 @@ export class BrowserHost implements SemanticHost {
     readonly hasDepth: boolean,
     readonly hasStencil: boolean,
     private readonly premultipliedAlpha: boolean,
+    private readonly retained: RetainedSurface | null,
     private readonly ownsDevice = true,
     readonly errors: string[] = [],
   ) {
@@ -225,14 +239,24 @@ export class BrowserHost implements SemanticHost {
     if (!adapter) throw new DOMException("No WebGPU adapter is available", "NotSupportedError");
     const device = await adapter.requestDevice();
     const format = navigator.gpu.getPreferredCanvasFormat();
-    const surfaces = new WeakMap<HTMLCanvasElement | OffscreenCanvas, GPUCanvasContext>();
+    const surfaces = new WeakMap<HTMLCanvasElement | OffscreenCanvas, { context: GPUCanvasContext; retained: RetainedSurface | null }>();
     const factory: PreparedHostFactory = (canvas, attributes, ownsDevice = false) => {
-      const context = surfaces.get(canvas) ?? canvas.getContext("webgpu");
-      if (!context) throw new DOMException("Canvas is already bound to another context", "InvalidStateError");
-      surfaces.set(canvas, context);
+      let surface = surfaces.get(canvas);
+      if (!surface) {
+        let retained: RetainedSurface | null = null;
+        if (attributes.preserveDrawingBuffer) {
+          const destination = canvas.getContext('bitmaprenderer', { alpha: attributes.alpha });
+          if (!destination) throw new DOMException("Canvas is already bound to another context", "InvalidStateError");
+          retained = { producer: new OffscreenCanvas(1, 1), destination };
+        }
+        const context = (retained?.producer ?? canvas).getContext("webgpu");
+        if (!context) throw new DOMException("Canvas is already bound to another context", "InvalidStateError");
+        surface = { context, retained };
+        surfaces.set(canvas, surface);
+      }
       const presentationFormat = attributes.alpha && attributes.premultipliedAlpha === false ? "rgba16float" : format;
-      return new BrowserHost(canvas, device, context, presentationFormat, adapter, attributes.alpha, attributes.depth,
-        attributes.stencil ?? false, attributes.premultipliedAlpha ?? true, ownsDevice, attributes.errors);
+      return new BrowserHost(canvas, device, surface.context, presentationFormat, adapter, attributes.alpha, attributes.depth,
+        attributes.stencil ?? false, attributes.premultipliedAlpha ?? true, surface.retained, ownsDevice, attributes.errors);
     };
     factory.dispose = () => device.destroy();
     return factory;
@@ -457,6 +481,13 @@ export class BrowserHost implements SemanticHost {
 
   private resolveTarget(snapshot: TargetSnapshot): Target {
     if (snapshot.isDefault) {
+      if (this.lastPresentedTexture && this.defaultTarget && this.canvas.width === this.surface.width &&
+          this.canvas.height === this.surface.height && 'isConnected' in this.canvas &&
+          this.canvas.isConnected && this.canvas.checkVisibility({ visibilityProperty: true })) {
+        if (this.context.getCurrentTexture() !== this.lastPresentedTexture) {
+          this.resetDefaultDrawingBuffer();
+        }
+      }
       if (!this.defaultTarget || this.defaultTarget.width !== snapshot.width ||
           this.defaultTarget.height !== snapshot.height) {
         this.endPass();
@@ -911,6 +942,11 @@ export class BrowserHost implements SemanticHost {
   private configurePresentation(): boolean {
     // WebGPU validates the requested canvas size during configure as well as getCurrentTexture.
     if (this.canvas.width !== this.surface.width || this.canvas.height !== this.surface.height) return false;
+    if (this.retained) {
+      const { producer } = this.retained;
+      if (producer.width !== this.canvas.width) producer.width = this.canvas.width;
+      if (producer.height !== this.canvas.height) producer.height = this.canvas.height;
+    }
     if (!this.presentationConfigured) {
       this.context.configure({ device: this.device, format: this.format, alphaMode: this.alpha ? "premultiplied" : "opaque" });
       this.presentationConfigured = true;
@@ -924,10 +960,10 @@ export class BrowserHost implements SemanticHost {
     this.submitEncoded();
   }
 
-  private present(): void {
+  private present(): boolean {
     const target = this.defaultTarget;
     if (!target || !this.defaultDirty || target.width !== this.surface.width || target.height !== this.surface.height
-      || !this.configurePresentation()) return;
+      || !this.configurePresentation()) return false;
     this.endPass();
     if (!this.presentationPipeline) {
       const module = this.device.createShaderModule({ code: `
@@ -955,8 +991,10 @@ export class BrowserHost implements SemanticHost {
             wrapS: GL.CLAMP_TO_EDGE, wrapT: GL.CLAMP_TO_EDGE }) }] });
       this.stats.bindGroups++;
     }
+    const presentationTexture = this.context.getCurrentTexture();
+    if (!this.retained) this.lastPresentedTexture = presentationTexture;
     const pass = this.getEncoder().beginRenderPass({ colorAttachments: [{
-      view: this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store",
+      view: presentationTexture.createView(), loadOp: "clear", storeOp: "store",
       clearValue: { r: 0, g: 0, b: 0, a: this.alpha ? 0 : 1 },
     }] });
     pass.setPipeline(this.presentationPipeline);
@@ -965,6 +1003,7 @@ export class BrowserHost implements SemanticHost {
     pass.end();
     this.stats.passes++;
     this.defaultDirty = false;
+    return true;
   }
 
   /** Publish the current default drawing buffer before this canvas is used as a DOM source. */
@@ -977,23 +1016,29 @@ export class BrowserHost implements SemanticHost {
     this.flush();
   }
 
-  /** Discard the default attachments without changing bindings, write masks or the GL viewport. */
-  resetDefaultDrawingBuffer(): void {
-    const target = this.defaultTarget;
-    if (!target) return;
-    this.endPass();
-    this.initialized.delete(target.color);
-    if (target.depth) this.initialized.delete(target.depth);
-  }
+
 
   private submitEncoded(): void {
     this.endPass();
-    this.present();
+    const presented = this.present();
     if (this.encoder) {
       this.device.queue.submit([this.encoder.finish()]);
       this.encoder = null;
       this.stats.submits++;
     }
+    if (presented && this.retained) {
+      this.retained.destination.transferFromImageBitmap(this.retained.producer.transferToImageBitmap());
+    }
+  }
+
+  /** Discard the default attachments without changing bindings, write masks or the GL viewport. */
+  resetDefaultDrawingBuffer(): void {
+    this.lastPresentedTexture = null;
+    const target = this.defaultTarget;
+    if (!target) return;
+    this.endPass();
+    this.initialized.delete(target.color);
+    if (target.depth) this.initialized.delete(target.depth);
   }
 
   flush(): void {

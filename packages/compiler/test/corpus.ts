@@ -2,6 +2,7 @@ import type { Compiler } from "../src/types.js";
 import COMPILER_LIMITS from "../profile-limits.json" with { type: "json" };
 import essl100Shader from "./essl100-shader.json" with { type: "json" };
 import vertexCapacityShaders from "./vertex-capacity-shaders.json" with { type: "json" };
+import stageInterfaceShaders from "./stage-interface-shaders.json" with { type: "json" };
 import structUniformShaders from "./struct-uniform-shaders.json" with { type: "json" };
 import varyingArrayShaders from "./varying-array-shaders.json" with { type: "json" };
 import fragmentOutputShaders from "./fragment-output-shaders.json" with { type: "json" };
@@ -147,8 +148,23 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
   const fullVertexRows = compiler.compile(vertexCapacityShaders.vertex
     .replace("PROFILE_ROWS", String(COMPILER_LIMITS.vertexUniformVectors)), "vertex");
   const fullVertexProgram = compiler.link(fullVertexRows, compiler.compile(vertexCapacityShaders.fragment, "fragment"));
+  const declaredVertex = compiler.compile(stageInterfaceShaders.vertex, "vertex");
+  const readVarying = compiler.compile(stageInterfaceShaders.fragment, "fragment");
+  const declaredProgram = compiler.link(declaredVertex, readVarying);
+  const missingOutput = compiler.link(compiler.compile("void main(){gl_Position=vec4(0.);}", "vertex"), readVarying);
+  const unreachableInput = compiler.compile("precision mediump float; varying float unwritten; void main(){if(false){gl_FragColor=vec4(unwritten);}else{gl_FragColor=vec4(1.);}}", "fragment");
+  const staticMismatch = compiler.link(declaredVertex, unreachableInput);
+  const invariantInput = compiler.compile(stageInterfaceShaders.fragment.replace("varying mediump", "invariant varying mediump"), "fragment");
+  const invariantMismatch = compiler.link(declaredVertex, invariantInput);
   return [
     ...uniformPackingCases(compiler),
+    { name: "unwritten-varying-matrix-array-pipeline", passed: declaredProgram.success && [0, 1, 2, 3].every(location =>
+      declaredProgram.vertexWGSL.includes(`@location(${location}) ANGLE_unwritten_${location} : vec2<f32>`)) &&
+      declaredProgram.vertexWGSL.includes("@invariant @builtin(position) gl_Position_"), log: declaredProgram.log },
+    { name: "varying-static-use-and-declaration-matching", passed: unreachableInput.success && !missingOutput.success &&
+      !staticMismatch.success && staticMismatch.log.includes("unwritten"), log: [missingOutput.log, staticMismatch.log].join("\n") },
+    { name: "varying-invariance-mismatch", passed: invariantInput.success && !invariantMismatch.success &&
+      invariantMismatch.log.includes("unwritten"), log: invariantMismatch.log },
     { name: "vertex-uniform-full-rows-physical-layout", passed: fullVertexProgram.success &&
       fullVertexProgram.uniforms.length === 4 && fullVertexProgram.uniforms.every(uniform =>
         uniform.size === COMPILER_LIMITS.vertexUniformVectors && uniform.arrayStride === 16) &&

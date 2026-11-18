@@ -14,6 +14,8 @@ export interface ShaderVariable extends UniformBlockMember {
   structName?: string;
   isArray: boolean;
   active: boolean;
+  staticUse?: boolean;
+  invariant?: boolean;
   precision: number;
   fields: ShaderVariable[];
 }

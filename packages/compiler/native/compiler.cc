@@ -143,6 +143,8 @@ void WriteVariable(std::ostream& output, const sh::ShaderVariable& variable,
          << ",\"size\":" << variable.getBasicTypeElementCount()
          << ",\"isArray\":" << (variable.isArray() ? "true" : "false")
          << ",\"active\":" << (variable.active ? "true" : "false")
+         << ",\"staticUse\":" << (variable.staticUse ? "true" : "false")
+         << ",\"invariant\":" << (variable.isInvariant ? "true" : "false")
          << ",\"precision\":" << variable.precision
          << ",\"offset\":" << info.offset
          << ",\"arrayStride\":" << info.arrayStride

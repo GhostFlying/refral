@@ -69,11 +69,14 @@ function setLocation(map: Map<string, number>, variable: ShaderVariable, locatio
 }
 
 /** Finalize ANGLE's explicitly documented WGSL link markers. ESSL parsing stays in ANGLE. */
-function finalizeWGSL(source: string, locations: Map<string, number>): string {
-  return source.replace(/@location\(@@@@@@\)\s+(\S+)\s*:/g, (_match, name: string) => {
+function finalizeWGSL(source: string, locations: Map<string, number>, unwritten?: { inputs: Set<string>; outputs: Set<string> }): string {
+  return source.replace(/@location\(@@@@@@\)\s+(\S+)\s*:\s*([^,\n]+),/g, (_match, name: string, type: string) => {
     const location = locations.get(name);
     if (location === undefined) throw new Error(`Unassigned WGSL location for ${name}`);
-    return `@location(${location}) ${name} :`;
+    if (unwritten?.inputs.has(name)) {
+      unwritten.outputs.add(`  @location(${location}) ANGLE_unwritten_${location} : ${type},`);
+    }
+    return `@location(${location}) ${name} : ${type},`;
   }).replace(/@group\(1\) @binding\(@@@@@@\) var (\S+) :[^;]+;/g,
     (match, name: string) => {
       const location = locations.get(name);
@@ -93,10 +96,21 @@ export function linkShaders(vertex: CompiledShader, fragment: CompiledShader,
   const uniformPackingErrors = [vertex.uniformPackingError, fragment.uniformPackingError].filter(Boolean);
   if (uniformPackingErrors.length) return failedProgram(uniformPackingErrors.join("\n"));
   const vertexVaryings = active(vertex.varyings);
-  for (const varying of active(fragment.varyings)) {
-    const output = vertexVaryings.find((candidate) => candidate.name === varying.name);
-    if (!output || !sameType(output, varying)) {
-      return failedProgram(`Varying interface mismatch for ${varying.name}.`);
+  for (const input of fragment.varyings) {
+    if (input.name.startsWith("gl_") || !(input.staticUse ?? input.active)) continue;
+    const output = vertex.varyings.find(candidate => candidate.name === input.name);
+    if (!output || !sameType(output, input) || (vertex.version === 1 && !!output.invariant !== !!input.invariant)) {
+      return failedProgram(`Varying interface mismatch for ${input.name}.`);
+    }
+    if (input.active && !output.active) vertexVaryings.push(output);
+  }
+  const invariant = (shader: CompiledShader, name: string) =>
+    shader.varyings.some(variable => variable.name === name && variable.invariant);
+  if (vertex.version === 1) {
+    for (const [input, output] of [["gl_FragCoord", "gl_Position"], ["gl_PointCoord", "gl_PointSize"]] as const) {
+      if (invariant(fragment, input) && !invariant(vertex, output)) {
+        return failedProgram(`Invariant ${input} requires invariant ${output}.`);
+      }
     }
   }
   const allUniforms = new Map<string, ShaderVariable>();
@@ -165,31 +179,22 @@ export function linkShaders(vertex: CompiledShader, fragment: CompiledShader,
     attributes.push({ name: variable.name, type: variable.type, size: variable.size, location });
   }
   const fragmentLocations = new Map<string, number>();
+  const unwrittenInputs = new Set<string>();
   let varyingLocation = 0;
   for (const varying of vertexVaryings) {
     const columns = matrixColumns(varying.type);
-    if (varying.isArray) {
-      for (let element = 0; element < varying.size; element++) {
-        for (let column = 0; column < columns; column++) {
-          const member = `ANGLE_varying__u${varying.name}_${element}_${column}`;
+    for (let element = 0; element < varying.size; element++) {
+      for (let column = 0; column < columns; column++) {
+        const members = varying.isArray ? [`ANGLE_varying__u${varying.name}_${element}_${column}`]
+          : names(varying).map(name => columns === 1 ? name : `${name}_col${column}`);
+        for (const member of members) {
           locations.set(member, varyingLocation);
-          fragmentLocations.set(member, varyingLocation++);
+          fragmentLocations.set(member, varyingLocation);
+          if (!varying.active) unwrittenInputs.add(member);
         }
-      }
-      continue;
-    }
-    for (const name of names(varying)) {
-      if (columns === 1) {
-        locations.set(name, varyingLocation);
-        fragmentLocations.set(name, varyingLocation);
-      } else {
-        for (let column = 0; column < columns; column++) {
-          locations.set(`${name}_col${column}`, varyingLocation + column);
-          fragmentLocations.set(`${name}_col${column}`, varyingLocation + column);
-        }
+        varyingLocation++;
       }
     }
-    varyingLocation += columns;
   }
   if (varyingLocation > COMPILER_LIMITS.varyingVectors) return failedProgram("Varying count exceeds the initial profile limit.");
   let outputLocation = 0;
@@ -227,8 +232,20 @@ export function linkShaders(vertex: CompiledShader, fragment: CompiledShader,
     return failedProgram("Combined texture count exceeds the initial profile limit.");
   }
   try {
-    const vertexWGSL = finalizeWGSL(vertex.wgsl, locations);
-    const fragmentWGSL = finalizeWGSL(fragment.wgsl, fragmentLocations);
+    const additionalOutputs = new Set<string>();
+    const fragmentWGSL = finalizeWGSL(fragment.wgsl, fragmentLocations, { inputs: unwrittenInputs, outputs: additionalOutputs });
+    let vertexWGSL = finalizeWGSL(vertex.wgsl, locations);
+    if (additionalOutputs.size) {
+      // ESSL permits an unwritten varying. WGSL requires each fragment input to have
+      // a matching output; a newly declared member of ANGLE's local result starts at zero.
+      const vertexOutput = /struct ANGLE_Output_Annotated\s*\{/;
+      if (!vertexOutput.test(vertexWGSL)) return failedProgram("Missing ANGLE vertex output interface.");
+      vertexWGSL = vertexWGSL.replace(/struct (?:ANGLE_Output_Annotated|RefralPointOutput)\s*\{/g,
+        header => [header, ...additionalOutputs].join("\n"));
+    }
+    if (invariant(vertex, "gl_Position")) {
+      vertexWGSL = vertexWGSL.replaceAll("@builtin(position) gl_Position_", "@invariant @builtin(position) gl_Position_");
+    }
     if (vertexWGSL.includes("@@@@@@") || fragmentWGSL.includes("@@@@@@")) {
       return failedProgram("Unresolved ANGLE WGSL link markers.");
     }

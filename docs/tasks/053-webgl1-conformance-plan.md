@@ -31,6 +31,8 @@
 | [#48](https://github.com/GhostFlying/refral/pull/48) | 不完整纹理的采样反馈判断 | 原始文件 Chrome 11 条，JS、Rust 各 5 条。差分检查了回退颜色和恢复完整后的错误。 |
 | [#49](https://github.com/GhostFlying/refral/pull/49) | 线图元、三角扇与空索引绘制 | 四个原始文件每路 97 条断言均通过；三路 64×64 图像逐通道一致。 |
 
+最近一次完成的全量为 Chrome 968、JS 891、Rust 891，每路 971 个文件。之后的 Worker、编译器、点精灵、恢复和显示缓冲区批次有独立的原始用例、截图与回归记录。[全量趋势、最近交付与原生失败审计](../validation/2026-11-19-conformance-campaign.md)
+
 ## 下一批从哪里开始
 
 | 顺序 | 范围与依赖 | 首组选用的原始文件和验收行为 |
@@ -78,5 +80,9 @@ done
 锁定版本的 `shader-with-double-underscore.html` 期望一条含有 `attribute vec4` 且没有浮点精度声明的片元着色器成功编译。修复合法的双下划线标识符后，JS、Rust 各仅剩这条失败。按用户确认的口径，该 URL 保留在 971 分母中、保留原始失败并单列上游阻塞。其余 970 个文件继续按原断言推进。一旦上游修正且项目接受新 revision，重新执行该原始 URL 和完整清单。[规范、最小对照与三路结果](067-shader-double-underscores.md)
 
 第二个已接受的原始差异为 `tex-image-svg-image-no-natural-width-and-height.html`。在 Chrome 158 的实际元素尺寸下，原始子图分支先分配了 150×150 的纹理，随后依赖一次失败的上传把它缩为 0×0。两套核心保留失败前的尺寸和像素。Chrome 原始 13/0，JS 和 Rust 各 11/2。该文件仍计入 971 的分母。两个上游项之外的 969 个文件继续验收。[原始脚本、Chrome 实现与状态回归](076-zero-size-svg-uploads.md)
+
+同一 revision 的保留字用例也要求拒绝两个含双下划线的合法标识符。三路都执行完原始脚本，Chrome 为 761/0，JS、Rust 均为 753/8。这是修正同一条 WebGL 规则后暴露的相反断言，单列为第三个有证据的上游冲突。三个 URL 均留在总数与失败列表中，其他 968 个继续推进。[逐项证据](../validation/2026-11-19-conformance-campaign.md#fixed-suite-conflicts)
+
+原始 uninitialized-test.html 的独立阻塞是 host 的同步完成能力。用户决定保留 finish 的同步语义和原始失败。空闲返回路径已验证，未完成 GPU 工作须等待提供可验证同步完成原语的 host。该项独立于三个上游断言冲突。[诊断和恢复条件](079-synchronous-queue-completion.md)
 
 本计划维护范围是本文件和路线图入口。各实现任务拥有自己的代码、验证和结果记录。计划检查使用 `pnpm ci:check`，首批选择器应在每个后端恰好选中上述三个 URL。

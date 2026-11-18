@@ -45,7 +45,7 @@ const hooks = new WeakMap<object, TestingHooks>();
 const constants = Object.freeze({ ...GL });
 const defaults: WebGLContextAttributes = {
   alpha: true, depth: true, stencil: false, antialias: false,
-  premultipliedAlpha: true, preserveDrawingBuffer: true,
+  premultipliedAlpha: true, preserveDrawingBuffer: false,
   powerPreference: "default", failIfMajorPerformanceCaveat: false, desynchronized: false,
 };
 
@@ -57,7 +57,7 @@ function unsupported(operation: string): never {
 export type WebGL1PrototypeContext = WebGLRenderingContext;
 
 function actualAttributes(requested: WebGLContextAttributes): WebGLContextAttributes {
-  return { ...defaults, premultipliedAlpha: requested.premultipliedAlpha ?? true, alpha: requested.alpha ?? true, depth: requested.depth ?? true, stencil: requested.stencil ?? false };
+  return { ...defaults, preserveDrawingBuffer: requested.preserveDrawingBuffer ?? false, premultipliedAlpha: requested.premultipliedAlpha ?? true, alpha: requested.alpha ?? true, depth: requested.depth ?? true, stencil: requested.stencil ?? false };
 }
 
 function trackBitmapTransfer(canvas: HTMLCanvasElement | OffscreenCanvas, currentHost: () => BrowserHost): () => void {
@@ -261,7 +261,7 @@ async function prepareRuntime(options: RuntimeOptions) {
     const attributes = actualAttributes(requested);
     const errors: string[] = [];
     return wrapContext(canvas, attributes, () => {
-      const host = makeHost(canvas, { alpha: attributes.alpha!, depth: attributes.depth!, stencil: attributes.stencil, premultipliedAlpha: attributes.premultipliedAlpha, errors });
+      const host = makeHost(canvas, { alpha: attributes.alpha!, depth: attributes.depth!, stencil: attributes.stencil, premultipliedAlpha: attributes.premultipliedAlpha, preserveDrawingBuffer: attributes.preserveDrawingBuffer, errors });
       const registry = createCompilerRegistry(compiler);
       const contextId = allocateContextId();
       const resources = new ExecutionResources(contextId, host);

@@ -70,6 +70,8 @@ Task 050 adds current-frame HTMLVideoElement uploads to both cores. All thirteen
 
 Task 051 adds ImageBitmap definitions and subimages to both cores. The 48 original ImageBitmap files pass with equal assertion counts across all three paths. VideoFrame, explicit unpack gamut selection and drawing-buffer color space have separate scope. [ImageBitmap results](tasks/051-imagebitmap-texture-uploads.md)
 
+Continue P3 using the [WebGL1 conformance plan](tasks/053-webgl1-conformance-plan.md). The 971-file baseline has 850 JS passes and 853 Rust passes. Start with the three JS location-name failures, then follow the remaining original files through implementation, headless verification, merge and remeasurement. The plan defines completion, native deviations and escalation.
+
 The completed milestones and subsequent compatibility dependencies follow.
 
 1. Task 025 establishes synchronous readback feasibility using actual JS/Rust cores and an independent GPU worker. Task 027 adds a main-thread Canvas2D candidate, byte-exact shared rendering corpus and matched latency/process CPU comparison. Task028 implements the user-selected Canvas2D path through both public cores, including destination ownership, packing, clipping, ordering and loss handling. The original program-handling, feedback-loop and read-pixels-pack-alignment files execute unchanged through a recorded iframe prototype adapter. ADR 007 records the accepted backend.

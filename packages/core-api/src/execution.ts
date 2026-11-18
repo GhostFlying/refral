@@ -28,9 +28,11 @@ export interface TextureStorage {
   width: number;
   height: number;
   generation: number;
+  opaque?: boolean;
   data?: Uint8Array;
   parent?: TextureStorage;
   mipSource?: TextureStorage;
+  copy?: TextureCopy;
   update?: { x: number; y: number; width: number; height: number; data: Uint8Array };
 }
 
@@ -60,6 +62,18 @@ export interface TargetSnapshot {
   width: number;
   height: number;
   isDefault: boolean;
+}
+
+export interface TextureCopy {
+  source: TargetSnapshot;
+  sourceX: number;
+  sourceY: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  format: number;
+  type: number;
 }
 
 export interface RasterState {

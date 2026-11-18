@@ -122,6 +122,9 @@ export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCap
   };
   method('framebufferTexture2D', 5, args => [toEnum(args[0]), toEnum(args[1]), toEnum(args[2]),
     unwrap(args[3], 'texture'), integer(args[4])]);
+  method('copyTexImage2D', 8, args => [toEnum(args[0]), integer(args[1]), toEnum(args[2]),
+    ...args.slice(3, 8).map(integer)]);
+  method('copyTexSubImage2D', 8, args => [toEnum(args[0]), ...args.slice(1, 8).map(integer)]);
   method('framebufferRenderbuffer', 4, args => [toEnum(args[0]), toEnum(args[1]), toEnum(args[2]),
     unwrap(args[3], 'renderbuffer')]);
   method('renderbufferStorage', 4, args => [toEnum(args[0]), toEnum(args[1]), integer(args[2]), integer(args[3])]);

@@ -14,9 +14,17 @@ pub(super) fn capacity(operations: &[ResourceOperation]) -> Option<usize> {
             ResourceOperation::DefineTexture { .. } => 56,
             ResourceOperation::UpdateTexture { .. } => 100,
             ResourceOperation::GenerateTextureMip { .. } => GENERATED_MIP_BYTES,
+            ResourceOperation::CopyTexture { previous, copy, .. } => {
+                4 + VERSION_BYTES
+                    + 4
+                    + if previous.is_some() { VERSION_BYTES } else { 0 }
+                    + 8
+                    + target_capacity(&copy.source)
+                    + 32
+            }
             ResourceOperation::WriteTexture { .. } => 76,
             ResourceOperation::RetireTexture { .. } => 40,
-            ResourceOperation::RetireDepth { .. } => 24,
+            ResourceOperation::RetireRenderbuffer { .. } => 24,
         };
         length = length.checked_add(size)?;
     }
@@ -48,6 +56,8 @@ pub(super) fn parameters(output: &mut Vec<u8>, parameters: TextureParameters) {
 pub(super) fn target_capacity(target: &refral_core::TargetSnapshot) -> usize {
     20 + if target.color.is_some() {
         VERSION_BYTES
+    } else if target.color_renderbuffer.is_some() {
+        24
     } else {
         0
     } + if target.depth.is_some() { 20 } else { 0 }
@@ -56,9 +66,22 @@ pub(super) fn target(output: &mut Vec<u8>, target: refral_core::TargetSnapshot) 
     u32_value(output, target.width);
     u32_value(output, target.height);
     u32_value(output, u32::from(target.is_default));
-    u32_value(output, u32::from(target.color.is_some()));
     if let Some(color) = target.color {
+        u32_value(output, 1);
         version(output, color);
+    } else if let Some(color) = target.color_renderbuffer {
+        u32_value(output, 2);
+        for value in [
+            color.renderbuffer.context_id,
+            color.renderbuffer.slot,
+            color.renderbuffer.generation,
+        ] {
+            u32_value(output, value);
+        }
+        output.extend_from_slice(&color.storage_generation.to_le_bytes());
+        u32_value(output, color.format);
+    } else {
+        u32_value(output, 0);
     }
     u32_value(output, u32::from(target.depth.is_some()));
     if let Some(depth) = target.depth {
@@ -119,6 +142,35 @@ pub(super) fn encode(output: &mut Vec<u8>, operations: &[ResourceOperation]) {
                 u32_value(output, *width);
                 u32_value(output, *height);
             }
+            ResourceOperation::CopyTexture {
+                version: next,
+                previous,
+                width,
+                height,
+                copy,
+            } => {
+                u32_value(output, 7);
+                version(output, *next);
+                u32_value(output, u32::from(previous.is_some()));
+                if let Some(previous) = previous {
+                    version(output, *previous);
+                }
+                u32_value(output, *width);
+                u32_value(output, *height);
+                target(output, copy.source);
+                for value in [
+                    copy.source_x as u32,
+                    copy.source_y as u32,
+                    copy.x,
+                    copy.y,
+                    copy.width,
+                    copy.height,
+                    copy.format,
+                    copy.ty,
+                ] {
+                    u32_value(output, value);
+                }
+            }
             ResourceOperation::WriteTexture {
                 version: next,
                 previous,
@@ -131,7 +183,7 @@ pub(super) fn encode(output: &mut Vec<u8>, operations: &[ResourceOperation]) {
                 u32_value(output, 4);
                 version(output, *next);
             }
-            ResourceOperation::RetireDepth {
+            ResourceOperation::RetireRenderbuffer {
                 renderbuffer,
                 storage_generation,
             } => {

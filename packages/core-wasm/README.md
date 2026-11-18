@@ -61,6 +61,10 @@ Automatic microtask submission and explicit flush use the same host. The testing
 
 Resource capability 5 encodes the number of sampled levels per binding. Zero selects an incomplete texture, and positive counts carry one 2D image or six cube faces per level. The decoder verifies the image target, level and shared texture identity for the complete chain. Resource operation 6 carries destination and predecessor image versions, followed by the derived width and height as u32 values. The host records the derivation before the next GL command.
 
+## Color renderbuffers and framebuffer copies
+
+Resource capability 6 adds a color renderbuffer target variant with handle, storage generation and internal format. Resource operation 7 carries the destination image version, optional previous version, destination dimensions, source target, signed source coordinates, destination rectangle and texture format/type. The host encodes the copy in sequence and retires both color and depth renderbuffer storage by generation. The draw, readback and DOM capability numbers remain ABI4, readback1 and DOM upload2.
+
 ## Readback capability v1
 
 The full drawing adapter additionally requires rf_readback_protocol_version() equal to one. Initialization reports stale modules with pnpm rust:build guidance before allocating context state. The prepareReadPixels command receives normalized coordinates, dimensions, enums, nullable view brand and destination byte length. Caller storage remains outside Wasm.

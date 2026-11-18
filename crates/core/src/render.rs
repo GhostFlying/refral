@@ -10,12 +10,13 @@ mod readback;
 #[cfg(test)]
 mod texture_tests;
 mod textures;
-pub use framebuffers::{DepthAttachment, TargetSnapshot};
+pub use framebuffers::{ColorRenderbufferAttachment, DepthAttachment, TargetSnapshot};
 mod uniforms;
 pub use raster::RasterState;
 pub use readback::ReadPixelsPlan;
 pub use textures::{
-    ResourceOperation, TextureBinding, TextureImages, TextureParameters, TextureVersion,
+    ResourceOperation, TextureBinding, TextureCopy, TextureImages, TextureParameters,
+    TextureVersion,
 };
 
 pub const VERTEX_SHADER: u32 = 0x8b31;

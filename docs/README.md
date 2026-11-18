@@ -47,3 +47,5 @@ ADR 010 records the [official conformance runner adapter](adr/010-official-confo
 ADR 011 records [vertex component formats, triangle strips and the ABI4 draw snapshot](adr/011-vertex-input-and-topology.md) introduced by task 039.
 
 [ADR 012](adr/012-ordered-texture-mipmaps.md) records ordered texture mip chains, GPU generation and the resource5 protocol.
+
+[ADR 013](adr/013-framebuffer-color-copies.md) records color renderbuffer storage, ordered framebuffer-to-texture copies and the resource6 protocol.

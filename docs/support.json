@@ -1540,7 +1540,7 @@
             }
           ],
           "limits": [
-            "RGBA color with optional DEPTH_COMPONENT16 is the declared execution profile. Depth-only and RGB targets return FRAMEBUFFER_UNSUPPORTED. Broader attachment formats remain future coverage."
+            "This entry covers RGBA texture color with optional DEPTH_COMPONENT16. Depth-only and RGB texture targets return FRAMEBUFFER_UNSUPPORTED. See framebuffer-color-renderbuffer for color renderbuffer targets."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Missing, undefined and dimension-mismatched attachments have distinct completeness statuses. Unsupported legal target combinations return FRAMEBUFFER_UNSUPPORTED."
         },
@@ -1570,7 +1570,7 @@
             }
           ],
           "limits": [
-            "RGBA color with optional DEPTH_COMPONENT16 is the declared execution profile. Depth-only and RGB targets return FRAMEBUFFER_UNSUPPORTED. Broader attachment formats remain future coverage."
+            "This entry covers RGBA texture color with optional DEPTH_COMPONENT16. Depth-only and RGB texture targets return FRAMEBUFFER_UNSUPPORTED. See framebuffer-color-renderbuffer for color renderbuffer targets."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Missing, undefined and dimension-mismatched attachments have distinct completeness statuses. Unsupported legal target combinations return FRAMEBUFFER_UNSUPPORTED."
         }
@@ -1598,7 +1598,7 @@
             "artifacts/rtt/fbo-cube-face-render-sample/result.json"
           ],
           "limits": [
-            "RGBA color with optional DEPTH_COMPONENT16 is the declared execution profile."
+            "This entry covers RGBA CubeMap faces with optional DEPTH_COMPONENT16."
           ],
           "unsupportedBehavior": "An incomplete base cube returns FRAMEBUFFER_INCOMPLETE_ATTACHMENT. A texture target mismatch or a rendering feedback loop produces INVALID_OPERATION."
         },
@@ -1620,9 +1620,109 @@
             "artifacts/rtt/fbo-cube-face-render-sample/result.json"
           ],
           "limits": [
-            "RGBA color with optional DEPTH_COMPONENT16 is the declared execution profile."
+            "This entry covers RGBA CubeMap faces with optional DEPTH_COMPONENT16."
           ],
           "unsupportedBehavior": "An incomplete base cube returns FRAMEBUFFER_INCOMPLETE_ATTACHMENT. A texture target mismatch or a rendering feedback loop produces INVALID_OPERATION."
+        }
+      }
+    },
+    {
+      "id": "framebuffer-color-renderbuffer",
+      "api": "renderbufferStorage RGBA4/RGB5_A1/RGB565, framebufferRenderbuffer COLOR_ATTACHMENT0, renderbuffer and attachment queries",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Color renderbuffers support allocation, drawing, readback, attachment queries, resizing and retained references. The actual color backing is RGBA8 with implicit opaque alpha for RGB565.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT fbo-color-renderbuffer-copy",
+            "sdk/tests/conformance/renderbuffers/framebuffer-test.html",
+            "sdk/tests/conformance/renderbuffers/renderbuffer-initialization.html",
+            "sdk/tests/conformance/textures/misc/tex-input-validation.html"
+          ],
+          "evidence": [
+            "artifacts/framebuffer-texture-copy/official-final",
+            "artifacts/rtt/fbo-color-renderbuffer-copy/result.json"
+          ],
+          "limits": [
+            "A color renderbuffer can be paired with a DEPTH_COMPONENT16 attachment. Stencil and packed depth-stencil are separate capabilities."
+          ],
+          "unsupportedBehavior": "Empty storage or a non-color format in COLOR_ATTACHMENT0 returns FRAMEBUFFER_INCOMPLETE_ATTACHMENT. Stencil storage retains a profile diagnostic."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Color renderbuffers support allocation, drawing, readback, attachment queries, resizing and retained references. The actual color backing is RGBA8 with implicit opaque alpha for RGB565.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT fbo-color-renderbuffer-copy",
+            "sdk/tests/conformance/renderbuffers/framebuffer-test.html",
+            "sdk/tests/conformance/renderbuffers/renderbuffer-initialization.html",
+            "sdk/tests/conformance/textures/misc/tex-input-validation.html"
+          ],
+          "evidence": [
+            "artifacts/framebuffer-texture-copy/official-final",
+            "artifacts/rtt/fbo-color-renderbuffer-copy/result.json"
+          ],
+          "limits": [
+            "A color renderbuffer can be paired with a DEPTH_COMPONENT16 attachment. Stencil and packed depth-stencil are separate capabilities."
+          ],
+          "unsupportedBehavior": "Empty storage or a non-color format in COLOR_ATTACHMENT0 returns FRAMEBUFFER_INCOMPLETE_ATTACHMENT. Stencil storage retains a profile diagnostic."
+        }
+      }
+    },
+    {
+      "id": "framebuffer-texture-copy",
+      "api": "copyTexImage2D and copyTexSubImage2D for 2D textures and CubeMap faces",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Copies the ordered GPU source from default, RGBA texture and supported color renderbuffer targets. Handles channel conversion, clipped source coordinates, texture generations and existing-image subregions.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT fbo-color-renderbuffer-copy",
+            "sdk/tests/conformance/textures/misc/tex-input-validation.html",
+            "sdk/tests/conformance/textures/misc/copy-tex-image-and-sub-image-2d.html",
+            "sdk/tests/conformance/textures/misc/copy-tex-image-2d-formats.html",
+            "sdk/tests/conformance/textures/misc/copytexsubimage2d-subrects.html",
+            "sdk/tests/conformance/rendering/clear-after-copyTexImage2D.html"
+          ],
+          "evidence": [
+            "artifacts/framebuffer-texture-copy/official-final",
+            "artifacts/rtt/fbo-color-renderbuffer-copy/result.json"
+          ],
+          "limits": [
+            "The framebuffer copy format file conditionally skips the RGB texture attachment branch under this profile."
+          ],
+          "unsupportedBehavior": "Incompatible source channels or an exact-image feedback loop produces INVALID_OPERATION. An incomplete framebuffer produces INVALID_FRAMEBUFFER_OPERATION."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Copies the ordered GPU source from default, RGBA texture and supported color renderbuffer targets. Handles channel conversion, clipped source coordinates, texture generations and existing-image subregions.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT fbo-color-renderbuffer-copy",
+            "sdk/tests/conformance/textures/misc/tex-input-validation.html",
+            "sdk/tests/conformance/textures/misc/copy-tex-image-and-sub-image-2d.html",
+            "sdk/tests/conformance/textures/misc/copy-tex-image-2d-formats.html",
+            "sdk/tests/conformance/textures/misc/copytexsubimage2d-subrects.html",
+            "sdk/tests/conformance/rendering/clear-after-copyTexImage2D.html"
+          ],
+          "evidence": [
+            "artifacts/framebuffer-texture-copy/official-final",
+            "artifacts/rtt/fbo-color-renderbuffer-copy/result.json"
+          ],
+          "limits": [
+            "The framebuffer copy format file conditionally skips the RGB texture attachment branch under this profile."
+          ],
+          "unsupportedBehavior": "Incompatible source channels or an exact-image feedback loop produces INVALID_OPERATION. An incomplete framebuffer produces INVALID_FRAMEBUFFER_OPERATION."
         }
       }
     },
@@ -1656,7 +1756,7 @@
             }
           ],
           "limits": [
-            "RGBA color with optional DEPTH_COMPONENT16 is the declared execution profile. Depth-only and RGB targets return FRAMEBUFFER_UNSUPPORTED. Broader attachment formats remain future coverage."
+            "This entry covers RGBA texture color with optional DEPTH_COMPONENT16. Depth-only and RGB texture targets return FRAMEBUFFER_UNSUPPORTED. See framebuffer-color-renderbuffer for color renderbuffer targets."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Missing, undefined and dimension-mismatched attachments have distinct completeness statuses. Unsupported legal target combinations return FRAMEBUFFER_UNSUPPORTED."
         },
@@ -1686,7 +1786,7 @@
             }
           ],
           "limits": [
-            "RGBA color with optional DEPTH_COMPONENT16 is the declared execution profile. Depth-only and RGB targets return FRAMEBUFFER_UNSUPPORTED. Broader attachment formats remain future coverage."
+            "This entry covers RGBA texture color with optional DEPTH_COMPONENT16. Depth-only and RGB texture targets return FRAMEBUFFER_UNSUPPORTED. See framebuffer-color-renderbuffer for color renderbuffer targets."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Missing, undefined and dimension-mismatched attachments have distinct completeness statuses. Unsupported legal target combinations return FRAMEBUFFER_UNSUPPORTED."
         }

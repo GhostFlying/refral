@@ -15,6 +15,8 @@ const TEXTURE: u32 = 0x1702;
 const RGBA: u32 = 0x1908;
 const RGB: u32 = 0x1907;
 const RGBA4: u32 = 0x8056;
+const RGB5_A1: u32 = 0x8057;
+const RGB565: u32 = 0x8d62;
 const DEPTH_COMPONENT16: u32 = 0x81a5;
 const COMPLETE: u32 = 0x8cd5;
 const INCOMPLETE_ATTACHMENT: u32 = 0x8cd6;
@@ -29,11 +31,19 @@ pub struct DepthAttachment {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ColorRenderbufferAttachment {
+    pub renderbuffer: ObjectHandle,
+    pub storage_generation: u64,
+    pub format: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TargetSnapshot {
     pub width: u32,
     pub height: u32,
     pub is_default: bool,
     pub color: Option<TextureVersion>,
+    pub color_renderbuffer: Option<ColorRenderbufferAttachment>,
     pub depth: Option<DepthAttachment>,
 }
 
@@ -53,6 +63,23 @@ struct Renderbuffer {
     height: u32,
     format: u32,
     storage_generation: u64,
+}
+
+fn is_color_format(format: u32) -> bool {
+    matches!(format, RGBA4 | RGB5_A1 | RGB565)
+}
+
+impl Renderbuffer {
+    fn color_component_bits(&self, alpha: bool) -> u32 {
+        if self.storage_generation > 0
+            && is_color_format(self.format)
+            && !(alpha && self.format == RGB565)
+        {
+            8
+        } else {
+            0
+        }
+    }
 }
 impl Default for Renderbuffer {
     fn default() -> Self {
@@ -165,7 +192,10 @@ impl ContextCore {
         true
     }
 
-    fn color_retirement_count(&self, handle: Option<ObjectHandle>) -> usize {
+    fn attachment_retirement_count(&self, handle: Option<ObjectHandle>) -> usize {
+        if handle.is_some_and(|handle| handle.kind == ObjectKind::Renderbuffer) {
+            return 1;
+        }
         handle
             .and_then(|handle| {
                 slot_index(
@@ -180,7 +210,11 @@ impl ContextCore {
             .map_or(0, |texture| texture.defined_image_count())
     }
 
-    fn release_color_attachment(&mut self, handle: ObjectHandle) {
+    fn release_attachment(&mut self, handle: ObjectHandle) {
+        if handle.kind == ObjectKind::Renderbuffer {
+            self.release_renderbuffer_attachment(handle);
+            return;
+        }
         let Some(index) = slot_index(
             &self.render.textures.slots,
             handle,
@@ -195,7 +229,7 @@ impl ContextCore {
         self.release_texture(index);
     }
 
-    fn release_depth_attachment(&mut self, handle: ObjectHandle) {
+    fn release_renderbuffer_attachment(&mut self, handle: ObjectHandle) {
         let Some(index) = slot_index(
             &self.render.framebuffers.renderbuffers,
             handle,
@@ -225,7 +259,7 @@ impl ContextCore {
             self.render
                 .textures
                 .before
-                .push(ResourceOperation::RetireDepth {
+                .push(ResourceOperation::RetireRenderbuffer {
                     renderbuffer: handle,
                     storage_generation: renderbuffer.storage_generation,
                 });
@@ -241,7 +275,21 @@ impl ContextCore {
             ObjectKind::Framebuffer,
             self.context_id,
         )?;
-        self.render.framebuffers.slots[index].value.as_ref()?.color
+        self.render.framebuffers.slots[index]
+            .value
+            .as_ref()?
+            .color
+            .filter(|color| color.kind == ObjectKind::Texture)
+    }
+
+    fn renderbuffer_value(&self, handle: ObjectHandle) -> Option<&Renderbuffer> {
+        let index = slot_index(
+            &self.render.framebuffers.renderbuffers,
+            handle,
+            ObjectKind::Renderbuffer,
+            self.context_id,
+        )?;
+        self.render.framebuffers.renderbuffers[index].value.as_ref()
     }
 
     pub(super) fn detach_bound_texture(&mut self, handle: ObjectHandle) {
@@ -301,7 +349,10 @@ impl ContextCore {
         if framebuffer.color.is_none() && framebuffer.depth.is_none() {
             return MISSING_ATTACHMENT;
         }
-        let color = if let Some(handle) = framebuffer.color {
+        let color = if let Some(handle) = framebuffer
+            .color
+            .filter(|color| color.kind == ObjectKind::Texture)
+        {
             let Some(index) = slot_index(
                 &self.render.textures.slots,
                 handle,
@@ -323,7 +374,15 @@ impl ContextCore {
             if storage.format != RGBA && storage.format != RGB {
                 return INCOMPLETE_ATTACHMENT;
             }
-            Some(storage)
+            Some((storage.width, storage.height, storage.format))
+        } else if let Some(handle) = framebuffer.color {
+            let Some(storage) = self.renderbuffer_value(handle) else {
+                return INCOMPLETE_ATTACHMENT;
+            };
+            if !is_color_format(storage.format) || storage.width == 0 || storage.height == 0 {
+                return INCOMPLETE_ATTACHMENT;
+            }
+            Some((storage.width, storage.height, storage.format))
         } else {
             None
         };
@@ -347,12 +406,13 @@ impl ContextCore {
             {
                 return INCOMPLETE_ATTACHMENT;
             }
-            if color.is_some_and(|color| color.width != depth.width || color.height != depth.height)
+            if color
+                .is_some_and(|(width, height, _)| width != depth.width || height != depth.height)
             {
                 return INCOMPLETE_DIMENSIONS;
             }
         }
-        if color.is_none_or(|color| color.format != RGBA) {
+        if color.is_none_or(|(_, _, format)| format != RGBA && !is_color_format(format)) {
             return UNSUPPORTED;
         }
         COMPLETE
@@ -371,6 +431,7 @@ impl ContextCore {
                 height: self.render.surface[1],
                 is_default: true,
                 color: None,
+                color_renderbuffer: None,
                 depth: None,
             });
         };
@@ -385,17 +446,38 @@ impl ContextCore {
             .as_ref()
             .unwrap();
         let color_handle = framebuffer.color?;
-        let color_index = slot_index(
-            &self.render.textures.slots,
-            color_handle,
-            ObjectKind::Texture,
-            self.context_id,
-        )?;
-        let color = self.render.textures.slots[color_index]
-            .value
-            .as_ref()?
-            .images[framebuffer.color_face]
-            .storage?;
+        let (width, height, color, color_renderbuffer) =
+            if color_handle.kind == ObjectKind::Renderbuffer {
+                let storage = self.renderbuffer_value(color_handle)?;
+                (
+                    storage.width,
+                    storage.height,
+                    None,
+                    Some(ColorRenderbufferAttachment {
+                        renderbuffer: color_handle,
+                        storage_generation: storage.storage_generation,
+                        format: storage.format,
+                    }),
+                )
+            } else {
+                let color_index = slot_index(
+                    &self.render.textures.slots,
+                    color_handle,
+                    ObjectKind::Texture,
+                    self.context_id,
+                )?;
+                let storage = self.render.textures.slots[color_index]
+                    .value
+                    .as_ref()?
+                    .images[framebuffer.color_face]
+                    .storage?;
+                (
+                    storage.width,
+                    storage.height,
+                    Some(self.texture_image_version(color_index, framebuffer.color_face, 0)),
+                    None,
+                )
+            };
         let depth = framebuffer.depth.and_then(|handle| {
             let index = slot_index(
                 &self.render.framebuffers.renderbuffers,
@@ -412,12 +494,20 @@ impl ContextCore {
             })
         });
         Some(TargetSnapshot {
-            width: color.width,
-            height: color.height,
+            width,
+            height,
             is_default: false,
-            color: Some(self.texture_image_version(color_index, framebuffer.color_face, 0)),
+            color,
+            color_renderbuffer,
             depth,
         })
+    }
+
+    pub(super) fn source_has_alpha(&self, target: &TargetSnapshot) -> bool {
+        if let Some(color) = target.color_renderbuffer {
+            return color.format != RGB565;
+        }
+        !target.is_default || self.render.context_alpha
     }
 
     pub(super) fn prepare_color_write(&mut self, target: &TargetSnapshot) -> bool {
@@ -550,6 +640,15 @@ impl ContextCore {
         }
         if parameter == 0x0d57 {
             return 0;
+        }
+        if let Some(handle) = framebuffer
+            .color
+            .filter(|color| color.kind == ObjectKind::Renderbuffer)
+        {
+            return self
+                .renderbuffer_value(handle)
+                .filter(|value| value.width > 0 && value.height > 0)
+                .map_or(0, |value| value.color_component_bits(parameter == 0x0d55));
         }
         let color = framebuffer.color.and_then(|handle| {
             let index = slot_index(
@@ -717,12 +816,12 @@ impl ContextCore {
                     return Some(Reply::Null);
                 }
                 let format = arg(1).number() as u32;
-                if !matches!(format, RGBA4 | 0x8057 | 0x8d62 | DEPTH_COMPONENT16 | 0x8d48) {
+                if !is_color_format(format) && !matches!(format, DEPTH_COMPONENT16 | 0x8d48) {
                     self.record_error(INVALID_ENUM);
                     return Some(Reply::Null);
                 }
-                if format != DEPTH_COMPONENT16 {
-                    return Some(Reply::Unsupported("non-depth renderbuffer storage"));
+                if format == 0x8d48 {
+                    return Some(Reply::Unsupported("stencil renderbuffer storage"));
                 }
                 let generation = self.render.framebuffers.renderbuffers[index]
                     .value
@@ -740,7 +839,7 @@ impl ContextCore {
                     self.render
                         .textures
                         .before
-                        .push(ResourceOperation::RetireDepth {
+                        .push(ResourceOperation::RetireRenderbuffer {
                             renderbuffer: handle,
                             storage_generation: generation,
                         });
@@ -774,9 +873,10 @@ impl ContextCore {
                     0x8d42 => value.width,
                     0x8d43 => value.height,
                     0x8d44 => value.format,
-                    0x8d50 | 0x8d51 | 0x8d52 | 0x8d53 | 0x8d55 => 0,
+                    0x8d50..=0x8d53 => value.color_component_bits(arg(1).number() as u32 == 0x8d53),
+                    0x8d55 => 0,
                     0x8d54 => {
-                        if value.storage_generation > 0 {
+                        if value.storage_generation > 0 && value.format == DEPTH_COMPONENT16 {
                             24
                         } else {
                             0
@@ -850,11 +950,8 @@ impl ContextCore {
         } else {
             None
         };
-        let attachment = if texture_attachment {
-            COLOR_ATTACHMENT0
-        } else {
-            DEPTH_ATTACHMENT
-        };
+        let attachment = arg(1).number() as u32;
+        let color_attachment = attachment == COLOR_ATTACHMENT0;
         let resource_target = if texture_attachment {
             TEXTURE_2D
         } else {
@@ -862,7 +959,9 @@ impl ContextCore {
         };
         let textarget = arg(2).number() as u32;
         let cube_face = texture_attachment && (0x8515..=0x851a).contains(&textarget);
-        if arg(1).number() as u32 != attachment || textarget != resource_target && !cube_face {
+        if !(color_attachment || !texture_attachment && attachment == DEPTH_ATTACHMENT)
+            || textarget != resource_target && !cube_face
+        {
             self.record_error(INVALID_ENUM);
             return Reply::Null;
         }
@@ -895,7 +994,7 @@ impl ContextCore {
             .value
             .as_ref()
             .unwrap();
-        let previous = if texture_attachment {
+        let previous = if color_attachment {
             framebuffer.color
         } else {
             framebuffer.depth
@@ -934,12 +1033,7 @@ impl ContextCore {
                 return Reply::Null;
             }
         }
-        let retire_count = if texture_attachment {
-            self.color_retirement_count(previous)
-        } else {
-            1
-        };
-        if !self.reserve_framebuffer_operations(retire_count) {
+        if !self.reserve_framebuffer_operations(self.attachment_retirement_count(previous)) {
             return Reply::Null;
         }
         if let Some(resource_index) = resource_index {
@@ -961,18 +1055,14 @@ impl ContextCore {
             .value
             .as_mut()
             .unwrap();
-        if texture_attachment {
+        if color_attachment {
             framebuffer.color = handle;
             framebuffer.color_face = color_face;
         } else {
             framebuffer.depth = handle;
         }
         if let Some(previous) = previous {
-            if texture_attachment {
-                self.release_color_attachment(previous);
-            } else {
-                self.release_depth_attachment(previous);
-            }
+            self.release_attachment(previous);
         }
         Reply::Null
     }
@@ -1000,7 +1090,7 @@ impl ContextCore {
         if parameter == 0x8cd0 {
             return Reply::Number(if object.is_none() {
                 0
-            } else if attachment == COLOR_ATTACHMENT0 {
+            } else if object.is_some_and(|handle| handle.kind == ObjectKind::Texture) {
                 TEXTURE
             } else {
                 RENDERBUFFER
@@ -1013,10 +1103,10 @@ impl ContextCore {
         if parameter == 0x8cd1 {
             return Reply::Handle(object);
         }
-        if attachment == COLOR_ATTACHMENT0 && parameter == 0x8cd2 {
+        if object.kind == ObjectKind::Texture && parameter == 0x8cd2 {
             return Reply::Number(0.0);
         }
-        if attachment == COLOR_ATTACHMENT0 && parameter == 0x8cd3 {
+        if object.kind == ObjectKind::Texture && parameter == 0x8cd3 {
             return Reply::Number(if framebuffer.color_face == 0 {
                 0
             } else {
@@ -1068,7 +1158,7 @@ impl ContextCore {
                 .as_ref()
                 .unwrap()
                 .color;
-            if !self.reserve_framebuffer_operations(self.color_retirement_count(color) + 1) {
+            if !self.reserve_framebuffer_operations(self.attachment_retirement_count(color) + 1) {
                 return;
             }
             let value = self.render.framebuffers.slots[index].value.take().unwrap();
@@ -1076,10 +1166,10 @@ impl ContextCore {
                 self.render.framebuffers.bound = None;
             }
             if let Some(color) = value.color {
-                self.release_color_attachment(color);
+                self.release_attachment(color);
             }
             if let Some(depth) = value.depth {
-                self.release_depth_attachment(depth);
+                self.release_renderbuffer_attachment(depth);
             }
         } else {
             if self.render.framebuffers.renderbuffers[index]
@@ -1101,28 +1191,30 @@ impl ContextCore {
             if self.render.framebuffers.renderbuffer == Some(handle) {
                 self.render.framebuffers.renderbuffer = None;
             }
-            if let Some(framebuffer) = self.render.framebuffers.bound {
-                if let Some(framebuffer_index) = slot_index(
+            if let Some(framebuffer) = self.render.framebuffers.bound.and_then(|framebuffer| {
+                slot_index(
                     &self.render.framebuffers.slots,
                     framebuffer,
                     ObjectKind::Framebuffer,
                     self.context_id,
-                ) {
-                    if self.render.framebuffers.slots[framebuffer_index]
-                        .value
-                        .as_ref()
-                        .unwrap()
-                        .depth
-                        == Some(handle)
-                    {
-                        self.render.framebuffers.slots[framebuffer_index]
-                            .value
-                            .as_mut()
-                            .unwrap()
-                            .depth = None;
-                        self.release_depth_attachment(handle);
-                        return;
+                )
+            }) {
+                let framebuffer = self.render.framebuffers.slots[framebuffer]
+                    .value
+                    .as_mut()
+                    .unwrap();
+                let mut detached = 0;
+                for point in [&mut framebuffer.color, &mut framebuffer.depth] {
+                    if *point == Some(handle) {
+                        *point = None;
+                        detached += 1;
                     }
+                }
+                if detached > 0 {
+                    for _ in 0..detached {
+                        self.release_renderbuffer_attachment(handle);
+                    }
+                    return;
                 }
             }
             self.release_renderbuffer(index, handle);

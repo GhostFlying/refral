@@ -80,8 +80,8 @@ describe('ordered execution resources', () => {
     const first = resources.depth(depth, 1);
     expect(resources.depth(depth, 2)).toBe(first);
     expect(resources.depth({ ...depth, generation: 2 }, 1).id).not.toBe(first.id);
-    resources.apply({ kind: 'retire-depth', renderbuffer: depth, storageGeneration: 1 });
-    resources.apply({ kind: 'retire-depth', renderbuffer: depth, storageGeneration: 1 });
+    resources.apply({ kind: 'retire-renderbuffer', renderbuffer: depth, storageGeneration: 1 });
+    resources.apply({ kind: 'retire-renderbuffer', renderbuffer: depth, storageGeneration: 1 });
     expect(host.retireDepth).toHaveBeenCalledTimes(1);
     resources.apply({ kind: 'retire-texture', version });
     resources.apply({ kind: 'retire-texture', version });

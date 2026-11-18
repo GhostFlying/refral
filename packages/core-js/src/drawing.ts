@@ -272,7 +272,7 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
       const value = args[3] === null ? null : this.resolveObject(args[3], texture ? "texture" : "renderbuffer");
       if (args[3] !== null && !value) return;
       const framebuffer = this.context.getParameter(GL.FRAMEBUFFER_BINDING) as FramebufferObject | null;
-      const previous = texture ? framebuffer?.color ?? null : framebuffer?.depth ?? null;
+      const previous = args[1] === GL.COLOR_ATTACHMENT0 ? framebuffer?.color ?? null : framebuffer?.depth ?? null;
       const result = this.context.invoke(operation, [args[0], args[1], args[2], value, ...args.slice(4)]);
       this.retireAttachment(previous);
       return result;

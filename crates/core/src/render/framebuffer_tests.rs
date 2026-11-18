@@ -280,7 +280,7 @@ fn initial_renderbuffer_queries_and_storage_failures_preserve_state() {
         invoke(
             &mut core,
             "renderbufferStorage",
-            &[number(RENDERBUFFER), number(RGBA4), number(4), number(5)]
+            &[number(RENDERBUFFER), number(0x8d48), number(4), number(5)]
         ),
         Reply::Unsupported(_)
     ));
@@ -417,7 +417,7 @@ fn repeated_deletion_preserves_other_framebuffer_references_and_final_retirement
         matches!(&before[0], ResourceOperation::RetireTexture { version } if version.texture == texture)
     );
     assert!(
-        matches!(&before[1], ResourceOperation::RetireDepth { renderbuffer, storage_generation: 1 } if *renderbuffer == depth)
+        matches!(&before[1], ResourceOperation::RetireRenderbuffer { renderbuffer, storage_generation: 1 } if *renderbuffer == depth)
     );
     assert_eq!(core.get_error(), NO_ERROR);
 }
@@ -470,7 +470,7 @@ fn resize_preserves_prior_target_identity_and_retires_each_depth_generation() {
     let generations: Vec<_> = before
         .iter()
         .filter_map(|operation| match operation {
-            ResourceOperation::RetireDepth {
+            ResourceOperation::RetireRenderbuffer {
                 renderbuffer,
                 storage_generation,
             } if *renderbuffer == depth => Some(*storage_generation),

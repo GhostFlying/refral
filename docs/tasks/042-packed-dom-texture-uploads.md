@@ -1,0 +1,19 @@
+# WebGL1 packed DOM texture uploads
+
+Extend task 041 to the existing sRGB ImageData, HTMLCanvasElement, OffscreenCanvas and decoded HTMLImageElement source profiles. Support the level-zero texImage2D and texSubImage2D overloads for RGB/565, RGBA/4444 and RGBA/5551 in Texture2D and CubeMap. The integrating owner edits the JS and Rust texture conversion, relevant shared Chrome fixtures, and acceptance documentation. Dependencies are the pinned WebGL1/GLES2 specifications, ADR 008's source extraction, ADR 009's image identity and the task 041 packed typed path.
+
+1. Confirm the DOM conversion order and packed channel precision against the pinned WebGL requirements and a native headless palette. Keep tightly packed 8-bit RGBA extraction, with flip and premultiplication performed once. Quantize the DOM colors at the selected packed precision before emitting RGBA8 resource bytes.
+2. Keep type compatibility and existing image preflight, source readiness/security and version semantics. Route DOM byte uploads independently of the Uint16Array view required by typed packed uploads. Maintain the existing host and Wasm execution contract.
+3. Use three-path palette regressions with nontrivial RGB and alpha, row flip, alignment, mutable source and subimage coverage. Run both original mixed texture files, the original packed ImageData/Canvas/image/SVG files, full headless Chrome regressions, deterministic checks, actual Wasm, build and deployment. Record raw evidence under `artifacts/packed-dom` and the shared browser result directory.
+
+## Conversion and evidence
+
+The semantic cores distinguish the tightly packed RGBA8 DOM source from the application-supplied Uint16Array packed view. ImageData applies the unpack transforms in the core. Canvas and HTMLImage extraction apply them before the core receives the bytes. Both cores truncate low bits and expand normalized packed channel values to RGBA8, using opaque alpha for RGB. This implements the required precision loss through the existing output allocation. The cores emit RGBA8 through the ABI4/resource3 contract.
+
+The native headless control on Chrome 158.0.8127.36 records low-bit truncation for ImageData and PNG, and some different quantization thresholds for Canvas RGBA4444 and RGB565. For example, Chrome converts opaque RGB [15,31,63] to [0,17,51] in RGBA4444 from ImageData and PNG, and to [17,34,68] from OffscreenCanvas. Both have the required loss of precision. The captures are in `artifacts/packed-dom/native-probe.json`. The regression uses independently specified quantized pixel expectations and includes Canvas colors away from the differing boundaries.
+
+The shared `packed-formats` browser scene executes 12 combined definition and update captures and 73 checks per backend. It verifies exact native, JS and Rust agreement for ImageData, PNG, HTMLCanvas and OffscreenCanvas, with flip, source-alpha premultiplication, incompatible subimage type, subsequent source mutation and draw order. Results are in `artifacts/dom-input/pr3/public/packed-formats/result.json`.
+
+The original WebGL1 runner passed all 14 files on each backend in headless Chrome 158.0.8127.36, at the pinned CTS revision. Each backend recorded 2,576 passing assertions. This includes gl-teximage, tex-image-with-format-and-type, and the 12 packed Canvas, ImageData, image and SVG originals. Their original scripts, assertions and source identities were preserved. The Canvas and image generators exercise 2D and cube targets. The artifacts are in `artifacts/packed-dom/official`. The Rust Wasm SHA-256 is `eeb651389a46d8df9ee7c4e0841095d186c7782411eb5225dc659e01a6b93f24`.
+
+Local verification passed 130 headless Chrome regressions, 226 JS unit tests, 58 tool tests, 75 Rust native tests, 47 actual-Wasm adapter tests, the build and built deployment checks. TypeScript, Rust formatting and support metadata checks passed.

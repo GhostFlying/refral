@@ -133,9 +133,12 @@ describe("JS DOM texture upload planning", () => {
     expect(host.replaceStorage).toHaveBeenCalledTimes(1);
   });
 
-  it("gives supported source facts an explicit capability outcome for mip levels", () => {
+  it("preflights a compatible nonzero level without defining it", () => {
     const { core, texture } = createContext();
-    expect(() => core.prepareDomTextureUpload(request({ level: 1 }))).toThrowError(/texture mip levels/);
+    expect(core.prepareDomTextureUpload(request({ level: 1 }))).toEqual({
+      flipY: false, premultiplyAlpha: false, colorSpaceConversion: GL.BROWSER_DEFAULT_WEBGL,
+    });
+    expect(texture.image(GL.TEXTURE_2D, 1)).toBeUndefined();
     expect(texture.storage).toBeNull();
     expect(core.getError()).toBe(GL.NO_ERROR);
   });

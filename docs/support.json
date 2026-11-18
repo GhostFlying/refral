@@ -781,7 +781,7 @@
             }
           ],
           "limits": [
-            "This entry covers the five level-zero UNSIGNED_BYTE formats. See texture-packed-typed-upload for packed types, and texture-dom-sources and cubemap-level-zero for source and target coverage. Mip levels, mipmap generation and additional formats remain pending."
+            "This entry covers the five level-zero UNSIGNED_BYTE formats. See texture-packed-typed-upload for packed types, and texture-dom-sources and cubemap-level-zero for source and target coverage. See texture-mip-levels for explicit levels. Mipmap generation and additional formats remain pending."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -826,7 +826,7 @@
             }
           ],
           "limits": [
-            "This entry covers the five level-zero UNSIGNED_BYTE formats. See texture-packed-typed-upload for packed types, and texture-dom-sources and cubemap-level-zero for source and target coverage. Mip levels, mipmap generation and additional formats remain pending."
+            "This entry covers the five level-zero UNSIGNED_BYTE formats. See texture-packed-typed-upload for packed types, and texture-dom-sources and cubemap-level-zero for source and target coverage. See texture-mip-levels for explicit levels. Mipmap generation and additional formats remain pending."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -876,7 +876,7 @@
             }
           ],
           "limits": [
-            "See texture-dom-sources for packed DOM inputs. Nonzero mip levels have a separate acceptance task."
+            "See texture-dom-sources for packed DOM inputs. See texture-mip-levels for explicit levels."
           ],
           "unsupportedBehavior": "The cores produce GL errors for invalid format/type and source-view combinations before state changes."
         },
@@ -920,7 +920,7 @@
             }
           ],
           "limits": [
-            "See texture-dom-sources for packed DOM inputs. Nonzero mip levels have a separate acceptance task."
+            "See texture-dom-sources for packed DOM inputs. See texture-mip-levels for explicit levels."
           ],
           "unsupportedBehavior": "The cores produce GL errors for invalid format/type and source-view combinations before state changes."
         }
@@ -1190,7 +1190,7 @@
             }
           ],
           "limits": [
-            "This entry covers the five level-zero UNSIGNED_BYTE formats. See texture-packed-typed-upload for packed types, and texture-dom-sources and cubemap-level-zero for source and target coverage. Mip levels, mipmap generation and additional formats remain pending."
+            "This entry covers the five level-zero UNSIGNED_BYTE formats. See texture-packed-typed-upload for packed types, and texture-dom-sources and cubemap-level-zero for source and target coverage. See texture-mip-levels for explicit levels. Mipmap generation and additional formats remain pending."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -1220,7 +1220,7 @@
             }
           ],
           "limits": [
-            "This entry covers the five level-zero UNSIGNED_BYTE formats. See texture-packed-typed-upload for packed types, and texture-dom-sources and cubemap-level-zero for source and target coverage. Mip levels, mipmap generation and additional formats remain pending."
+            "This entry covers the five level-zero UNSIGNED_BYTE formats. See texture-packed-typed-upload for packed types, and texture-dom-sources and cubemap-level-zero for source and target coverage. See texture-mip-levels for explicit levels. Mipmap generation and additional formats remain pending."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -1256,7 +1256,7 @@
             }
           ],
           "limits": [
-            "Level-zero byte and packed typed uploads are tracked in texture2d-typed-upload and texture-packed-typed-upload. The DOM entry records accepted source overloads. Nonzero mip levels, mipmap generation and additional formats have separate compatibility tasks."
+            "Level-zero byte and packed typed uploads are tracked in texture2d-typed-upload and texture-packed-typed-upload. The DOM entry records accepted source overloads. See texture-mip-levels for explicit levels. Mipmap generation and additional formats have separate compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -1286,7 +1286,7 @@
             }
           ],
           "limits": [
-            "Level-zero byte and packed typed uploads are tracked in texture2d-typed-upload and texture-packed-typed-upload. The DOM entry records accepted source overloads. Nonzero mip levels, mipmap generation and additional formats have separate compatibility tasks."
+            "Level-zero byte and packed typed uploads are tracked in texture2d-typed-upload and texture-packed-typed-upload. The DOM entry records accepted source overloads. See texture-mip-levels for explicit levels. Mipmap generation and additional formats have separate compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -1317,7 +1317,7 @@
             }
           ],
           "limits": [
-            "Typed and DOM uploads are recorded by texture2d-typed-upload, texture-packed-typed-upload and texture-dom-sources. CubeMap coverage is recorded by cubemap-level-zero. Nonzero levels and mipmaps follow their scoped tasks."
+            "Typed and DOM uploads are recorded by texture2d-typed-upload, texture-packed-typed-upload and texture-dom-sources. CubeMap coverage is recorded by cubemap-level-zero. See texture-mip-levels for explicit levels. Mipmap generation follows its scoped task."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -1342,7 +1342,7 @@
             }
           ],
           "limits": [
-            "Typed and DOM uploads are recorded by texture2d-typed-upload, texture-packed-typed-upload and texture-dom-sources. CubeMap coverage is recorded by cubemap-level-zero. Nonzero levels and mipmaps follow their scoped tasks."
+            "Typed and DOM uploads are recorded by texture2d-typed-upload, texture-packed-typed-upload and texture-dom-sources. CubeMap coverage is recorded by cubemap-level-zero. See texture-mip-levels for explicit levels. Mipmap generation follows its scoped task."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -2010,7 +2010,7 @@
     },
     {
       "id": "additional-rendering-capabilities",
-      "api": "generateMipmap, texture mip levels, compressed textures, non-triangle primitives, non-FLOAT attributes, stencil and polygon offset",
+      "api": "generateMipmap, compressed textures, other primitive modes beyond triangle lists and strips, stencil and polygon offset",
       "cores": {
         "js": {
           "status": "unimplemented",
@@ -2201,7 +2201,7 @@
             }
           ],
           "limits": [
-            "See texture-packed-typed-upload for the verified packed typed CubeMap cases and texture-dom-sources for the supported packed DOM inputs. Nonzero mip levels, mipmap generation and CubeMap framebuffer attachments have separate acceptance tasks."
+            "See texture-packed-typed-upload for the verified packed typed CubeMap cases and texture-dom-sources for the supported packed DOM inputs. See texture-mip-levels for explicit levels. Mipmap generation and CubeMap framebuffer attachments have separate acceptance tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Valid operations beyond the declared profile report NotSupportedError."
         },
@@ -2234,9 +2234,59 @@
             }
           ],
           "limits": [
-            "See texture-packed-typed-upload for the verified packed typed CubeMap cases and texture-dom-sources for the supported packed DOM inputs. Nonzero mip levels, mipmap generation and CubeMap framebuffer attachments have separate acceptance tasks."
+            "See texture-packed-typed-upload for the verified packed typed CubeMap cases and texture-dom-sources for the supported packed DOM inputs. See texture-mip-levels for explicit levels. Mipmap generation and CubeMap framebuffer attachments have separate acceptance tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Valid operations beyond the declared profile report NotSupportedError."
+        }
+      }
+    },
+    {
+      "id": "texture-mip-levels",
+      "api": "texImage2D and texSubImage2D explicit mip levels and mip sampling",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Explicit nonzero-level image definition and updates for 2D and cube faces, advertised mip size bounds, completeness, ordered resource versions and GPU sampling of matching levels.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT texture-manual-mip-2d",
+            "tests/chrome/rtt.spec.ts::RTT texture-manual-mip-cube",
+            "sdk/tests/conformance/textures/misc/texture-size-limit.html",
+            "sdk/tests/conformance/more/functions/texSubImage2D.html"
+          ],
+          "evidence": [
+            "artifacts/mip-levels/official",
+            "artifacts/rtt/texture-manual-mip-2d/result.json",
+            "artifacts/rtt/texture-manual-mip-cube/result.json"
+          ],
+          "limits": [
+            "Mipmap generation is tracked separately. WebGL1 offscreen color attachments use level zero."
+          ],
+          "unsupportedBehavior": "Invalid levels or dimensions produce INVALID_VALUE. Updates of undefined images produce INVALID_OPERATION. Incomplete sampling returns opaque black."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Explicit nonzero-level image definition and updates for 2D and cube faces, advertised mip size bounds, completeness, ordered resource versions and GPU sampling of matching levels.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT texture-manual-mip-2d",
+            "tests/chrome/rtt.spec.ts::RTT texture-manual-mip-cube",
+            "sdk/tests/conformance/textures/misc/texture-size-limit.html",
+            "sdk/tests/conformance/more/functions/texSubImage2D.html"
+          ],
+          "evidence": [
+            "artifacts/mip-levels/official",
+            "artifacts/rtt/texture-manual-mip-2d/result.json",
+            "artifacts/rtt/texture-manual-mip-cube/result.json"
+          ],
+          "limits": [
+            "Mipmap generation is tracked separately. WebGL1 offscreen color attachments use level zero."
+          ],
+          "unsupportedBehavior": "Invalid levels or dimensions produce INVALID_VALUE. Updates of undefined images produce INVALID_OPERATION. Incomplete sampling returns opaque black."
         }
       }
     }

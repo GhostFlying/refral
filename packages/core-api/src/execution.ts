@@ -122,6 +122,8 @@ export interface TextureBinding {
   dimension?: '2d' | 'cube';
   /** A complete cube contains six canonical image records. Missing faces denote incomplete sampling. */
   cubeFaces?: readonly TextureStorage[];
+  /** Complete multilevel chains are level-major, with cube faces in CUBE_FACES order. */
+  mipImages?: readonly TextureStorage[];
 }
 
 export interface DrawOperation {

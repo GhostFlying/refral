@@ -32,7 +32,7 @@ export class TextureObject extends LogicalObject implements TextureImage {
   initialized = false;
   retired = false;
   target: number | null = null;
-  readonly cubeImages = new Map<number, TextureImage>();
+  readonly imageLevels = new Map<number, Map<number, TextureImage>>();
   // These fields retain the existing level-zero 2D image and direct CPU callers.
   storage: TextureStorage | null = null;
   generation = 0;
@@ -46,8 +46,15 @@ export class TextureObject extends LogicalObject implements TextureImage {
     wrapT: GL.REPEAT,
   };
 
-  image(imageTarget: number): TextureImage | undefined {
-    return imageTarget === GL.TEXTURE_2D ? this : this.cubeImages.get(imageTarget);
+  image(imageTarget: number, level = 0): TextureImage | undefined {
+    return imageTarget === GL.TEXTURE_2D && level === 0 ? this : this.imageLevels.get(level)?.get(imageTarget);
+  }
+
+  setImage(imageTarget: number, level: number, image: TextureImage): void {
+    if (image === this) return;
+    let images = this.imageLevels.get(level);
+    if (!images) this.imageLevels.set(level, images = new Map());
+    images.set(imageTarget, image);
   }
 }
 
@@ -91,29 +98,46 @@ export function isPowerOfTwo(value: number): boolean {
   return value > 0 && (value & (value - 1)) === 0;
 }
 
+export function textureTargets(texture: TextureObject): readonly number[] {
+  return texture.target === GL.TEXTURE_CUBE_MAP ? CUBE_FACES : [GL.TEXTURE_2D];
+}
+
+export function textureBase(texture: TextureObject): TextureImage | undefined {
+  const targets = textureTargets(texture);
+  const base = texture.image(targets[0]!);
+  const storage = base?.storage;
+  if (!base || !storage?.width || !storage.height) return undefined;
+  if (texture.target === GL.TEXTURE_CUBE_MAP && (storage.width !== storage.height || targets.some(target => {
+    const image = texture.image(target);
+    return image?.storage?.width !== storage.width || image.storage.height !== storage.height
+      || image.format !== base.format || image.type !== base.type;
+  }))) return undefined;
+  return base;
+}
+
+export function textureSamplingLevelCount(texture: TextureObject): number {
+  const base = textureBase(texture);
+  if (!base?.storage) return 0;
+  const { width, height } = base.storage;
+  const { minFilter, wrapS, wrapT } = texture.parameters;
+  const nonMip = minFilter === GL.NEAREST || minFilter === GL.LINEAR;
+  if (!isPowerOfTwo(width) || !isPowerOfTwo(height)) {
+    return nonMip && wrapS === GL.CLAMP_TO_EDGE && wrapT === GL.CLAMP_TO_EDGE ? 1 : 0;
+  }
+  if (nonMip) return 1;
+  const levels = Math.floor(Math.log2(Math.max(width, height))) + 1;
+  const targets = textureTargets(texture);
+  for (let level = 1; level < levels; level++) {
+    for (const target of targets) {
+      const image = texture.image(target, level);
+      if (image?.storage?.width !== Math.max(1, width >> level)
+        || image.storage.height !== Math.max(1, height >> level)
+        || image.format !== base.format || image.type !== base.type) return 0;
+    }
+  }
+  return levels;
+}
+
 export function isTextureComplete(texture: TextureObject): boolean {
-  let image: TextureImage = texture;
-  if (texture.target === GL.TEXTURE_CUBE_MAP) {
-    const first = texture.cubeImages.get(CUBE_FACES[0]);
-    if (!first?.storage) return false;
-    const { width, height } = first.storage;
-    if (width !== height || CUBE_FACES.some(face => {
-      const other = texture.cubeImages.get(face);
-      return !other?.storage || other.storage.width !== width || other.storage.height !== height
-        || other.format !== first.format || other.type !== first.type;
-    })) return false;
-    image = first;
-  }
-  const storage = image.storage;
-  if (!storage || !storage.width || !storage.height) return false;
-  const params = texture.parameters;
-  if (params.minFilter !== GL.NEAREST && params.minFilter !== GL.LINEAR) {
-    if (![GL.NEAREST_MIPMAP_NEAREST, GL.LINEAR_MIPMAP_NEAREST,
-      GL.NEAREST_MIPMAP_LINEAR, GL.LINEAR_MIPMAP_LINEAR].includes(params.minFilter as 0x2700)) return false;
-    if (storage.width !== 1 || storage.height !== 1) return false;
-  }
-  if (!isPowerOfTwo(storage.width) || !isPowerOfTwo(storage.height)) {
-    return params.wrapS === GL.CLAMP_TO_EDGE && params.wrapT === GL.CLAMP_TO_EDGE;
-  }
-  return true;
+  return textureSamplingLevelCount(texture) > 0;
 }

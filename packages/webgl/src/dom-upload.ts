@@ -3,7 +3,7 @@ import type { DomTextureUploadPlan, DomTextureUploadRequest, DrawingCore, PixelU
 import { bufferSourceBytes } from './buffers.js';
 import { ImageExtractor } from './image-extractor.js';
 
-type SourceKind = 'image-data' | 'canvas' | 'offscreen-canvas' | 'image';
+type SourceKind = 'image-data' | 'canvas' | 'offscreen-canvas' | 'image' | 'video';
 interface SourceType {
   kind: SourceKind;
   getters: Record<string, PropertyDescriptor>;
@@ -23,6 +23,7 @@ for (const [kind, prototype] of [
   ['canvas', typeof HTMLCanvasElement === 'undefined' ? null : HTMLCanvasElement.prototype],
   ['offscreen-canvas', typeof OffscreenCanvas === 'undefined' ? null : OffscreenCanvas.prototype],
   ['image', typeof HTMLImageElement === 'undefined' ? null : HTMLImageElement.prototype],
+  ['video', typeof HTMLVideoElement === 'undefined' ? null : HTMLVideoElement.prototype],
 ] as const) {
   if (prototype) sourceTypes.push({ kind, getters: Object.getOwnPropertyDescriptors(prototype) });
 }
@@ -39,14 +40,14 @@ export function registerCanvasSource(canvas: HTMLCanvasElement, source: CanvasSo
 
 /** Platform getters provide the WebIDL source brand and internal dimensions across realms. */
 function inspectSource(value: unknown,
-  extract: (image: HTMLImageElement, width: number, height: number) => ReturnType<ImageExtractor['capture']>,
+  extract: (source: HTMLImageElement | HTMLVideoElement, width: number, height: number) => ReturnType<ImageExtractor['capture']>,
   captureCanvas: (source: HTMLCanvasElement | OffscreenCanvas, width: number, height: number) => Uint8Array,
   validateCanvasOrigin: (source: HTMLCanvasElement | OffscreenCanvas) => void): SourcePixels {
   for (const type of sourceTypes) {
     let width: number;
-    try { width = type.getters.width!.get!.call(value); }
+    try { width = type.getters[type.kind === 'video' ? 'videoWidth' : 'width']!.get!.call(value); }
     catch { continue; }
-    let height = type.getters.height!.get!.call(value) as number;
+    let height = type.getters[type.kind === 'video' ? 'videoHeight' : 'height']!.get!.call(value) as number;
     if (type.kind === 'image-data') {
       const data = type.getters.data!.get!.call(value) as ArrayBufferView;
       const bytes = bufferSourceBytes(data, true);
@@ -60,14 +61,19 @@ function inspectSource(value: unknown,
           return { bytes, viewType: 'Uint8Array', source: 'dom' };
         } };
     }
-    if (type.kind === 'image') {
-      width = type.getters.naturalWidth!.get!.call(value);
-      height = type.getters.naturalHeight!.get!.call(value);
+    if (type.kind === 'image' || type.kind === 'video') {
+      const isImage = type.kind === 'image';
+      if (isImage) {
+        width = type.getters.naturalWidth!.get!.call(value);
+        height = type.getters.naturalHeight!.get!.call(value);
+      }
       let captured: ReturnType<ImageExtractor['capture']>;
       const source: SourcePixels = { width, height,
-        valid: type.getters.complete!.get!.call(value),
+        // The decoder can retain a usable frame when HTML media readiness drops.
+        // Let the native video upload determine frame availability.
+        valid: isImage ? type.getters.complete!.get!.call(value) : width > 0 && height > 0,
         prepare() {
-          captured = extract(value as HTMLImageElement, width, height);
+          captured = extract(value as HTMLImageElement | HTMLVideoElement, width, height);
           source.width = captured.width;
           source.height = captured.height;
           source.valid = captured.width > 0 && captured.height > 0;
@@ -112,9 +118,9 @@ export function createDomTextureUploads(core: DrawingCore, captureCanvas: Canvas
       colorSpaceConversion: core.invoke('getParameter', [GL.UNPACK_COLORSPACE_CONVERSION_WEBGL]) as number,
     };
   }
-  function extract(image: HTMLImageElement, width: number, height: number) {
+  function extract(source: HTMLImageElement | HTMLVideoElement, width: number, height: number) {
     extractor ??= new ImageExtractor();
-    return extractor.capture(image, width, height, unpackPlan());
+    return extractor.capture(source, width, height, unpackPlan());
   }
   return {
     upload(parameters: Omit<DomTextureUploadRequest, 'width' | 'height' | 'sourceValid'>, value: unknown): void {

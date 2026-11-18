@@ -18,10 +18,14 @@ Native WebGL exposes the uploaded texture through a framebuffer. Its actual dime
 
 Before extracting a Refral source canvas, its registered host initializes the current-sized default target, ends pending work and submits presentation. This operation selects the default drawing buffer independently of the source core's current FBO binding. The registration is removed on facade disposal. The destination upload snapshots the resulting Canvas pixels before returning.
 
+## HTMLVideoElement
+
+Task050 extends the same private extractor to decoded video frames. Headless Chrome probes found differences between native WebGL video upload and WebGPU external copy for ordinary, rotated, and transparent clips. Native upload applies the configured WebGL unpack flags and enforces CORS. The extractor resolves the actual upload extent because display dimensions can differ from frame pixel dimensions. A successful capture transfers owned bytes to the selected core, which handles the application texture and queued work. The helper performs a synchronous readback on each accepted call. [Video verification](../tasks/050-video-texture-uploads.md)
+
 ## Verification and future work
 
 Tasks031–033 record intrinsic/cross-realm brands, source readiness, origin errors, exact low/zero-alpha image bytes, flip/PMA, ICC NONE/default behavior, source mutation, dimensions, source-canvas ordering, actual-core results and deployment/performance evidence. Browser-default color conversion records native Chrome's policy alongside exact NONE assertions.
 
 DOM upload performance includes source extraction, helper dimension probes, snapshots, core processing, bridge, encoding and submission. Source preparation and GPU completion have separate measurements. Native helper GPU allocation/copy counters remain unavailable. WebGPU host counters cover the external-canvas copy, opaque encoding and destination upload.
 
-Later host adapters require their own decoded-image input boundary. ImageBitmap, video, additional source encodings, context restoration and broader formats retain explicit compatibility tasks.
+Later host adapters require their own decoded-image input boundary. ImageBitmap, VideoFrame, additional source encodings, context restoration and broader formats retain explicit compatibility tasks.

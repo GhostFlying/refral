@@ -64,7 +64,9 @@ Tasks 047–048 cover WebGL1 packed depth-stencil and standalone stencil attachm
 
 Task 049 accepts RGB texture attachments and their copy source behavior. The original copy format and texture attachment format files exercise the RGB branches through all three backends. [RGB and conformance refresh](tasks/049-rgb-framebuffer-and-baseline.md)
 
-The latest full original run records 968 native, 785 JS and 788 Rust passes out of 971 files per backend. ImageBitmap, video, and OffscreenCanvas context acquisition account for most remaining timeouts. [Current full conformance results](validation/2026-11-18-stencil-rgb-conformance.md)
+The full original run after Task 049 records 968 native, 785 JS and 788 Rust passes out of 971 files per backend. ImageBitmap, video, and OffscreenCanvas context acquisition accounted for most timeouts in that run. [Full conformance results](validation/2026-11-18-stencil-rgb-conformance.md)
+
+Task 050 adds current-frame HTMLVideoElement uploads to both cores. All thirteen targeted originals pass on native, JS and Rust, including rotation, non-square pixel aspect ratio and transparent playback. VideoFrame, ImageBitmap and the wider unpack color-space API have separate coverage. [Video upload results](tasks/050-video-texture-uploads.md)
 
 The completed milestones and subsequent compatibility dependencies follow.
 

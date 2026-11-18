@@ -115,7 +115,7 @@ function setup(
     clear: vi.fn(() => {
       events.push('clear');
     }),
-    flush: vi.fn(),
+    flush: vi.fn(), finish: vi.fn(),
     replaceStorage: vi.fn(),
     retireStorage: vi.fn(),
     retireDepth: vi.fn(),

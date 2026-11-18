@@ -14,7 +14,7 @@ const uniforms: ProgramUniform[] = [
 function createContext() {
   const host = {
     limits: { maxTextureDimension2D: 4096 },
-    draw: vi.fn<SemanticHost["draw"]>(), clear() {}, flush() {}, replaceStorage() {}, retireStorage() {}, retireDepth() {},
+    draw: vi.fn<SemanticHost["draw"]>(), clear() {}, flush() {}, finish() {}, replaceStorage() {}, retireStorage() {}, retireDepth() {},
   } satisfies SemanticHost;
   const compiler: Compiler = {
     compile(source, stage) {

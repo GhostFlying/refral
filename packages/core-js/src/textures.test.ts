@@ -3,7 +3,7 @@ import { GL, SemanticContext, isTextureComplete } from "./index.js";
 import type { Compiler, SemanticHost } from "@refral/core-api";
 
 function createContext() {
-  const host = { limits: { maxTextureDimension2D: 4096 }, draw() {}, clear() {}, flush() {},
+  const host = { limits: { maxTextureDimension2D: 4096 }, draw() {}, clear() {}, flush() {}, finish() {},
     replaceStorage: vi.fn<SemanticHost["replaceStorage"]>(), retireStorage() {}, retireDepth() {},
   } satisfies SemanticHost;
   const compiler: Compiler = {

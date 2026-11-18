@@ -818,8 +818,8 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
         const version = exports.rf_vertex_array_protocol_version;
         return typeof version === 'function' && version() === 1;
       }
-      if (operation === 'flush') {
-        if (!abi.rf_is_context_lost()) services.host.flush();
+      if (operation === 'flush' || operation === 'finish') {
+        if (!abi.rf_is_context_lost()) services.host[operation]();
         return undefined;
       }
       if (abi.rf_is_context_lost()) {

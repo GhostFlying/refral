@@ -1,5 +1,6 @@
 import { GL, componentCount, stencilReference, vertexComponentBytes } from "@refral/core-api";
 import { primitiveIndexBatches } from './primitive-indices.js';
+import { QueueCompletion } from './queue-completion.js';
 import { CanvasReadback } from './canvas-readback.js';
 import type {
   AttributeSnapshot, RasterState, StencilFaceState, TargetSnapshot, TextureCopy, TextureParameters, TextureStorage,
@@ -144,6 +145,7 @@ export class BrowserHost implements SemanticHost {
   readonly environment: Record<string, unknown>;
   readonly limits: GPUSupportedLimits;
   readonly surface: DrawingSurface;
+  private readonly completion: QueueCompletion;
   private encoder: GPUCommandEncoder | null = null;
   private pass: GPURenderPassEncoder | null = null;
   private passTarget: Target | null = null;
@@ -198,6 +200,7 @@ export class BrowserHost implements SemanticHost {
     readonly errors: string[] = [],
   ) {
     this.handleError = errorListener(errors);
+    this.completion = new QueueCompletion(device.queue);
     this.limits = device.limits;
     const dimensionLimit = this.limits.maxTextureDimension2D;
     this.surface = {
@@ -286,6 +289,7 @@ export class BrowserHost implements SemanticHost {
       const padded = new Uint8Array(aligned(data.byteLength, 4));
       padded.set(data);
       this.device.queue.writeBuffer(buffer, 0, padded);
+      this.completion.markIssued();
       this.stats.uploadedBytes += data.byteLength;
     }
     this.buffers.add(buffer);
@@ -1023,6 +1027,7 @@ export class BrowserHost implements SemanticHost {
     const presented = this.present();
     if (this.encoder) {
       this.device.queue.submit([this.encoder.finish()]);
+      this.completion.markIssued();
       this.encoder = null;
       this.stats.submits++;
     }
@@ -1044,6 +1049,7 @@ export class BrowserHost implements SemanticHost {
   flush(): void {
     if (this.disposed) return;
     this.submitEncoded();
+    const fence = this.completion.observe();
     if (!this.buffers.size && !this.retiredTextures.size) return;
     const completed = [...this.buffers];
     this.buffers.clear();
@@ -1052,7 +1058,7 @@ export class BrowserHost implements SemanticHost {
     this.driverGroups = new WeakMap();
     const retired = [...this.retiredTextures];
     this.retiredTextures.clear();
-    void this.device.queue.onSubmittedWorkDone().then(() => {
+    void fence.then(() => {
       for (const buffer of completed) {
         this.stats.allocatedBufferBytes -= buffer.size;
         this.buffers.delete(buffer);
@@ -1064,6 +1070,13 @@ export class BrowserHost implements SemanticHost {
         texture.destroy();
       }
     }).catch(() => {});
+  }
+
+  finish(): void {
+    this.flush();
+    if (!this.completion.isIdle) {
+      throw new DOMException('finish requires synchronous completion of pending GPU queue work', 'NotSupportedError');
+    }
   }
 
   /** Preserve canvas alpha bytes through external copy and the opaque Canvas2D readback transport. */
@@ -1086,9 +1099,10 @@ export class BrowserHost implements SemanticHost {
         context.drawImage(source, 0, 0);
         this.device.queue.copyExternalImageToTexture({ source: snapshot, flipY: plan.flipY }, destination, size);
       }
+      this.completion.markIssued();
       this.stats.copies++;
       this.stats.uploadedBytes += width * height * 4;
-      this.canvasReadback ??= new CanvasReadback(this.device, this.stats);
+      this.canvasReadback ??= new CanvasReadback(this.device, this.stats, this.completion);
       return this.canvasReadback.capture(texture, width, height, () => this.getEncoder(), () => this.flush());
     } finally {
       this.textures.delete(texture);
@@ -1107,7 +1121,7 @@ export class BrowserHost implements SemanticHost {
     const target = this.resolveTarget(snapshot);
     this.beginPass(target);
     this.endPass();
-    this.canvasReadback ??= new CanvasReadback(this.device, this.stats);
+    this.canvasReadback ??= new CanvasReadback(this.device, this.stats, this.completion);
     const data = this.canvasReadback.capture(target.color, region.width, region.height,
       () => this.getEncoder(), () => this.flush(), region.x, region.y);
     return { width: region.width, height: region.height, data };

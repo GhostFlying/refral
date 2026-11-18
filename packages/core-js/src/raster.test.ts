@@ -5,7 +5,7 @@ import type { Compiler, SemanticHost } from "@refral/core-api";
 
 function createContext() {
   const host = { limits: { maxTextureDimension2D: 4096 }, draw() {},
-    clear: vi.fn<SemanticHost["clear"]>(), flush() {}, replaceStorage() {}, retireStorage() {}, retireDepth() {},
+    clear: vi.fn<SemanticHost["clear"]>(), flush() {}, finish() {}, replaceStorage() {}, retireStorage() {}, retireDepth() {},
   } satisfies SemanticHost;
   const compiler: Compiler = {
     compile() { throw new Error("Raster state tests must not compile shaders."); },

@@ -157,6 +157,9 @@ export async function createRemoteHost(mode: WaitMode) {
     flush() {
       operations.push({ kind: 'flush' });
     },
+    finish() {
+      throw new DOMException('The readback transport has no queue completion command', 'NotSupportedError');
+    },
     replaceStorage(previous: TextureStorage | null, next: TextureStorage) {
       const previousId = previous ? storage(previous) : null;
       operations.push({ kind: 'replace', previous: previousId, next: storage(next) });

@@ -19,6 +19,7 @@ function createContext() {
     draw: vi.fn<SemanticHost['draw']>(),
     clear: vi.fn<SemanticHost['clear']>(),
     flush: vi.fn<SemanticHost['flush']>(),
+    finish: vi.fn<SemanticHost['finish']>(),
     replaceStorage: vi.fn<SemanticHost['replaceStorage']>(),
     retireStorage: vi.fn<SemanticHost['retireStorage']>(),
     retireDepth: vi.fn<SemanticHost['retireDepth']>(),

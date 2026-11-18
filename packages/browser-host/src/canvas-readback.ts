@@ -1,3 +1,4 @@
+import type { QueueCompletion } from './queue-completion.js';
 import type { HostStats } from './index.js';
 
 /** RGBA8 transport through opaque sRGB canvas pixels. */
@@ -13,7 +14,8 @@ export class CanvasReadback {
 
   constructor(
     private readonly device: GPUDevice,
-    private readonly hostStats: HostStats
+    private readonly hostStats: HostStats,
+    private readonly completion?: QueueCompletion
   ) {
     const context = this.canvas.getContext('webgpu');
     const cpu = this.sink.getContext('2d', { willReadFrequently: true, colorSpace: 'srgb' });
@@ -83,6 +85,7 @@ export class CanvasReadback {
         this.cpu.imageSmoothingEnabled = false;
         this.cpu.globalCompositeOperation = 'copy';
         this.device.queue.writeBuffer(this.parameters, 0, new Uint32Array([sourceX + x, sourceY + y, 0, 0]));
+        this.completion?.markIssued();
         this.hostStats.uploadedBytes += 16;
         const pass = encoder().beginRenderPass({
           colorAttachments: [
@@ -101,8 +104,15 @@ export class CanvasReadback {
         this.hostStats.passes++;
         // Complete each tile before reusing its uniform and canvas storage.
         submit();
-        this.cpu.drawImage(this.canvas, 0, 0);
-        const packed = this.cpu.getImageData(0, 0, columns * 2, rows).data;
+        // The browser may submit an internal snapshot copy during the synchronous read.
+        this.completion?.markIssued();
+        let packed: Uint8ClampedArray;
+        try {
+          this.cpu.drawImage(this.canvas, 0, 0);
+          packed = this.cpu.getImageData(0, 0, columns * 2, rows).data;
+        } finally {
+          this.completion?.observe();
+        }
         for (let row = 0; row < rows; row++) {
           for (let column = 0; column < columns; column++) {
             const from = (row * columns + column) * 8;

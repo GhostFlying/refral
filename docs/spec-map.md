@@ -44,6 +44,10 @@ Task030 uses the pinned WebGL/IDL/GLES sources and complete original state/gl-ge
 
 The original getError script permits first-error or multiple-error implementations. Results record its branch and actual assertion count independently. The Buffer script also runs on an isolated page with fixed shared storage exposed, preserving its original optional assertions. Native contexts created on detached helper canvases are captured in environment evidence. Task030 records actual run counts and the headless configuration.
 
+## Queue completion
+
+A successful WebGL1 finish requires completed effects for all previously issued GL work. A fresh context has no preceding GPU commands. A resolved queue-wide fence certifies preceding writes and submissions up to its captured epoch. Later uploads and draws require a later fence. A successful framebuffer read establishes the observed pixels. Both cores consult the common host for queue completion. The browser host reports a capability diagnostic when earlier work is still unconfirmed. [GLES 2.0.25 §5.1](https://registry.khronos.org/OpenGL/specs/es/2.0/es_full_spec_2.0.pdf), [task 079 and WebGPU synchronization evidence](tasks/079-synchronous-queue-completion.md)
+
 ## Public readPixels assertions
 
 Task028 selects the Canvas2D host path for synchronous RGBA/UNSIGNED_BYTE reads. The pinned readPixels clause defines return-time visibility, typed destination compatibility, null/short-buffer errors and current-framebuffer reads. GLES 4.3.1 supplies row order and PACK_ALIGNMENT. The pinned READS_OUTSIDE_FRAMEBUFFER clause leaves corresponding destination bytes untouched, including fully outside rectangles. Row padding and unrelated view bytes are retained. Implementation read format/type getters reject incomplete framebuffers with INVALID_OPERATION. Each semantic core emits the same validated clipped read/packing plan.

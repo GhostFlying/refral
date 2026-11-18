@@ -1,5 +1,6 @@
 import { GL, componentCount, stencilReference, vertexComponentBytes } from "@refral/core-api";
 import { primitiveIndexBatches } from './primitive-indices.js';
+import { OffscreenDiscard } from './offscreen-discard.js';
 import { QueueCompletion } from './queue-completion.js';
 import { CanvasReadback } from './canvas-readback.js';
 import type {
@@ -21,6 +22,9 @@ export interface HostStats {
   allocatedTextureBytes: number;
   peakAllocatedBufferBytes: number;
   peakAllocatedTextureBytes: number;
+  offscreenDiscardProbes: number;
+  offscreenDiscards: number;
+  offscreenDiscardIndeterminate: number;
 }
 
 export interface CapturedPixels {
@@ -141,6 +145,7 @@ export class BrowserHost implements SemanticHost {
     draws: 0, passes: 0, submits: 0, copies: 0, uploadedBytes: 0,
     pipelines: 0, bindGroups: 0, allocatedBufferBytes: 0, allocatedTextureBytes: 0,
     peakAllocatedBufferBytes: 0, peakAllocatedTextureBytes: 0,
+    offscreenDiscardProbes: 0, offscreenDiscards: 0, offscreenDiscardIndeterminate: 0,
   };
   readonly environment: Record<string, unknown>;
   readonly limits: GPUSupportedLimits;
@@ -183,6 +188,7 @@ export class BrowserHost implements SemanticHost {
   private textureCopyPipeline: GPURenderPipeline | null = null;
   private presentationConfigured = false;
   private lastPresentedTexture: GPUTexture | null = null;
+  private readonly offscreenDiscard: OffscreenDiscard | null;
   private presentationPipeline: GPURenderPipeline | null = null;
   private blackTexture: GPUTexture | null = null;
   private blackCubeTexture: GPUTexture | null = null;
@@ -206,6 +212,8 @@ export class BrowserHost implements SemanticHost {
   ) {
     this.handleError = errorListener(errors);
     this.completion = new QueueCompletion(device.queue);
+    this.offscreenDiscard = !retained && 'transferToImageBitmap' in canvas
+      ? OffscreenDiscard.create(device, format, alpha ? 'premultiplied' : 'opaque', this.stats, this.completion) : null;
     this.limits = device.limits;
     const dimensionLimit = this.limits.maxTextureDimension2D;
     this.surface = {
@@ -525,6 +533,10 @@ export class BrowserHost implements SemanticHost {
 
   private resolveTarget(snapshot: TargetSnapshot): Target {
     if (snapshot.isDefault) {
+      if (this.offscreenDiscard && this.defaultTarget?.width === snapshot.width &&
+          this.defaultTarget.height === snapshot.height && this.offscreenDiscard.discarded()) {
+        this.resetDefaultDrawingBuffer();
+      }
       if (this.lastPresentedTexture && this.defaultTarget && this.canvas.width === this.surface.width &&
           this.canvas.height === this.surface.height && 'isConnected' in this.canvas &&
           this.canvas.isConnected && this.canvas.checkVisibility({ visibilityProperty: true })) {
@@ -535,6 +547,7 @@ export class BrowserHost implements SemanticHost {
       if (!this.defaultTarget || this.defaultTarget.width !== snapshot.width ||
           this.defaultTarget.height !== snapshot.height) {
         this.endPass();
+        this.offscreenDiscard?.forget();
         if (this.defaultTarget) {
           this.retiredTextures.add(this.defaultTarget.color);
           if (this.defaultTarget.depth) this.retiredTextures.add(this.defaultTarget.depth);
@@ -994,7 +1007,7 @@ export class BrowserHost implements SemanticHost {
     pass.setBindGroup(0, group);
     pass.draw(3);
     this.stats.bindGroups++;
-    if (snapshot.isDefault && writeMask) this.publishDefaultColor();
+    if (snapshot.isDefault && (writeMask || this.offscreenDiscard && (writesDepth || stencilWriteMask))) this.publishDefaultColor();
   }
 
   private configurePresentation(): boolean {
@@ -1006,7 +1019,8 @@ export class BrowserHost implements SemanticHost {
       if (producer.height !== this.canvas.height) producer.height = this.canvas.height;
     }
     if (!this.presentationConfigured) {
-      this.context.configure({ device: this.device, format: this.format, alphaMode: this.alpha ? "premultiplied" : "opaque" });
+      this.context.configure({ device: this.device, format: this.format, alphaMode: this.alpha ? "premultiplied" : "opaque",
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | (this.offscreenDiscard ? GPUTextureUsage.COPY_SRC : 0) });
       this.presentationConfigured = true;
     }
     return true;
@@ -1050,7 +1064,8 @@ export class BrowserHost implements SemanticHost {
       this.stats.bindGroups++;
     }
     const presentationTexture = this.context.getCurrentTexture();
-    if (!this.retained) this.lastPresentedTexture = presentationTexture;
+    if (this.offscreenDiscard) this.offscreenDiscard.published(presentationTexture);
+    else if (!this.retained) this.lastPresentedTexture = presentationTexture;
     const pass = this.getEncoder().beginRenderPass({ colorAttachments: [{
       view: this.attachmentView(presentationTexture), loadOp: "clear", storeOp: "store",
       clearValue: { r: 0, g: 0, b: 0, a: this.alpha ? 0 : 1 },
@@ -1093,6 +1108,7 @@ export class BrowserHost implements SemanticHost {
   /** Discard the default attachments without changing bindings, write masks or the GL viewport. */
   resetDefaultDrawingBuffer(): void {
     this.lastPresentedTexture = null;
+    this.offscreenDiscard?.forget();
     const target = this.defaultTarget;
     if (!target) return;
     this.endPass();
@@ -1221,6 +1237,7 @@ export class BrowserHost implements SemanticHost {
     this.disposed = true;
     abandonedHosts.unregister(this);
     await this.device.queue.onSubmittedWorkDone().catch(() => {});
+    this.offscreenDiscard?.dispose();
     this.canvasReadback?.dispose();
     this.canvasReadback = null;
     for (const buffer of this.buffers) buffer.destroy();

@@ -1,11 +1,13 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import support from '../docs/support.json' with { type: 'json' };
 
 export const BACKENDS = ['native', 'js', 'rust'];
 export const STATUSES = ['pass', 'fail', 'skip', 'unsupported', 'timeout', 'harness-error'];
 const DEFAULT_DIRECTORY = 'artifacts/conformance/baseline';
 const FAILURE_LIMIT = 200;
+const acceptedDifferences = support.entries.flatMap(entry => entry.acceptedDifferences ?? []);
 
 // Rules group retained evidence. They identify dependency candidates for a later
 // spec audit and do not determine whether an assertion or a browser is correct.
@@ -253,6 +255,15 @@ export function buildConformanceReport(runs, { expectedInventoryCount = 971 } = 
         assertions: caseAssertions(result),
         retainedFailureMessages: Array.isArray(result.failures) ? result.failures.length : 0,
         failuresTruncated: result.failuresTruncated, durationMs: result.durationMs, evidence: evidence(result) };
+      if (file.effectiveStatus === 'fail' && file.originalTestCompleted && file.assertionCountsComplete
+        && file.provenance === 'matched') {
+        for (const { ctsRevision, url, cores, assertion, classification, accepted, scope, observed, reference } of acceptedDifferences) {
+          if (ctsRevision === run.environment?.configuration?.revision && url === file.url && cores.includes(backend)
+            && result.failures.includes(assertion)) {
+            file.annotations.push({ kind: 'related-accepted-observation', assertion, classification, accepted, scope, observed, reference });
+          }
+        }
+      }
       files.push(file);
       summary.originalFileStatuses[originalStatus]++;
       summary.effectiveFileStatuses[annotation.effectiveStatus]++;
@@ -366,6 +377,16 @@ function markdown({ summary, clusters }) {
   }
   lines.push('', '## Assertion differences among completed passes', '',
     `${summary.passingAssertionDifferences.length} original files passed on all three backends with different raw counters. Optional features, reported limits and incomplete behavior can each change which assertions run. Consult the original branch before classifying a difference. Per-backend passed, failed, skipped and skipped-failure counts are in summary.json under passingAssertionDifferences.`);
+  const observations = summary.files.flatMap(file => file.annotations
+    .filter(annotation => annotation.kind === 'related-accepted-observation')
+    .map(annotation => ({ file, annotation })));
+  if (observations.length) {
+    lines.push('', '## Failures with a related accepted observation', '',
+      'The original assertion can combine several pixel checks. The observation describes the recorded probe. Review its individual pixel values when investigating another run.', '');
+    for (const { file, annotation } of observations) {
+      lines.push(`- ${file.backend} · \`${file.url}\` · ${annotation.assertion} ${annotation.scope} Recorded observation: ${annotation.observed} Evidence: \`${annotation.reference}\`.`);
+    }
+  }
   lines.push('', '## Dependency candidates', '');
   for (const cluster of clusters.clusters) {
     lines.push(`- ${cluster.title} affects ${cluster.uniqueHtmlFiles} unique HTML files across ${cluster.backendFileExecutions} backend-file executions. Examples include ${cluster.exampleUrls.map(url => `\`${url}\``).join(', ')}.`);

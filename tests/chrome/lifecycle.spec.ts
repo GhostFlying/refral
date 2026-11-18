@@ -72,6 +72,7 @@ for (const core of ['js', 'rust'] as const) {
         const deviceShared = hooks.device === getTestingHooks(peer).device;
         peer.clearColor(1, 0, 0, 1);
         peer.clear(peer.COLOR_BUFFER_BIT);
+        const initialExtensions = gl.getSupportedExtensions()?.sort();
         const ext = gl.getExtension('WEBGL_lose_context')!;
         const previous = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, previous);
@@ -86,6 +87,7 @@ for (const core of ['js', 'rust'] as const) {
         const restored = new Promise<void>(r => canvas.addEventListener('webglcontextrestored', () => r(), { once: true }));
         ext.loseContext();
         const immediate = gl.isContextLost();
+        const lostExtensions = gl.getSupportedExtensions();
         errors.push(gl.getError(), gl.getError());
         ext.loseContext(); errors.push(gl.getError());
         await loss;
@@ -103,12 +105,14 @@ for (const core of ['js', 'rust'] as const) {
           context.readPixels(0, 0, 1, 1, context.RGBA, context.UNSIGNED_BYTE, out);
           return [...out];
         };
-        return { core: hooks.core, deviceShared, immediate, queued, extensions: gl.getSupportedExtensions(),
+        return { core: hooks.core, deviceShared, immediate, queued, initialExtensions, lostExtensions, restoredExtensions: gl.getSupportedExtensions()?.sort(),
           sameExtension: ext === gl.getExtension('webgl_lose_context'), bound, restoredState, errors,
           pixels: read(gl), peerPixels: read(peer), lost: gl.isContextLost(), peerLost: peer.isContextLost() };
       } finally { await factory.dispose(); }
     }, core);
-    expect(result).toEqual({ core, deviceShared: true, immediate: true, queued: true, extensions: ['WEBGL_lose_context'],
+    const supported = ['EXT_sRGB', 'OES_texture_float', 'OES_vertex_array_object', 'WEBGL_lose_context'];
+    expect(result).toEqual({ core, deviceShared: true, immediate: true, queued: true,
+      initialExtensions: supported, lostExtensions: null, restoredExtensions: supported,
       sameExtension: true, bound: true, restoredState: [null, 0, 0, 0, 0], errors: [0x0502, 0x9242, 0, 0x0502, 0x0502, 0x0502],
       pixels: [0, 255, 0, 255], peerPixels: [255, 0, 0, 255], lost: false, peerLost: false });
   });

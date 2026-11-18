@@ -1,0 +1,4 @@
+{
+  "vertex": "precision highp float; const int rows = PROFILE_ROWS; attribute vec2 position; uniform float red[rows], green[rows], blue[rows], alpha[rows]; varying mediump vec4 rgba; void main(){ rgba=vec4(red[rows-1],green[rows-1],blue[rows-1],alpha[rows-1]); gl_Position=gl_MaxVertexUniformVectors>=rows ? vec4(position,0.0,1.0) : vec4(0.0); }",
+  "fragment": "precision mediump float; varying mediump vec4 rgba; void main(){ gl_FragColor=rgba; }"
+}

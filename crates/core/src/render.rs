@@ -767,9 +767,10 @@ impl ContextCore {
             self.record_error(INVALID_VALUE);
             return None;
         }
-        if units
+        // ESSL 1.00 section 3.1 excludes six printable ASCII symbols and DEL.
+        if !units
             .iter()
-            .any(|unit| *unit > 127 || *unit == 0 || !(9..=13).contains(unit) && *unit < 32)
+            .all(|&unit| matches!(unit, 9..=13 | 32..=126) && !b"\"'$@\\`".contains(&(unit as u8)))
         {
             self.record_error(INVALID_VALUE);
             return None;

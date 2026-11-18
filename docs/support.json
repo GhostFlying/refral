@@ -269,21 +269,22 @@
     },
     {
       "id": "program-link-and-reflection",
-      "api": "attachShader, detachShader, bindAttribLocation, linkProgram, getActiveAttrib, getActiveUniform, getAttribLocation",
+      "api": "attachShader, detachShader, bindAttribLocation, linkProgram, getActiveAttrib, getActiveUniform, getAttribLocation, getUniformLocation",
       "cores": {
         "js": {
           "status": "cts-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Valid ESSL100 programs render. Relink resets the executable generation and stale uniform locations produce INVALID_OPERATION. Compiler corpus validates attribute binding, stage varying mismatch and reflected layouts. Matrix attributes retain their GL type, base location, and consecutive-column link assignment. Failed current-program relink rejects subsequent draw and uniform access; successful relink resets uniforms and invalidates locations. Executables retain shader-source/attachment independence until link.",
+          "coverage": "Valid ESSL100 programs render. Relink resets the executable generation and stale uniform locations produce INVALID_OPERATION. Compiler corpus validates attribute binding, stage varying mismatch and reflected layouts. Matrix attributes retain their GL type, base location, and consecutive-column link assignment. Failed current-program relink rejects subsequent draw and uniform access; successful relink resets uniforms and invalidates locations. Executables retain shader-source/attachment independence until link. Location queries and binding validate the WebGL1 length limit, ESSL source characters and reserved prefixes.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential relink-and-errors",
             "tools/compiler-test.mjs",
             "tests/chrome/cts.spec.ts::sdk/tests/conformance/glsl/misc/shaders-with-mis-matching-varyings.html",
             "tests/chrome/cts.spec.ts::sdk/tests/conformance/programs/gl-get-active-attribute.html",
             "tests/chrome/program-spec.spec.ts",
-            "packages/core-js/src/programs.test.ts"
+            "packages/core-js/src/programs.test.ts",
+            "tests/chrome/dual-core-drawing.spec.ts::dual-core drawing location-name-validation"
           ],
           "evidence": [
             {
@@ -331,9 +332,10 @@
         },
         "rust": {
           "status": "cts-verified",
-          "coverage": "Program attachment/link status, active attributes including matrix reflection, uniform locations and null-location no-op semantics. Full shader/program and source CTS run through the selected Rust core.",
+          "coverage": "Program attachment/link status, active attributes including matrix reflection, uniform locations and null-location no-op semantics. Full shader/program and source CTS run through the selected Rust core. Location queries and binding validate the WebGL1 length limit, ESSL source characters and reserved prefixes.",
           "tests": [
-            "tests/chrome/cts.spec.ts::pinned Khronos CTS cases execute original assertions"
+            "tests/chrome/cts.spec.ts::pinned Khronos CTS cases execute original assertions",
+            "tests/chrome/dual-core-drawing.spec.ts::dual-core drawing location-name-validation"
           ],
           "evidence": [
             {

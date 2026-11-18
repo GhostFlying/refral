@@ -5,7 +5,7 @@ export const dualCoreCaseNames = [
   'float-uniform-setters', 'indexed-update-u8', 'indexed-update-u16', 'upload-view-snapshot',
   'attribute-layout-and-constants', 'buffer-reallocation-and-delete', 'resize-attribute-size',
   'automatic-submit-and-flush', 'viewport-clear-regions', 'draw-validation-state',
-  'triangle-strip-modes', 'integer-vertex-attributes', 'enabled-array-validation',
+  'triangle-strip-modes', 'integer-vertex-attributes', 'enabled-array-validation', 'location-name-validation',
   'retained-deletion-and-retirement', ...programCaseNames,
 ] as const;
 export type DrawingCaseName = typeof dualCoreCaseNames[number];
@@ -81,6 +81,7 @@ function regions(name: DrawingCaseName): PixelRegion[] {
       return [red, green, blue, [255, 255, 0, 255]].map((color, index) => band(index * 16, 16, color));
     case 'integer-vertex-attributes':
       return [red, [127, 0, 0, 255], red, green].map((color, index) => band(index * 16, 16, color));
+    case 'location-name-validation':
     case 'enabled-array-validation': return [band(0, 64, green)];
     case 'failed-current-program-relink': return [band(0, 64, [255, 127, 0, 255])];
     case 'successful-relink-reset':
@@ -140,6 +141,46 @@ async function execute(name: DrawingCaseName, gl: WebGLRenderingContext, canvas:
     gl.getShaderParameter(shader, gl.SHADER_TYPE) === gl.FRAGMENT_SHADER)!;
 
   switch (name) {
+    case 'location-name-validation': {
+      const unlinked = gl.createProgram()!;
+      const deleted = gl.createProgram()!;
+      gl.deleteProgram(deleted);
+      const precedence = (label: string, actual: number, expected: number) => {
+        if (hooks) check(label, actual, expected);
+        else result.observations[label] = actual;
+      };
+      const missing = (target: WebGLProgram, identifier: string, error: number,
+        observeError: (label: string, actual: number, expected: number) => void = check) => {
+        const state = target === unlinked ? 'unlinked' : target === deleted ? 'deleted' : 'linked';
+        const label = state + ' ' + JSON.stringify(identifier);
+        check('attribute ' + label, gl.getAttribLocation(target, identifier), -1);
+        observeError('attribute error ' + label, gl.getError(), error);
+        check('uniform ' + label, gl.getUniformLocation(target, identifier), null);
+        observeError('uniform error ' + label, gl.getError(), error);
+      };
+      for (const identifier of ['a'.repeat(256), 'u[0]', 'u\nfield']) {
+        missing(program, identifier, gl.NO_ERROR);
+      }
+      for (const identifier of ['a'.repeat(257), 'webgl_à', 'a"b', 'a@b', 'a\x7fb']) {
+        missing(program, identifier, gl.INVALID_VALUE);
+        gl.bindAttribLocation(program, 1, identifier);
+        const observe = identifier.startsWith('webgl_') ? precedence : check;
+        observe('invalid binding ' + identifier, gl.getError(), gl.INVALID_VALUE);
+      }
+      for (const identifier of ['gl_reserved', 'webgl_reserved', '_webgl_reserved']) {
+        missing(program, identifier, gl.NO_ERROR);
+        expectError('reserved binding ' + identifier, () => gl.bindAttribLocation(program, 1, identifier), gl.INVALID_OPERATION);
+      }
+      missing(unlinked, 'webgl_à', gl.INVALID_OPERATION, precedence);
+      missing(deleted, 'webgl_à', gl.INVALID_VALUE);
+      expectError('out-of-range attribute binding', () => gl.bindAttribLocation(program, 8_192, 'a_position'), gl.INVALID_VALUE);
+      gl.linkProgram(program);
+      check('retained position binding', gl.getAttribLocation(program, 'a_position'), position);
+      color = gl.getUniformLocation(program, 'u_color');
+      draw(0, 1, 0);
+      gl.deleteProgram(unlinked);
+      break;
+    }
     case 'triangle-strip-modes': {
       const positions = new Float32Array(65536 * 2);
       positions.set([-1, -1, 1, -1, -1, 1, 1, 1], 2);

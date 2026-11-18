@@ -35,7 +35,7 @@ class ShaderObject extends LogicalObject {
 
 class ProgramObject extends LogicalObject {
   shaders: ShaderObject[] = [];
-  attributeLocations: Record<string, number> = {};
+  attributeLocations: Record<string, number> = Object.create(null);
   executable: LinkedProgram | null = null;
   linkStatus = false;
   validateStatus = false;
@@ -367,11 +367,23 @@ export class SemanticContext {
   getAttachedShaders(program: ProgramObject): ShaderObject[] | null {
     return this.valid(program, ProgramObject, true) ? [...program.shaders] : null;
   }
+  private usableLocationName(name: string, binding = false): boolean {
+    // ESSL 1.00 section 3.1 permits ASCII whitespace and printable ASCII except these six symbols.
+    if (name.length > 256 || /[^\t-\r\x20-\x7e]|["'$@\\\x60]/.test(name)) {
+      this.error(GL.INVALID_VALUE);
+      return false;
+    }
+    if (name.startsWith("gl_") || name.startsWith("webgl_") || name.startsWith("_webgl_")) {
+      if (binding) this.error(GL.INVALID_OPERATION);
+      return false;
+    }
+    return true;
+  }
+
   bindAttribLocation(program: ProgramObject, index: number, name: string): void {
     if (!this.valid(program, ProgramObject)) return;
     if (!Number.isInteger(index) || index < 0 || index >= this.attributes.length) return this.error(GL.INVALID_VALUE);
-    if (name.startsWith("gl_")) return this.error(GL.INVALID_OPERATION);
-    program.attributeLocations[String(name)] = index;
+    if (this.usableLocationName(name, true)) program.attributeLocations[name] = index;
   }
   linkProgram(program: ProgramObject): void {
     if (!this.valid(program, ProgramObject)) return;
@@ -443,6 +455,7 @@ export class SemanticContext {
   getAttribLocation(program: ProgramObject, name: string): number {
     if (!this.valid(program, ProgramObject)) return -1;
     if (!program.linkStatus) { this.error(GL.INVALID_OPERATION); return -1; }
+    if (!this.usableLocationName(name)) return -1;
     return program.executable!.attributes.find(attribute => attribute.name === name)?.location ?? -1;
   }
   getActiveAttrib(program: ProgramObject, index: number): { name: string; size: number; type: number } | null {
@@ -462,8 +475,8 @@ export class SemanticContext {
   getUniformLocation(program: ProgramObject, name: string): UniformLocation | null {
     if (!this.valid(program, ProgramObject)) return null;
     if (!program.linkStatus) { this.error(GL.INVALID_OPERATION); return null; }
-    if (name.startsWith("gl_")) return null;
-    const match = /^(.*?)(?:\[(\d+)\])?$/.exec(String(name))!;
+    if (!this.usableLocationName(name)) return null;
+    const match = /^(.*?)(?:\[(\d+)\])?$/s.exec(name)!;
     const base = match[1]!; const index = Number(match[2] ?? 0);
     const uniform = [...program.executable!.uniforms, ...program.executable!.samplers].find(value => baseName(value.name) === base);
     if (!uniform || index >= uniform.size) return null;

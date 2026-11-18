@@ -62,6 +62,7 @@
       "acceptedDifferences": [
         {
           "url": "conformance/context/context-attribute-preserve-drawing-buffer.html",
+          "ctsRevision": "39443210f7f81db4773eb104facadfb85d05dfa4",
           "assertion": "Did not render ok with preserveDrawingBuffer false.",
           "cores": [
             "js",

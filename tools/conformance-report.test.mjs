@@ -167,6 +167,38 @@ test('case captures are included without changing assertion results', () => {
   assert.equal(summary.files[2].screenshot, undefined);
 });
 
+test('a documented observation annotates its original assertion and preserves other failures', () => {
+  const url = 'conformance/context/context-attribute-preserve-drawing-buffer.html';
+  const assertion = 'Did not render ok with preserveDrawingBuffer false.';
+  const revision = '39443210f7f81db4773eb104facadfb85d05dfa4';
+  const inputs = runs([url, 'conformance/offscreencanvas/context-attribute-preserve-drawing-buffer.html']);
+  for (const backend of BACKENDS) {
+    inputs[backend].environment.configuration = { revision };
+    for (const file of inputs[backend].results) {
+      Object.assign(file, { status: 'fail', failed: 2, failures: [assertion, 'independent failure'],
+        contexts: [{ actualCore: backend }] });
+    }
+  }
+  const report = () => build(inputs).summary;
+  const annotated = summary => summary.files.filter(file =>
+    file.annotations.some(annotation => annotation.kind === 'related-accepted-observation'));
+  const initial = report();
+  assert.deepEqual(annotated(initial).map(file => [file.backend, file.url]), [['js', url], ['rust', url]]);
+  for (const file of annotated(initial)) {
+    assert.equal(file.originalStatus, 'fail');
+    assert.equal(file.effectiveStatus, 'fail');
+    assert.equal(file.assertions.failed, 2);
+    assert.deepEqual(file.evidence.map(detail => detail.message), [assertion, 'independent failure']);
+  }
+  inputs.js.environment.configuration.revision = 'different-revision';
+  inputs.rust.results[0].failures = ['new failure'];
+  assert.deepEqual(annotated(report()), []);
+  inputs.js.environment.configuration.revision = revision;
+  Object.assign(inputs.js.results[0], { status: 'pass', failed: 0, failures: [] });
+  Object.assign(inputs.rust.results[0], { status: 'timeout', completion: 'timeout', failures: [assertion] });
+  assert.deepEqual(annotated(report()), []);
+});
+
 test('official skipped failures overlap raw counters and do not inflate distinct assertion totals or effective failures', () => {
   const inputs = runs(['conformance/state/skipped.html']);
   Object.assign(inputs.js.results[0], { passed: 5, failed: 2, skipped: 3,

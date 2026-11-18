@@ -60,6 +60,40 @@ class DefaultUniformEncoder : public sh::Std140BlockEncoder {
   }
 };
 
+// ANGLE's register packer works on numeric uniforms. A struct array supplies
+// one copy of each field per element. Keep basic arrays intact so their
+// elements occupy distinct rows even when the shader only reads element zero.
+bool CollectNumericUniforms(const sh::ShaderVariable& uniform, size_t copies,
+                            size_t capacity,
+                            std::vector<sh::ShaderVariable>* variables) {
+  if (uniform.isStruct()) {
+    const size_t extent = uniform.getArraySizeProduct();
+    // Bound expansion by the total number of scalar slots before multiplying.
+    copies = copies > capacity / extent ? capacity + 1 : copies * extent;
+    for (const auto& field : uniform.fields) {
+      if (!CollectNumericUniforms(field, copies, capacity, variables)) {
+        return false;
+      }
+    }
+  } else if (!gl::IsOpaqueType(uniform.type)) {
+    if (copies > capacity - variables->size()) return false;
+    variables->insert(variables->end(), copies, uniform);
+  }
+  return true;
+}
+
+bool UniformsFitStage(const std::vector<sh::ShaderVariable>& uniforms,
+                      int max_vectors) {
+  std::vector<sh::ShaderVariable> numeric_uniforms;
+  for (const auto& uniform : uniforms) {
+    if (uniform.staticUse &&
+        !CollectNumericUniforms(uniform, 1, 4 * max_vectors, &numeric_uniforms)) {
+      return false;
+    }
+  }
+  return sh::CheckVariablesWithinPackingLimits(max_vectors, numeric_uniforms);
+}
+
 void WriteVariable(std::ostream& output, const sh::ShaderVariable& variable,
                    const sh::BlockLayoutMap& layout) {
   const auto position = layout.find(variable.name);
@@ -136,15 +170,25 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char* RefralCompile(const char* source,
   options.scalarizeVecAndMatConstructorArgs = true;
   options.removeInactiveVariables = true;
   const bool success = sh::Compile(compiler, &source, 1, options);
+  std::string packing_error;
+  if (success && version == 1) {
+    const int limit = stage == 0 ? resources.MaxVertexUniformVectors
+                                 : resources.MaxFragmentUniformVectors;
+    if (!UniformsFitStage(*sh::GetUniforms(compiler), limit)) {
+      packing_error = stage == 0 ? "Uniform packing exceeds MAX_VERTEX_UNIFORM_VECTORS."
+                                 : "Uniform packing exceeds MAX_FRAGMENT_UNIFORM_VECTORS.";
+    }
+  }
   sh::BlockLayoutMap uniform_layout;
   DefaultUniformEncoder encoder;
-  if (success) {
+  if (success && packing_error.empty()) {
     sh::GetActiveUniformBlockInfo(*sh::GetUniforms(compiler), "", &encoder,
                                   &uniform_layout);
   }
   std::ostringstream output;
   output << "{\"success\":" << (success ? "true" : "false")
          << ",\"log\":" << Quote(sh::GetInfoLog(compiler))
+         << ",\"uniformPackingError\":" << Quote(packing_error)
          << ",\"wgsl\":" << Quote(success ? sh::GetObjectCode(compiler) : "")
          << ",\"uniformBufferSize\":"
          << ((encoder.getCurrentOffset() + 15) / 16 * 16) << ",\"attributes\":";

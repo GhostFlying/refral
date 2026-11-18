@@ -26,6 +26,7 @@ export interface CompiledShader {
   varyings: ShaderVariable[];
   outputs: ShaderVariable[];
   uniformBufferSize: number;
+  uniformPackingError?: string;
 }
 
 export interface ProgramAttribute {

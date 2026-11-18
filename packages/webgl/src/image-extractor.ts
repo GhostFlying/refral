@@ -1,6 +1,6 @@
 import type { DomTextureUploadPlan, PixelUpload } from '@refral/core-api';
 
-export type NativeUploadSource = HTMLImageElement | HTMLVideoElement | ImageBitmap;
+export type NativeUploadSource = HTMLImageElement | HTMLVideoElement | VideoFrame | ImageBitmap;
 export interface NativeUploadExtent {
   width: number;
   height: number;

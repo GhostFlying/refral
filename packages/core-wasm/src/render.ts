@@ -762,7 +762,7 @@ export function createRustDrawingCoreFromModule(
       const result = command('prepareDomTextureUpload', [
         request.operation === 'texSubImage2D', request.target, request.level, request.internalFormat,
         request.x, request.y, request.width, request.height, request.format, request.type, request.sourceValid,
-        request.sourceContextLost ?? false,
+        request.sourceContextLost ?? false, ...(request.closedVideoFrame ? [true] : []),
       ]);
       const values = decode(result.value, result.binary);
       if (values === null) return null;

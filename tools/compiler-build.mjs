@@ -58,7 +58,7 @@ function run(command, args) {
   const result = spawnSync(command, args, { cwd: root, env, stdio: "inherit" });
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
-for (const name of ['wgsl-integer-minimum.patch', 'wgsl-vertex-texture.patch', 'wgsl-frag-data.patch', 'wgsl-essl100.patch', 'wgsl-varying-arrays.patch', 'webgl1-double-underscore.patch', 'wgsl-uniform-matrix-field.patch', 'wgsl-sampler-aggregates.patch']) {
+for (const name of ['wgsl-integer-minimum.patch', 'wgsl-vertex-texture.patch', 'wgsl-frag-data.patch', 'wgsl-essl100.patch', 'wgsl-varying-arrays.patch', 'webgl1-double-underscore.patch', 'wgsl-uniform-matrix-field.patch', 'wgsl-sampler-aggregates.patch', 'wgsl-point-primitives.patch']) {
   const patch = resolve(root, 'packages/compiler/patches', name);
   const patchArguments = ['--unidiff-zero', '--directory=artifacts/compiler/angle', patch];
   const unapplied = spawnSync('git', ['apply', '--check', ...patchArguments], { cwd: root, env });

@@ -1576,9 +1576,6 @@ impl ContextCore {
         } else {
             None
         };
-        if mode == 0 {
-            return Reply::Unsupported("point drawing");
-        }
         let Some(program_index) = self.program_index(self.render.current) else {
             return Reply::Null;
         };

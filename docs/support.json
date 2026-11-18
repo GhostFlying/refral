@@ -534,8 +534,11 @@
             "chrome-macos-arm64",
             "chrome158-macos-arm64"
           ],
-          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels. LINES, LINE_STRIP, LINE_LOOP and TRIANGLE_FAN are implemented for both draw calls. Task 058 passed the original loop/fan, line-quality and array/index bounds cases and an exact three-backend pixel comparison.",
+          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels. LINES, LINE_STRIP, LINE_LOOP and TRIANGLE_FAN are implemented for both draw calls. Task 058 passed the original loop/fan, line-quality and array/index bounds cases and an exact three-backend pixel comparison. POINTS uses instanced square sprites and the point-specific WGSL entries; see task 073.",
           "tests": [
+            "conformance/glsl/variables/gl-pointcoord.html",
+            "conformance/rendering/point-size.html",
+            "conformance/rendering/clipping-wide-points.html",
             "sdk/tests/conformance/rendering/line-loop-tri-fan.html",
             "sdk/tests/conformance/rendering/line-rendering-quality.html",
             "sdk/tests/conformance/rendering/draw-arrays-out-of-bounds.html",
@@ -546,6 +549,8 @@
             "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
+            { "path": "artifacts/conformance/campaign/point-primitives/js/results.json", "passed": true, "scope": "All six point-specific originals" },
+            { "path": "artifacts/conformance/campaign/point-primitives/dual-core/result.json", "passed": true },
             { "path": "artifacts/conformance/campaign/nonpoint-topology/9943fbe/js/results.json", "passed": true },
             { "path": "artifacts/conformance/campaign/nonpoint-topology/9943fbe/dual-core/result.json", "passed": true },
             {
@@ -576,14 +581,17 @@
             "drawElements_UNSIGNED_BYTE": "differential-verified"
           },
           "limits": [
-            "POINTS raises NotSupportedError",
+            "Points clamp to the advertised [1, 64] pixel size range",
             "UNSIGNED_INT indices report INVALID_ENUM with no index extension advertised"
           ]
         },
         "rust": {
           "status": "cts-verified",
-          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels. LINES, LINE_STRIP, LINE_LOOP and TRIANGLE_FAN are implemented for both draw calls. Task 058 passed the original loop/fan, line-quality and array/index bounds cases and an exact three-backend pixel comparison.",
+          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels. LINES, LINE_STRIP, LINE_LOOP and TRIANGLE_FAN are implemented for both draw calls. Task 058 passed the original loop/fan, line-quality and array/index bounds cases and an exact three-backend pixel comparison. POINTS uses instanced square sprites and the point-specific WGSL entries; see task 073.",
           "tests": [
+            "conformance/glsl/variables/gl-pointcoord.html",
+            "conformance/rendering/point-size.html",
+            "conformance/rendering/clipping-wide-points.html",
             "sdk/tests/conformance/rendering/line-loop-tri-fan.html",
             "sdk/tests/conformance/rendering/line-rendering-quality.html",
             "sdk/tests/conformance/rendering/draw-arrays-out-of-bounds.html",
@@ -593,6 +601,8 @@
             "packages/core-wasm/tests/render.integration.ts"
           ],
           "evidence": [
+            { "path": "artifacts/conformance/campaign/point-primitives/rust/results.json", "passed": true, "scope": "All six point-specific originals" },
+            { "path": "artifacts/conformance/campaign/point-primitives/dual-core/result.json", "passed": true },
             { "path": "artifacts/conformance/campaign/nonpoint-topology/9943fbe/rust/results.json", "passed": true },
             { "path": "artifacts/conformance/campaign/nonpoint-topology/9943fbe/dual-core/result.json", "passed": true },
             {
@@ -2529,7 +2539,7 @@
     },
     {
       "id": "additional-rendering-capabilities",
-      "api": "enabled compressed texture formats and point drawing",
+      "api": "enabled compressed texture formats",
       "cores": {
         "js": {
           "status": "unimplemented",

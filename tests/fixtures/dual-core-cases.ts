@@ -5,7 +5,7 @@ export const dualCoreCaseNames = [
   'float-uniform-setters', 'indexed-update-u8', 'indexed-update-u16', 'upload-view-snapshot',
   'attribute-layout-and-constants', 'buffer-reallocation-and-delete', 'resize-attribute-size',
   'automatic-submit-and-flush', 'viewport-clear-regions', 'draw-validation-state',
-  'triangle-strip-modes', 'line-and-fan-modes', 'polygon-offset-and-samples', 'integer-vertex-attributes', 'enabled-array-validation', 'location-name-validation',
+  'triangle-strip-modes', 'line-and-fan-modes', 'polygon-offset-and-samples', 'point-sprites', 'integer-vertex-attributes', 'enabled-array-validation', 'location-name-validation',
   'retained-deletion-and-retirement', ...programCaseNames,
 ] as const;
 export type DrawingCaseName = typeof dualCoreCaseNames[number];
@@ -77,6 +77,16 @@ function regions(name: DrawingCaseName): PixelRegion[] {
         { x: 32, y: 32, width: 32, height: 32, color: green }];
     case 'resize-attribute-size': return [band(0, 96, blue, 32)];
     case 'draw-validation-state': return [band(0, 64, [255, 255, 0, 255])];
+    case 'point-sprites': {
+      const rectangles = [band(0, 64, black)];
+      for (const [cx, cy] of [[16, 16], [48, 16], [32, 48]] as const) {
+        for (const [dx, dy, color] of [[-8, -8, blue], [0, -8, [255, 255, 0, 255]],
+          [-8, 0, red], [0, 0, green]] as const) {
+          rectangles.push({ x: cx + dx, y: cy + dy, width: 8, height: 8, color });
+        }
+      }
+      return rectangles;
+    }
     case 'polygon-offset-and-samples': return [band(0, 64, green)];
     case 'line-and-fan-modes':
       return [band(0, 64, black), band(0, 16, red), band(16, 16, green),
@@ -183,6 +193,27 @@ async function execute(name: DrawingCaseName, gl: WebGLRenderingContext, canvas:
       color = gl.getUniformLocation(program, 'u_color');
       draw(0, 1, 0);
       gl.deleteProgram(unlinked);
+      break;
+    }
+    case 'point-sprites': {
+      const size = gl.getUniformLocation(program, 'u_size');
+      gl.uniform1f(size, 16);
+      gl.enable(gl.CULL_FACE);
+      gl.cullFace(gl.FRONT_AND_BACK);
+      gl.frontFace(gl.CW);
+      const positions = new Float32Array(65536 * 4);
+      positions.set([0, 0, -2, 1, -0.5, -0.5, 0, 1, 0, 0, 0, 1]);
+      positions.set([0.5, -0.5, 0, 1], 65535 * 4);
+      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+      gl.vertexAttribPointer(position, 4, gl.FLOAT, false, 0, 0);
+      expectError('point first vertex', () => gl.drawArrays(gl.POINTS, 1, 1), gl.NO_ERROR);
+      expectError('near-clipped point', () => gl.drawArrays(gl.POINTS, 0, 1), gl.NO_ERROR);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 65535]), gl.DYNAMIC_DRAW);
+      expectError('indexed maximum point', () => gl.drawElements(gl.POINTS, 1, gl.UNSIGNED_SHORT, 2), gl.NO_ERROR);
+      gl.viewport(16, 32, 32, 32);
+      gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 2, Uint16Array.of(2));
+      expectError('updated point index in a smaller viewport', () => gl.drawElements(gl.POINTS, 1, gl.UNSIGNED_SHORT, 2), gl.NO_ERROR);
       break;
     }
     case 'polygon-offset-and-samples': {
@@ -602,6 +633,14 @@ export async function runDrawingCase(name: DrawingCaseName, backend: DrawingBack
   canvas.width = canvas.height = 64;
   document.body.append(canvas);
   const shaders = { vertex, fragment };
+  if (name === 'point-sprites') {
+    shaders.vertex = 'attribute vec4 a_position; uniform float u_size; void main(){ gl_Position = a_position; gl_PointSize = u_size; }';
+    shaders.fragment = `precision mediump float; void main() {
+      if (!gl_FrontFacing) gl_FragColor = vec4(1., 0., 1., 1.);
+      else if (gl_PointCoord.y < .5) gl_FragColor = gl_PointCoord.x < .5 ? vec4(1.,0.,0.,1.) : vec4(0.,1.,0.,1.);
+      else gl_FragColor = gl_PointCoord.x < .5 ? vec4(0.,0.,1.,1.) : vec4(1.,1.,0.,1.);
+    }`;
+  }
   if (name === 'float-uniform-setters') shaders.fragment = uniformsFragment;
   if (name === 'attribute-layout-and-constants' || name === 'integer-vertex-attributes') {
     shaders.vertex = colorsVertex; shaders.fragment = colorsFragment;

@@ -679,7 +679,7 @@ export class SemanticContext {
   private draw(mode: number, first: number, count: number,
     elements: { type: number; offset: number } | null): void {
     if (this.lost) return;
-    if (!Number.isInteger(mode) || mode < GL.POINTS || mode > GL.TRIANGLE_FAN) return this.error(GL.INVALID_ENUM);
+    if (!isDrawMode(mode)) return this.error(GL.INVALID_ENUM);
     if (first < 0 || count < 0 || !Number.isInteger(first) || !Number.isInteger(count)) return this.error(GL.INVALID_VALUE);
     let indices: DrawOperation['indices'] = null;
     if (elements) {
@@ -691,7 +691,6 @@ export class SemanticContext {
       }
       indices = { data: this.elementBuffer.data, type, offset };
     }
-    if (!isDrawMode(mode)) return unsupported("point drawing");
     if (!this.program?.linkStatus || !this.program.executable) return this.error(GL.INVALID_OPERATION);
     if (this.attributes.some(attribute => attribute.enabled && !attribute.buffer)) return this.error(GL.INVALID_OPERATION);
     if (this.samplerTypeConflict(this.program)) return this.error(GL.INVALID_OPERATION);
@@ -1463,6 +1462,7 @@ export class SemanticContext {
   getParameter(parameter: number): unknown {
     if (this.lost) return null;
     if (parameter === GL.COMPRESSED_TEXTURE_FORMATS) return new Uint32Array(0);
+    if (parameter === GL.ALIASED_POINT_SIZE_RANGE) return new Float32Array([1, 64]);
     if (parameter === GL.ALIASED_LINE_WIDTH_RANGE) return new Float32Array([1, 1]);
     if (parameter === GL.IMPLEMENTATION_COLOR_READ_FORMAT || parameter === GL.IMPLEMENTATION_COLOR_READ_TYPE) {
       if (this.checkFramebufferStatus(GL.FRAMEBUFFER) !== GL.FRAMEBUFFER_COMPLETE) {

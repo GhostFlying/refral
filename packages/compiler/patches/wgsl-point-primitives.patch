@@ -1,0 +1,116 @@
+--- a/src/compiler/translator/wgsl/RewritePipelineVariables.h
++++ b/src/compiler/translator/wgsl/RewritePipelineVariables.h
+@@ -135,0 +136 @@
++    void OutputEntryPoint(TInfoSinkBase &output, bool point);
+@@ -136,0 +138 @@
++    bool mWebGL1PointEntry = false;
+--- a/src/compiler/translator/wgsl/RewritePipelineVariables.cpp
++++ b/src/compiler/translator/wgsl/RewritePipelineVariables.cpp
+@@ -119,0 +120,5 @@
++            {"gl_PointCoord",
++             GlslToWgslBuiltinMapping{ImmutableString("gl_PointCoord"), NoAnnotation{},
++                                      IOType::Input, BuiltInVariable::gl_PointCoord(),
++                                      ImmutableString("vec2<f32>"), ImmutableString(nullptr),
++                                      ImmutableString(nullptr)}},
+@@ -572,0 +578 @@
++    outVarReplacements.mWebGL1PointEntry = compiler.getShaderVersion() == 100;
+@@ -660,0 +667,3 @@
++    }
++    if (!block.angleAnnotatedMembers.empty())
++    {
+@@ -688 +696,0 @@
+-// Could split OutputMainFunction() into the different parts of the main function.
+@@ -691 +699,2 @@
+-    if (mShaderType == GL_VERTEX_SHADER)
++    OutputEntryPoint(output, false);
++    if (mWebGL1PointEntry)
+@@ -693,9 +702,22 @@
+-        output << "@vertex\n";
+-    }
+-    else
+-    {
+-        ASSERT(mShaderType == GL_FRAGMENT_SHADER);
+-        output << "@fragment\n";
+-    }
+-    output << "fn wgslMain(";
+-    if (!mInputBlock.angleGlobalMembers.empty())
++        if (mShaderType == GL_VERTEX_SHADER)
++        {
++            output << "struct RefralPointOutput {\n";
++            for (const ImmutableString &member : mOutputBlock.angleAnnotatedMembers)
++            {
++                output << "  " << member << "\n";
++            }
++            // The linker reserves location 8 above the eight user varying vectors.
++            output << "  @location(8) pointCoord : vec2<f32>,\n};\n";
++        }
++        OutputEntryPoint(output, true);
++    }
++    return true;
++}
++
++void RewritePipelineVarOutput::OutputEntryPoint(TInfoSinkBase &output, bool point)
++{
++    const bool vertex = mShaderType == GL_VERTEX_SHADER;
++    output << (vertex ? "@vertex\n" : "@fragment\n");
++    output << (point ? "fn refralPointMain(" : "fn wgslMain(");
++    const bool hasInput = !mInputBlock.angleAnnotatedMembers.empty();
++    if (hasInput)
+@@ -703,0 +726,9 @@
++    }
++    if (point)
++    {
++        if (hasInput)
++        {
++            output << ", ";
++        }
++        output << (vertex ? "@builtin(vertex_index) corner : u32"
++                          : "@location(8) coord : vec2<f32>");
+@@ -706 +737,3 @@
+-    if (!mOutputBlock.angleGlobalMembers.empty())
++    const bool hasOutput = !mOutputBlock.angleAnnotatedMembers.empty();
++    const char *outputType = point && vertex ? "RefralPointOutput" : kBuiltinOutputAnnotatedStructType;
++    if (hasOutput)
+@@ -708 +741 @@
+-        output << " -> " << kBuiltinOutputAnnotatedStructType;
++        output << " -> " << outputType;
+@@ -714,0 +748,4 @@
++    if (point && !vertex && IsInputVar(BuiltInVariable::gl_PointCoord()->uniqueId()))
++    {
++        output << "  ANGLE_input_global.gl_PointCoord_ = coord;\n";
++    }
+@@ -716,2 +753 @@
+-
+-    if (!mOutputBlock.angleGlobalMembers.empty())
++    if (hasOutput)
+@@ -719,2 +755 @@
+-        output << "  var " << kBuiltinOutputAnnotatedStructName << " : "
+-               << kBuiltinOutputAnnotatedStructType << ";\n";
++        output << "  var " << kBuiltinOutputAnnotatedStructName << " : " << outputType << ";\n";
+@@ -724,0 +760,24 @@
++        if (point && vertex)
++        {
++            output << "  let center = ANGLE_output_annotated.gl_Position_;\n"
++                      "  let uv = vec2<f32>(f32(corner & 1u), f32(corner >> 1u));\n"
++                      "  ANGLE_output_annotated.pointCoord = uv;\n";
++            output << "  let size = ";
++            if (IsOutputVar(BuiltInVariable::gl_PointSize()->uniqueId()))
++            {
++                output << "clamp(ANGLE_output_global.gl_PointSize_, 1.0, 64.0);\n";
++            }
++            else
++            {
++                output << "1.0;\n";
++            }
++            // The WebGL1 driver uses the two reserved atomic-counter offsets for viewport size.
++            output << "  let viewport = vec2<f32>(ANGLEUniforms.acbBufferOffsets);\n"
++                      "  let shift = (2.0 * uv - 1.0) * size * center.w / viewport;\n"
++                      "  if (center.w > 0.0 && "
++                      "center.z >= 0.0 && center.z <= center.w) {\n"
++                      "    ANGLE_output_annotated.gl_Position_ = center + vec4<f32>(shift, 0.0, 0.0);\n"
++                      "  } else {\n"
++                      "    ANGLE_output_annotated.gl_Position_ = vec4<f32>(2.0, 2.0, 2.0, 1.0);\n"
++                      "  }\n";
++        }
+@@ -728 +786,0 @@
+-    return true;

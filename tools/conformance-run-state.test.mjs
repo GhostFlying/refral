@@ -32,3 +32,47 @@ test('resume checks backend, index, URL and uniqueness before accepting complete
   assert.throws(() => validateConformanceCheckpoint({ ...checkpoint,
     inventory: ['a.html', 'a.html'] }, 'js', 'same'), /inventory/);
 });
+
+test('a stalled protocol close escalates to the same browser server and records its exit', async () => {
+  const { closeConformanceBrowser } = await import('./conformance-browser.mjs');
+  const child = { exitCode: null, signalCode: null };
+  const calls = [];
+  const server = { process: () => child, close: () => { calls.push('close'); return new Promise(() => {}); },
+    kill: async () => { calls.push('kill'); child.signalCode = 'SIGKILL'; } };
+  const launch = {};
+  const deadline = async (promise, _ms, label) => {
+    if (label.includes('graceful')) throw new Error('simulated protocol stall');
+    return promise;
+  };
+  await closeConformanceBrowser(server, launch, deadline);
+  assert.deepEqual(calls, ['close', 'kill']);
+  assert.equal(launch.forced, true);
+  assert.equal(launch.signal, 'SIGKILL');
+  assert.match(launch.gracefulCloseError, /simulated protocol stall/);
+});
+
+test('cleanup verifies the owned process really exited before starting the next browser', async () => {
+  const { closeConformanceBrowser } = await import('./conformance-browser.mjs');
+  const child = { exitCode: null, signalCode: null };
+  const server = { process: () => child, close: async () => {} };
+  await assert.rejects(closeConformanceBrowser(server, {}, promise => promise), /still running/);
+  child.exitCode = 0;
+  const launch = {};
+  await closeConformanceBrowser(server, launch, promise => promise);
+  assert.equal(launch.exitCode, 0);
+  assert.equal(launch.forced, undefined);
+});
+
+test('an exited owned process with a pending launcher promise releases its pipes', { skip: process.platform === 'win32' }, async () => {
+  const { spawn } = await import('node:child_process');
+  const { once } = await import('node:events');
+  const { closeConformanceBrowser } = await import('./conformance-browser.mjs');
+  const child = spawn(process.execPath, ['-e', ''], { detached: true, stdio: 'pipe' });
+  await once(child, 'exit');
+  const server = { process: () => child, close: () => new Promise(() => {}), kill: () => new Promise(() => {}) };
+  const launch = {};
+  await closeConformanceBrowser(server, launch, async (_promise, _ms, message) => { throw new Error(message); });
+  assert.equal(launch.exitCode, 0);
+  assert.match(launch.cleanupDelay, /cleanup is still pending/);
+  assert.ok(child.stdio.every(pipe => !pipe || pipe.destroyed));
+});

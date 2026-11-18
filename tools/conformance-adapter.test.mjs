@@ -642,3 +642,21 @@ test('ordinary uncaught errors and stale previous-frame capability errors retain
   assert.equal(result.status, 'harness-error');
   assert.equal(result.capabilityTerminated, false);
 });
+
+test('a stalled case retains partial assertions and records upstream completion before disposal', async () => {
+  const setup = await nativeSession();
+  setup.start(0);
+  const first = setup.events.find(event => event.type === 'partial');
+  assert.equal(first.observation.passed, 1);
+  assert.equal(first.observation.upstreamCompletion, undefined);
+  setup.bridge.report(4, setup.files[0].url, 'original failed assertion', false, false);
+  const partial = setup.scope.conformanceSession.partial;
+  assert.equal(partial.observation.passed, 1);
+  assert.equal(partial.observation.failed, 1);
+  assert.equal(partial.observation.failures[0], 'original failed assertion');
+  await setup.finish(0);
+  const observations = setup.events.filter(event => event.type === 'partial');
+  assert.equal(observations.at(-1).observation.upstreamCompletion, 'finished');
+  assert.equal(observations.at(-1).observation.upstreamStatus, 'fail');
+  assert.equal(setup.scope.conformanceSession.partial, null);
+});

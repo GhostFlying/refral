@@ -1,7 +1,7 @@
 import { GL, bufferHandleKey } from '@refral/core-api';
 import type { BufferCore, BufferHandle } from '@refral/core-api';
 
-class RefralBuffer {}
+import { webglInterfaces } from './interfaces.js';
 
 const handles = new WeakMap<object, BufferHandle>();
 const byteLength = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength')!.get!;
@@ -99,7 +99,7 @@ function unwrap(value: unknown): BufferHandle | null {
   return handles.get(value)!;
 }
 
-export function createBufferFacade(core: BufferCore) {
+export function createBufferFacade(core: BufferCore, interfaces = webglInterfaces()) {
   const wrappers = new Map<string, WebGLBuffer>();
 
   function wrap(handle: BufferHandle | null): WebGLBuffer | null {
@@ -107,7 +107,7 @@ export function createBufferFacade(core: BufferCore) {
     const key = bufferHandleKey(handle);
     let wrapper = wrappers.get(key);
     if (!wrapper) {
-      wrapper = new RefralBuffer() as WebGLBuffer;
+      wrapper = Object.create(interfaces.buffer) as WebGLBuffer;
       handles.set(wrapper, handle);
       wrappers.set(key, wrapper);
     }
@@ -119,7 +119,7 @@ export function createBufferFacade(core: BufferCore) {
       if (core.isContextLost()) {
         // Public WebGL objects created during loss exist in an invalidated state.
         // No logical resource is allocated; zero is never a live core handle.
-        const wrapper = new RefralBuffer() as WebGLBuffer;
+        const wrapper = Object.create(interfaces.buffer) as WebGLBuffer;
         handles.set(wrapper, Object.freeze({ kind: 'buffer', contextId: core.contextId, slot: 0, generation: 0 }));
         return wrapper;
       }

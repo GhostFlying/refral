@@ -1,0 +1,9 @@
+# WebGL1 object interface identity
+
+The original misc/instanceof-test and the public Chrome factory expose missing WebGL1 interface prototypes on returned resource wrappers, location objects and reflection results. Consult the pinned WebGL1 IDL opaque resource interfaces, WebGLActiveInfo, WebGLShaderPrecisionFormat and Web IDL interface/prototype rules. The facade owns these wrappers. Core generation and context checks remain authoritative.
+
+Implement prototype selection from the canvas's realm (or worker global). Use available opaque interface prototypes without invoking native constructors. Keep logical handles in the existing private WeakMaps. Prototype-only forgeries must fail conversion. Support headless Node tests when a browser interface is absent. For query records expose immutable public fields and leave caller extensions possible. Check the public context's instanceof relation while guarding all property access through the declared facade.
+
+Run deterministic checks, the shared public identity/forgery checks, and the unmodified instanceof-test and adjacent getter originals through headless native, JS and actual Rust. Record exact counts, object-query behavior and any residual limits.
+
+On headless Chrome 158 the public three-way regression verifies realm prototypes after preventExtensions, retained wrapper identity, forged-handle rejection and read-only precision fields. The original instanceof-test completed 21/0 on all three. Program handling and non-current uniform queries completed 13/0 and 8/0. In the initial focused build shader-precision-format completed 65/0 natively and stopped on the first point draw after 52 passing assertions on each core. The combined point and identity build must run the complete original. Results live in artifacts/conformance/campaign/webgl-object-identity.

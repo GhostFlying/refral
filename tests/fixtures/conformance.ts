@@ -1,11 +1,12 @@
 import { prepareContextFactory, getTestingHooks } from '@refral/webgl';
 import type { PreparedContextFactory } from '@refral/webgl';
-import type { ConformanceBackend, ConformanceBridge, ConformanceDiagnostic, ConformanceGap,
+import type { CanvasSurface, ConformanceBackend, ConformanceBridge, ConformanceDiagnostic, ConformanceGap,
   OfficialFile, OfficialHarness, OfficialReport, OfficialTest } from './conformance-init.js';
 
 interface ContextRecord {
   requestedCore: ConformanceBackend;
   actualCore: ConformanceBackend;
+  surface: CanvasSurface;
   kind: string;
   attributes: WebGLContextAttributes | null;
   adapter: Record<string, unknown>;
@@ -40,7 +41,7 @@ interface CaseResult {
 }
 interface Scope {
   factory: PreparedContextFactory | null;
-  canvases: WeakMap<HTMLCanvasElement, WebGLRenderingContext>;
+  canvases: WeakMap<HTMLCanvasElement | OffscreenCanvas, WebGLRenderingContext>;
   contexts: Map<WebGLRenderingContext, ContextRecord>;
   errors: ConformanceDiagnostic[];
   adapterGaps: ConformanceGap[];
@@ -166,7 +167,7 @@ function addGap(target: Scope, value: ConformanceGap): void {
 }
 
 function captureContext(target: Scope, context: WebGLRenderingContext, kind: string,
-  url: string): void {
+  url: string, surface: CanvasSurface): void {
   if (target.contexts.has(context)) return;
   let actualCore: ConformanceBackend = 'native';
   let adapter: Record<string, unknown> = {};
@@ -181,7 +182,7 @@ function captureContext(target: Scope, context: WebGLRenderingContext, kind: str
         message: info.message, url });
     });
   }
-  target.contexts.set(context, { requestedCore: backend, actualCore, kind,
+  target.contexts.set(context, { requestedCore: backend, actualCore, surface, kind,
     attributes: context.getContextAttributes(), adapter, url });
   activity();
 }
@@ -323,7 +324,7 @@ const report: OfficialReport = (type, _url, message, success, skipped) => {
 };
 
 const bridge: ConformanceBridge = {
-  acquire(canvas, kind, attributes, url) {
+  acquire(canvas, kind, attributes, url, surface) {
     const target = selectedScope(url);
     if (!target || !target.factory) throw new DOMException('Selected test factory is unavailable.', 'NotSupportedError');
     const existing = target.canvases.get(canvas);
@@ -341,12 +342,12 @@ const bridge: ConformanceBridge = {
       throw error;
     }
     target.canvases.set(canvas, context);
-    captureContext(target, context, kind, url);
+    captureContext(target, context, kind, url, surface);
     return context;
   },
-  context(context, kind, _attributes, url) {
+  context(context, kind, _attributes, url, surface) {
     const target = selectedScope(url);
-    if (target) captureContext(target, context, kind, url);
+    if (target) captureContext(target, context, kind, url, surface);
   },
   error: routeError,
   gap(value) { addGap(selectedScope(value.url) ?? probe, value); },

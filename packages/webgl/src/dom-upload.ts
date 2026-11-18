@@ -35,7 +35,7 @@ export type CanvasCapture = (source: HTMLCanvasElement | OffscreenCanvas,
   width: number, height: number, plan: DomTextureUploadPlan) => Uint8Array;
 const canvasSources = new WeakMap<object, CanvasSource>();
 
-export function registerCanvasSource(canvas: HTMLCanvasElement, source: CanvasSource): () => void {
+export function registerCanvasSource(canvas: HTMLCanvasElement | OffscreenCanvas, source: CanvasSource): () => void {
   canvasSources.set(canvas, source);
   return () => { if (canvasSources.get(canvas) === source) canvasSources.delete(canvas); };
 }

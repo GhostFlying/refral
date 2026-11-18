@@ -12,11 +12,11 @@ The local selected-core entry uses the conformance CLI and its Playwright docume
 
 ## Context and ownership
 
-HTMLCanvas context acquisition validates the native receiver brand and contextId DOMString conversion before dispatch. Boxed strings and custom conversion objects enter the selected-core gate. Context mode conflicts and repeated acquisition retain their native slot behavior. Each facade context records actual core, attributes and adapter. Parent-module Canvas acquisition remains available to the accepted native HTMLImage extractor.
+HTMLCanvasElement and same-thread OffscreenCanvas acquisition validate the native receiver brand and convert the context ID before dispatch. OffscreenCanvas uses its own context ID enum. Boxed strings and custom conversion objects enter the selected-core gate. Context mode conflicts and repeated acquisition retain their native slot behavior. The per-file prepared factory creates both canvas types on demand, synchronously. Each context record identifies the surface type, actual core, attributes and adapter. Parent-module Canvas acquisition remains available to the accepted native HTMLImage extractor.
 
 Selected-core getter Array/TypedArray containers cross the parent-factory boundary through a stable child-realm context Proxy. Captured child intrinsics construct the return containers, with raw-byte typed-array copies and shallow Array copies. Resource wrapper identities, exceptions and ordinary method identities retain their original values. Realm transfers are counted per result.
 
-The adapter reports selected-core OffscreenCanvas WebGL acquisition as unsupported. Workers run their original code. The adapter marks their files with a provenance gap, including workers used for ancillary processing. Pure CPU test files can complete with zero WebGL contexts.
+The document-start hook covers same-thread canvas instances, including ones constructed after the original script starts. Workers run their original code. The adapter marks their files with a provenance gap, including workers used for ancillary processing. Pure CPU test files can complete with zero WebGL contexts.
 
 Each file owns its selected factory and concrete resources. A separate factory supports the original runner's context probe. Native cleanup captures metadata and relies on official iframe navigation and browser-context rotation. Synthesizing native context loss at completion would invoke upstream loss listeners again. Delayed completed-frame diagnostics retain their originating file identity.
 

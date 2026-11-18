@@ -65,10 +65,12 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Explicit asynchronous WebGL1 factory. Differential fixtures request alpha=false, depth=true, stencil=false, antialias=false, preserveDrawingBuffer=true.",
+          "coverage": "Explicit asynchronous WebGL1 factory. Differential fixtures request alpha=false, depth=true, stencil=false, antialias=false, preserveDrawingBuffer=true. Same-thread OffscreenCanvas supports drawing and use of the registered canvas as a texture source.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
-            "tests/chrome/dual-core-drawing.spec.ts"
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/offscreen-context.spec.ts",
+            "sdk/tests/conformance/offscreencanvas/context-creation.html"
           ],
           "evidence": [
             {
@@ -76,6 +78,10 @@
               "passed": true,
               "maxDifference": 0,
               "mismatchedChannels": 0
+            },
+            {
+              "path": "artifacts/conformance/campaign/window-offscreen/js/results.json",
+              "passed": true
             }
           ],
           "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
@@ -88,11 +94,13 @@
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "Explicit async factory selects Rust, initializes one semantic instance, and returns recorded requested attributes. Shared drawing scenes use alpha=false, depth=true, stencil=false, antialias=false and DPR1.",
+          "coverage": "Explicit async factory selects Rust, initializes one semantic instance, and returns recorded requested attributes. Shared drawing scenes use alpha=false, depth=true, stencil=false, antialias=false and DPR1. Same-thread OffscreenCanvas supports drawing and use of the registered canvas as a texture source.",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
-            "packages/core-wasm/tests/render.integration.ts"
+            "packages/core-wasm/tests/render.integration.ts",
+            "tests/chrome/offscreen-context.spec.ts",
+            "sdk/tests/conformance/offscreencanvas/context-creation.html"
           ],
           "evidence": [
             {
@@ -101,6 +109,10 @@
             },
             {
               "path": "artifacts/dual-core-drawing-full-chrome.log",
+              "passed": true
+            },
+            {
+              "path": "artifacts/conformance/campaign/window-offscreen/rust/results.json",
               "passed": true
             }
           ],

@@ -1,5 +1,7 @@
 export type ConformanceBackend = 'native' | 'js' | 'rust';
 
+export type CanvasSurface = 'html-canvas' | 'offscreen-canvas';
+
 export interface OfficialFile { url: string }
 export interface OfficialTest { iframe: HTMLIFrameElement; testFile: OfficialFile }
 export type OfficialReport = (type: number, url: string, message: unknown,
@@ -20,10 +22,10 @@ export interface ConformanceDiagnostic {
 }
 export interface ConformanceGap { kind: string; message: string; url: string }
 export interface ConformanceBridge {
-  acquire(canvas: HTMLCanvasElement, kind: string, attributes: WebGLContextAttributes | undefined,
-    url: string): WebGLRenderingContext | null;
+  acquire(canvas: HTMLCanvasElement | OffscreenCanvas, kind: string, attributes: WebGLContextAttributes | undefined,
+    url: string, surface: CanvasSurface): WebGLRenderingContext | null;
   context(context: WebGLRenderingContext, kind: string, attributes: WebGLContextAttributes | undefined,
-    url: string): void;
+    url: string, surface: CanvasSurface): void;
   error(value: ConformanceDiagnostic): void;
   gap(value: ConformanceGap): void;
   realmTransfer?(url: string): void;
@@ -156,58 +158,50 @@ export function installConformanceBridge(options: { backend: ConformanceBackend 
     return context;
   }
 
-  const originalGetContext = HTMLCanvasElement.prototype.getContext;
-  const canvasWidth = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'width')!.get!;
   const toString = String;
-  const selectedCanvases = new WeakSet<HTMLCanvasElement>();
-  Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { configurable: true, writable: true,
-    value(this: HTMLCanvasElement, contextId: unknown, attributes?: WebGLContextAttributes) {
-      Reflect.apply(canvasWidth, this, []);
-      if (arguments.length === 0 || typeof contextId === 'symbol') {
-        return Reflect.apply(originalGetContext, this, [...arguments]);
-      }
-      const kind = toString(contextId);
-      if (kind !== 'webgl' && kind !== 'experimental-webgl' && kind !== 'webgl2') {
-        if (selectedCanvases.has(this)
-          && (kind === '2d' || kind === 'bitmaprenderer' || kind === 'webgpu')) return null;
-        return Reflect.apply(originalGetContext, this, [kind, attributes]);
-      }
-      if (options.backend === 'native') {
-        const context = Reflect.apply(originalGetContext, this, [kind, attributes]) as WebGLRenderingContext | null;
-        if (context) requiredBridge().context(context, kind, attributes, location.href);
-        return context;
-      }
-      try {
-        const context = requiredBridge().acquire(this, kind, attributes, location.href);
-        if (context) {
-          selectedCanvases.add(this);
-          return childContext(context);
-        }
-        return context;
-      } catch (error) {
-        diagnostic('context-acquisition', error);
-        throw error;
-      }
-    } });
-
-  if (options.backend !== 'native' && typeof OffscreenCanvas !== 'undefined') {
-    const originalOffscreen = OffscreenCanvas.prototype.getContext;
-    const offscreenWidth = Object.getOwnPropertyDescriptor(OffscreenCanvas.prototype, 'width')!.get!;
-    Object.defineProperty(OffscreenCanvas.prototype, 'getContext', { configurable: true, writable: true,
-      value(this: OffscreenCanvas, contextId: unknown, attributes?: unknown) {
-        Reflect.apply(offscreenWidth, this, []);
+  function installCanvasContext(prototype: HTMLCanvasElement | OffscreenCanvas, surface: CanvasSurface): void {
+    const original = prototype.getContext;
+    const width = Object.getOwnPropertyDescriptor(prototype, 'width')!.get!;
+    const selected = new WeakSet<HTMLCanvasElement | OffscreenCanvas>();
+    const nativeMode = new WeakSet<HTMLCanvasElement | OffscreenCanvas>();
+    Object.defineProperty(prototype, 'getContext', { configurable: true, writable: true,
+      value(this: HTMLCanvasElement | OffscreenCanvas, contextId: unknown, attributes?: WebGLContextAttributes) {
+        Reflect.apply(width, this, []);
         if (arguments.length === 0 || typeof contextId === 'symbol') {
-          return Reflect.apply(originalOffscreen, this, [...arguments]);
+          return Reflect.apply(original, this, [...arguments]);
         }
         const kind = toString(contextId);
-        if (kind !== 'webgl' && kind !== 'experimental-webgl' && kind !== 'webgl2') {
-          return Reflect.apply(originalOffscreen, this, [kind, attributes]);
+        if (surface === 'offscreen-canvas' && kind === 'experimental-webgl') {
+          // The OffscreenRenderingContextId enum excludes the legacy HTMLCanvasElement alias.
+          if (options.backend === 'native') return Reflect.apply(original, this, [kind, attributes]);
+          throw new TypeError('experimental-webgl is not an OffscreenCanvas context type.');
         }
-        requiredBridge().gap({ kind: 'offscreen-webgl', url: location.href,
-          message: 'Selected-core OffscreenCanvas WebGL acquisition is unavailable.' });
-        throw new DOMException('Selected-core OffscreenCanvas WebGL acquisition is unavailable.', 'NotSupportedError');
+        if (kind !== 'webgl' && kind !== 'experimental-webgl' && kind !== 'webgl2') {
+          if (selected.has(this) && (kind === '2d' || kind === 'bitmaprenderer' || kind === 'webgpu')) return null;
+          const context = Reflect.apply(original, this, [kind, attributes]);
+          if (context) nativeMode.add(this);
+          return context;
+        }
+        if (options.backend === 'native') {
+          const context = Reflect.apply(original, this, [kind, attributes]) as WebGLRenderingContext | null;
+          if (context) requiredBridge().context(context, kind, attributes, location.href, surface);
+          return context;
+        }
+        // The host acquires the canvas's WebGPU slot during the first selected WebGL call.
+        if (!selected.has(this) && nativeMode.has(this)) return null;
+        try {
+          const context = requiredBridge().acquire(this, kind, attributes, location.href, surface);
+          if (!context) return null;
+          selected.add(this);
+          return childContext(context);
+        } catch (error) {
+          diagnostic('context-acquisition', error);
+          throw error;
+        }
       } });
   }
+  installCanvasContext(HTMLCanvasElement.prototype, 'html-canvas');
+  if (typeof OffscreenCanvas !== 'undefined') installCanvasContext(OffscreenCanvas.prototype, 'offscreen-canvas');
 
   if (options.backend !== 'native' && typeof Worker !== 'undefined') {
     const OriginalWorker = Worker;

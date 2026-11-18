@@ -38,13 +38,13 @@ function fixture(backend = 'js', options = {}) {
     getContext(...args) { return nativeGetContext(this, offscreenBrands, 'offscreen', args); }
   }
   const bridge = {
-    acquire(canvas, kind) {
-      calls.acquire.push({ canvas, kind });
+    acquire(canvas, kind, _attributes, _url, surface) {
+      calls.acquire.push({ canvas, kind, surface });
       let context = selected.get(canvas);
       if (!context) { context = options.context ?? { actualCore: backend }; selected.set(canvas, context); }
       return kind === 'webgl2' ? null : context;
     },
-    context(context, kind) { calls.contexts.push({ context, kind }); },
+    context(context, kind, _attributes, _url, surface) { calls.contexts.push({ context, kind, surface }); },
     error(value) { calls.errors.push(value); },
     gap(value) { calls.gaps.push(value); },
     realmTransfer(url) { calls.realmTransfers.push(url); },
@@ -105,16 +105,31 @@ for (const backend of ['js', 'rust']) {
     assert.equal(calls.native.length, 0);
   });
 
-  test(`${backend} blocks coercible Offscreen WebGL IDs before native acquisition`, () => {
+  test(`${backend} exposes the same synchronous core through an offscreen canvas context slot`, () => {
     const { Offscreen, calls } = fixture(backend);
-    for (const kind of ['webgl', 'experimental-webgl', 'webgl2']) {
-      let conversions = 0;
-      assert.throws(() => new Offscreen().getContext({ toString() { conversions++; return kind; } }),
-        { name: 'NotSupportedError' });
-      assert.equal(conversions, 1);
-    }
-    assert.equal(calls.gaps.length, 3);
+    const canvas = new Offscreen();
+    let conversions = 0;
+    const context = canvas.getContext({ toString() { conversions++; return 'webgl'; } });
+    assert.equal(conversions, 1);
+    assert.equal(context.actualCore, backend);
+    assert.equal(canvas.getContext('webgl'), context);
+    assert.equal(canvas.getContext('webgl2'), null);
+    for (const kind of ['2d', 'bitmaprenderer', 'webgpu']) assert.equal(canvas.getContext(kind), null);
+    assert.throws(() => canvas.getContext('experimental-webgl'), { name: 'TypeError' });
+    assert.ok(calls.acquire.every(value => value.canvas === canvas && value.surface === 'offscreen-canvas'));
     assert.equal(calls.native.length, 0);
+    assert.equal(calls.gaps.length, 0);
+  });
+
+  test(`${backend} preserves a preexisting canvas mode`, () => {
+    const { Canvas, Offscreen, calls } = fixture(backend);
+    for (const Constructor of [Canvas, Offscreen]) {
+      for (const kind of ['2d', 'bitmaprenderer', 'webgpu']) {
+        const canvas = new Constructor();
+        assert.equal(canvas.getContext(kind).kind, kind);
+        assert.equal(canvas.getContext('webgl'), null);
+      }
+    }
     assert.equal(calls.acquire.length, 0);
   });
 }
@@ -158,19 +173,19 @@ for (const [constructorName, label] of [['Canvas', 'html'], ['Offscreen', 'offsc
   });
 }
 
-test('native HTMLCanvas acquisition normalizes once and retains original context tracking', () => {
-  const { Canvas, calls } = fixture('native');
-  let conversions = 0;
-  const context = new Canvas().getContext({ toString() { conversions++; return 'webgl'; } });
-  assert.equal(conversions, 1);
-  assert.equal(context.native, true);
-  assert.equal(calls.contexts.length, 1);
-  assert.equal(calls.contexts[0].context, context);
-  assert.equal(calls.contexts[0].kind, 'webgl');
-  assert.equal(calls.native.length, 1);
-  assert.equal(calls.native[0].kind, 'webgl');
-  assert.equal(calls.acquire.length, 0);
-});
+for (const [name, surface] of [['Canvas', 'html-canvas'], ['Offscreen', 'offscreen-canvas']]) {
+  test(`native ${surface} acquisition retains original context tracking`, () => {
+    const setup = fixture('native');
+    let conversions = 0;
+    const context = new setup[name]().getContext({ toString() { conversions++; return 'webgl'; } });
+    assert.equal(conversions, 1);
+    assert.equal(context.native, true);
+    assert.deepEqual(setup.calls.contexts, [{ context, kind: 'webgl', surface }]);
+    assert.equal(setup.calls.native.length, 1);
+    assert.equal(setup.calls.native[0].kind, 'webgl');
+    assert.equal(setup.calls.acquire.length, 0);
+  });
+}
 
 test('explicit undefined is converted while an absent argument remains an error', () => {
   const { Canvas, calls } = fixture();
@@ -300,11 +315,12 @@ test('native conformance finalization collects metadata without synthesizing con
     } };
   setup.start(0);
   setup.bridge.context(context, 'webgl', undefined,
-    `http://localhost/third_party/cts/sdk/tests/${setup.files[0].url}`);
+    `http://localhost/third_party/cts/sdk/tests/${setup.files[0].url}`, 'offscreen-canvas');
   await setup.finish(0);
   const [result] = setup.scope.conformanceSession.results;
   assert.equal(result.status, 'pass');
   assert.equal(result.errors.length, 0);
+  assert.equal(result.contexts[0].surface, 'offscreen-canvas');
   assert.deepEqual(extensions, ['WEBGL_debug_renderer_info']);
 });
 

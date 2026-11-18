@@ -966,12 +966,25 @@ export class BrowserHost implements SemanticHost {
 
   clear(snapshot: TargetSnapshot, state: RasterState, mask: number,
     color: readonly number[], depth: number): void {
-    const target = this.resolveTarget(snapshot);
     const writesColor = !!(mask & GL.COLOR_BUFFER_BIT);
-    const writesDepth = !!(mask & GL.DEPTH_BUFFER_BIT) && state.depthMask && !!target.depth && target.depth.format !== "stencil8";
-    const stencilWriteMask = (mask & GL.STENCIL_BUFFER_BIT) && targetHasStencil(target) ? state.stencilFront.writeMask & 0xff : 0;
+    const colorBits = writesColor ? colorWriteMask(state.colorMask) : 0;
+    const depthEnabled = !!(mask & GL.DEPTH_BUFFER_BIT) && state.depthMask;
+    const stencilBits = (mask & GL.STENCIL_BUFFER_BIT) ? state.stencilFront.writeMask & 0xff : 0;
+    if (snapshot.isDefault && this.offscreenDiscard) {
+      const channels = this.alpha ? 15 : 7;
+      const writable = colorBits & channels;
+      if (!writable && !(this.hasDepth && depthEnabled) && !(this.hasStencil && stencilBits)) return;
+      if (!state.scissorTest && writable === channels && (!this.hasDepth || depthEnabled) &&
+          (!this.hasStencil || stencilBits === 0xff)) {
+        // The clear replaces the whole prior generation before any attachment can be observed.
+        this.offscreenDiscard.forget();
+      }
+    }
+    const target = this.resolveTarget(snapshot);
+    const writesDepth = depthEnabled && !!target.depth && target.depth.format !== "stencil8";
+    const stencilWriteMask = targetHasStencil(target) ? stencilBits : 0;
     if (!writesColor && !writesDepth && !stencilWriteMask) return;
-    const writeMask = writesColor ? colorWriteMask(state.colorMask) & (target.opaque ? 7 : 15) : 0;
+    const writeMask = colorBits & (target.opaque ? 7 : 15);
     const key = `${target.color.format}:${target.depth?.format}:${writesDepth}:${writeMask}:${stencilWriteMask}`;
     let pipeline = this.clearPipelines.get(key);
     if (!pipeline) {

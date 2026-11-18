@@ -1,0 +1,15 @@
+--- a/src/compiler/translator/wgsl/TranslatorWGSL.cpp
++++ b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
+@@ -29,2 +29,3 @@
+ #include "compiler/translator/Types.h"
++#include "compiler/translator/tree_ops/AddDefaultReturnStatements.h"
+ #include "compiler/translator/tree_ops/GatherDefaultUniforms.h"
+@@ -2801,2 +2802,8 @@
+ {
++    // ESSL leaves a value-returning function's fallthrough result undefined.
++    // WGSL requires this path to terminate with a value of the return type.
++    if (!AddDefaultReturnStatements(this, root)) {
++      return false;
++    }
++
+     if (!PullExpressionsIntoFunctions(this, root))

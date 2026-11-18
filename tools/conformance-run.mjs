@@ -1,11 +1,12 @@
 import { chromium } from '@playwright/test';
-import { spawn, spawnSync, execFileSync } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { readFile, writeFile, mkdir, rename, readdir } from 'node:fs/promises';
 import { once } from 'node:events';
 import { resolve, join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { closeConformanceBrowser } from './conformance-browser.mjs';
 import { conformanceFingerprint, validateConformanceCheckpoint } from './conformance-run-state.mjs';
 import { installConformanceBridge } from '../tests/fixtures/conformance-init.ts';
 
@@ -60,7 +61,7 @@ async function hashRuntime(directory) {
 for (const name of ['core-api', 'core-js', 'core-wasm', 'browser-host', 'webgl', 'compiler']) {
   await hashRuntime(`packages/${name}/src`);
 }
-for (const file of ['tools/conformance-run.mjs', 'tools/conformance-run-state.mjs', 'packages/compiler/profile-limits.json']) {
+for (const file of ['tools/conformance-run.mjs', 'tools/conformance-run-state.mjs', 'tools/conformance-browser.mjs', 'packages/compiler/profile-limits.json']) {
   hashes[file] = createHash('sha256').update(await readFile(file)).digest('hex');
 }
 const runtimeRevision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -101,7 +102,7 @@ function intersectClip(first, second) {
   return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : null;
 }
 
-async function captureCasePage(page, url) {
+async function captureCasePage(page, url, running = false) {
   const runnerUrl = `${origin}/third_party/cts/sdk/tests/webgl-conformance-tests.html`;
   const runner = page.frames().find(frame => frame.url().split('?')[0] === runnerUrl);
   const expected = new URL(url, runnerUrl);
@@ -124,6 +125,19 @@ async function captureCasePage(page, url) {
     const frameBox = await iframe.boundingBox();
     const frameClip = frameBox && intersectClip(frameBox, viewport);
     if (!frameClip) return { kind: 'runner-page', bytes: await page.screenshot({ timeout: 3000 }) };
+    if (running) {
+      // Capture the known case rectangle before inspecting DOM nodes inside a busy renderer.
+      const cdp = await withDeadline(page.context().newCDPSession(page), 2000, 'Case screenshot transport unavailable.');
+      try {
+        const { data } = await withDeadline(cdp.send('Page.captureScreenshot', {
+          format: 'png', clip: { ...frameClip, scale: 1 },
+        }), 3000, 'Case compositor screenshot timed out.');
+        if (frame.isDetached() || new URL(frame.url()).pathname !== expected.pathname) {
+          throw new Error('The case frame navigated during its in-flight screenshot.');
+        }
+        return { kind: 'case-page', bytes: Buffer.from(data, 'base64') };
+      } finally { void cdp.detach().catch(() => {}); }
+    }
     const canvases = frame.locator('canvas');
     const candidate = await canvases.evaluateAll(elements => {
       let selected = null;
@@ -153,12 +167,27 @@ async function captureCasePage(page, url) {
   }
 }
 
-async function saveCaseScreenshot(page, backend, index, url) {
+async function saveCaseScreenshot(page, backend, index, url, attempt) {
   try {
-    const { bytes, ...capture } = await withDeadline(captureCasePage(page, url), 10_000,
-      'Conformance screenshot exceeded its deadline.');
-    const relative = `${backend}/screenshots/${String(index).padStart(4, '0')}.png`;
+    let image;
+    try {
+      image = await withDeadline(captureCasePage(page, url, typeof attempt === 'string'), 10_000, 'Conformance screenshot exceeded its deadline.');
+    } catch (error) {
+      // The compositor can still expose a viewport while the case JavaScript is stalled.
+      const cdp = await withDeadline(page.context().newCDPSession(page), 2000, 'Screenshot transport unavailable.');
+      try {
+        const capture = await withDeadline(cdp.send('Page.captureScreenshot', { format: 'png' }), 3000,
+          'Compositor screenshot timed out.');
+        image = { bytes: Buffer.from(capture.data, 'base64'), kind: 'runner-page', fallbackReason: String(error) };
+      } finally { void cdp.detach().catch(() => {}); }
+    }
+    const { bytes, ...capture } = image;
+    const suffix = attempt ? '-attempt-' + attempt : '';
+    const relative = `${backend}/screenshots/${String(index).padStart(4, '0')}${suffix}.png`;
     await writeFile(join(output, relative), bytes);
+    if (attempt && capture.kind !== 'case-page') {
+      return { kind: 'unavailable', message: 'Only the runner viewport could be captured.', viewportFile: relative };
+    }
     return { ...capture, file: relative, width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
   } catch (error) {
     return { kind: 'unavailable', message: error.message };
@@ -166,7 +195,8 @@ async function saveCaseScreenshot(page, backend, index, url) {
 }
 
 let browser;
-let browserProcess;
+let ownedServer;
+let currentLaunch;
 let browserClose;
 let launchHistory = [];
 let stopSignal = null;
@@ -180,56 +210,29 @@ const stopTerminate = () => requestStop('SIGTERM');
 process.on('SIGINT', stopInterrupt);
 process.on('SIGTERM', stopTerminate);
 async function openBrowser() {
-  const launched = await chromium.launch({
-    channel: 'chrome', headless: true, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
+  ownedServer = await chromium.launchServer({
+    host: '127.0.0.1', channel: 'chrome', headless: true, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
   });
-  browser = launched;
+  const child = ownedServer.process();
+  currentLaunch = { recordedAt: new Date().toISOString(), pid: child.pid,
+    launchCommandLine: child.spawnargs.join(' '), launchArguments: child.spawnargs };
+  launchHistory.push(currentLaunch);
   if (stopSignal) return;
-  const browserVersion = launched.version();
-  if (expectedBrowserVersion && browserVersion !== expectedBrowserVersion) {
+  browser = await chromium.connect(ownedServer.wsEndpoint(), { timeout: 30_000 });
+  currentLaunch.browserVersion = browser.version();
+  if (expectedBrowserVersion && browser.version() !== expectedBrowserVersion) {
     throw new Error('Installed Chrome changed version during the baseline. Use a new output directory.');
-  }
-  const session = await launched.newBrowserCDPSession();
-  try {
-    const { processInfo } = await withDeadline(session.send('SystemInfo.getProcessInfo'), 10_000, 'Chrome process info timed out.');
-    const owned = processInfo.find(info => info.type === 'browser');
-    if (!owned) throw new Error('Chrome process information is unavailable.');
-    const launchCommandLine = execFileSync('ps', ['-ww', '-p', String(owned.id), '-o', 'command='],
-      { encoding: 'utf8' }).trim();
-    browserProcess = { pid: owned.id, launchCommandLine };
-    launchHistory.push({ recordedAt: new Date().toISOString(), browserVersion, launchCommandLine });
-  } finally {
-    await session.detach().catch(() => {});
   }
 }
 async function closeBrowser() {
-  if (!browser) return;
-  browserClose ??= closeOwnedChrome(browser, browserProcess).finally(() => {
+  if (!ownedServer) return;
+  browserClose ??= closeConformanceBrowser(ownedServer, currentLaunch, withDeadline).then(() => {
     browser = null;
-    browserProcess = null;
-    browserClose = null;
-  });
+    ownedServer = null;
+  }).finally(() => { browserClose = null; });
   await browserClose;
 }
 
-async function closeOwnedChrome(current, owned) {
-  const closing = current.close();
-  try {
-    await withDeadline(closing, 10_000, 'Chrome close timed out.');
-  } catch (error) {
-    if (!owned) throw error;
-    const observed = spawnSync('ps', ['-ww', '-p', String(owned.pid), '-o', 'command='], { encoding: 'utf8' });
-    if (observed.status === 0 && observed.stdout.trim() === owned.launchCommandLine) {
-      console.error(`Stopping owned Chrome ${owned.pid} after close failed: ${error.message}`);
-      try {
-        process.kill(owned.pid, 'SIGKILL');
-      } catch (killError) {
-        if (killError.code !== 'ESRCH') throw killError;
-      }
-    }
-    await withDeadline(closing, 5_000, 'Chrome teardown did not finish.');
-  }
-}
 try {
   let ready = false;
   for (let attempt = 0; attempt < 300; attempt++) {
@@ -265,6 +268,11 @@ try {
         environment = previous.environment;
         for (const record of previous.results) records.set(record.index, record);
         recovery.push(...(previous.recovery ?? []));
+        for (const item of recovery) {
+          if (Number.isInteger(item.index) && Number.isInteger(item.attempt)) {
+            attempts.set(item.index, Math.max(attempts.get(item.index) ?? 0, item.attempt));
+          }
+        }
         launchHistory.unshift(...(previous.environment.launchHistory ?? []));
         resumed = true;
       } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -288,49 +296,53 @@ try {
       first = false;
       let context;
       let page;
-      try {
-        context = await browser.newContext({ viewport: { width: 1100, height: 760 }, deviceScaleFactor: 1 });
-        await context.addInitScript(installConformanceBridge, { backend });
-        page = await context.newPage();
-      } catch (error) {
-        await context?.close().catch(() => {});
-        if (stopSignal) break;
-        await closeBrowser();
-        await openBrowser();
-        if (stopSignal) break;
-        context = await browser.newContext({ viewport: { width: 1100, height: 760 }, deviceScaleFactor: 1 });
-        await context.addInitScript(installConformanceBridge, { backend });
-        page = await context.newPage();
-        recovery.push({ phase: 'context-initialization', error: String(error), recordedAt: new Date().toISOString() });
-      }
-      page.on('dialog', dialog => { void dialog.dismiss(); });
       let activeIndex = null;
       let activeStarted = Date.now();
       let eventResults = [];
       const diagnostics = [];
       const lateDiagnostics = new Map();
       let lateChanged = false;
-      page.on('pageerror', error => diagnostics.push({ index: activeIndex, kind: 'page', name: error.name, message: error.message }));
-      page.on('requestfailed', request => diagnostics.push({ index: activeIndex, kind: 'request',
-        name: 'RequestFailure', message: request.failure()?.errorText ?? '', url: request.url() }));
-      page.on('response', response => {
-        if (response.status() >= 400) diagnostics.push({ index: activeIndex, kind: 'response',
-          name: 'HTTPError', message: `HTTP ${response.status()}`, url: response.url() });
-      });
       let batch;
       let completedBatch = false;
+      const partials = new Map();
+      const runningCaptures = new Map();
       try {
+        context = await withDeadline(browser.newContext({ viewport: { width: 1100, height: 760 }, deviceScaleFactor: 1 }),
+          30_000, 'Chrome context initialization timed out.');
+        await withDeadline(context.addInitScript(installConformanceBridge, { backend }), 30_000, 'Chrome init script timed out.');
+        page = await withDeadline(context.newPage(), 30_000, 'Chrome page creation timed out.');
+        page.on('dialog', dialog => { void dialog.dismiss().catch(() => {}); });
+        page.on('pageerror', error => diagnostics.push({ index: activeIndex, kind: 'page', name: error.name, message: error.message }));
+        page.on('requestfailed', request => diagnostics.push({ index: activeIndex, kind: 'request',
+          name: 'RequestFailure', message: request.failure()?.errorText ?? '', url: request.url() }));
+        page.on('response', response => {
+          if (response.status() >= 400) diagnostics.push({ index: activeIndex, kind: 'response',
+            name: 'HTTPError', message: `HTTP ${response.status()}`, url: response.url() });
+        });
         if (values.screenshots) {
-          await page.exposeFunction('__refralConformanceCapture', ({ index, url }) => {
+          await page.exposeFunction('__refralConformanceCapture', async ({ index, url }) => {
             if (!batch?.includes(index) || inventory?.[index] !== url) {
               throw new Error('Conformance screenshot identity mismatch.');
             }
+            await runningCaptures.get(index);
             return saveCaseScreenshot(page, backend, index, url);
           });
         }
         await page.exposeFunction('__refralConformanceEvent', event => {
           if (event.type === 'start') { activeIndex = event.index; activeStarted = Date.now(); }
           if (event.type === 'finish') eventResults.push(event.result);
+          if (event.type === 'partial' && batch?.includes(event.index) && inventory?.[event.index] === event.url) {
+            partials.set(event.index, event.observation);
+            // A renderer that stalled once can become unavailable before its final screenshot.
+            // Capture one identified in-flight view on its retry, keeping the final capture separate.
+            const previous = attempts.get(event.index);
+            if (values.screenshots && previous && !event.observation.upstreamCompletion && !runningCaptures.has(event.index)) {
+              const elapsedMsAtRequest = Date.now() - activeStarted;
+              const { passed, failed } = event.observation;
+              runningCaptures.set(event.index, saveCaseScreenshot(page, backend, event.index, event.url, (previous + 1) + '-running')
+                .then(capture => ({ ...capture, phase: 'running', elapsedMsAtRequest, passed, failed })));
+            }
+          }
           if (event.type === 'late-diagnostic' && inventory?.[event.index] === event.url) {
             const values = lateDiagnostics.get(event.index) ?? [];
             values.push(event.diagnostic);
@@ -362,11 +374,16 @@ try {
         }
         activeIndex = start;
         activeStarted = Date.now();
-        await page.evaluate(({ start, count }) => window.conformanceSession.run({ start, count }), { start, count: batch.length });
+        await withDeadline(page.evaluate(({ start, count }) => window.conformanceSession.run({ start, count }),
+          { start, count: batch.length }), 30_000, 'Conformance page stopped responding.');
         while (!stopSignal) {
           const snapshot = await withDeadline(page.evaluate(() => ({
-            progress: window.conformanceSession.progress, results: window.conformanceSession.results,
+            progress: window.conformanceSession.progress, results: window.conformanceSession.results, partial: window.conformanceSession.partial,
           })), 30_000, 'Conformance page stopped responding.');
+          const partial = snapshot.partial;
+          if (partial && inventory[partial.index] === partial.url && !partials.get(partial.index)?.upstreamCompletion) {
+            partials.set(partial.index, partial.observation);
+          }
           const received = [...eventResults, ...snapshot.results];
           eventResults = [];
           let changed = lateChanged;
@@ -406,36 +423,60 @@ try {
           if (initializationFailures >= 3) throw error;
           console.log(`[${backend}] restarting runner initialization: ${error.message}`);
           if (inventory) await checkpoint();
-        } else {
+        } else if (batch.some(index => !records.has(index))) {
           initializationFailures = 0;
-          const failedIndex = batch?.find(index => !records.has(index)) ?? activeIndex;
+          const failedIndex = batch.find(index => !records.has(index));
           if (failedIndex === null || failedIndex === undefined) throw error;
           const failures = (attempts.get(failedIndex) ?? 0) + 1;
           attempts.set(failedIndex, failures);
-          recovery.push({ index: failedIndex, url: inventory[failedIndex], attempt: failures, error: String(error), recordedAt: new Date().toISOString() });
+          const url = inventory[failedIndex];
+          const observation = partials.get(failedIndex);
+          const durationMs = Date.now() - activeStarted;
+          const runningCapture = await runningCaptures.get(failedIndex);
+          const finalCapture = values.screenshots ? await saveCaseScreenshot(page, backend, failedIndex, url, failures) : undefined;
+          const screenshot = finalCapture?.kind === 'unavailable' && runningCapture && runningCapture.kind !== 'unavailable'
+            ? { ...runningCapture, phase: 'running', finalCaptureError: finalCapture.message } : finalCapture;
+          const timedOut = error.message.includes('deadline') || error.message.includes('responding');
+          const attempt = { index: failedIndex, url, attempt: failures, error: String(error), recordedAt: new Date().toISOString(),
+            durationMs, ...(observation ? { observation } : {}), ...(screenshot ? { screenshot } : {}),
+            ...(runningCapture ? { runningCapture } : {}) };
+          recovery.push(attempt);
           console.log(`[${backend}] recovering ${failedIndex} attempt ${failures}: ${error.message}`);
-          if (failures >= 2) records.set(failedIndex, {
-            index: failedIndex, url: inventory[failedIndex], backend,
-            status: error.message.includes('deadline') || error.message.includes('responding') ? 'timeout' : 'harness-error',
-            completion: 'crash', passed: 0, failed: 0, skipped: 0, failures: [], failuresTruncated: 0,
-            errors: [{ kind: 'recovery', name: error.name, message: error.message }], contexts: [], adapterGaps: [],
-            browserDiagnostics: diagnostics.filter(item => item.index === failedIndex), partialCountsUnavailable: true,
-            durationMs: Date.now() - activeStarted,
-            ...(values.screenshots ? { screenshot: await saveCaseScreenshot(page, backend, failedIndex, inventory[failedIndex]) } : {}),
-          });
+          if (failures >= 2) {
+            const completion = observation?.upstreamCompletion;
+            records.set(failedIndex, {
+              index: failedIndex, url, backend,
+              status: completion ? (observation.upstreamStatus === 'pass' ? 'harness-error' : observation.upstreamStatus)
+                : timedOut ? 'timeout' : 'harness-error',
+              completion: completion ?? (timedOut ? 'timeout' : 'crash'), upstreamCompleted: completion === 'finished',
+              passed: 0, failed: 0, skipped: 0, skippedFailures: 0, assertionTimeouts: 0, failures: [], failuresTruncated: 0,
+              contexts: [], adapterGaps: [], ...observation,
+              errors: [...(observation?.errors ?? []), { kind: 'recovery', name: error.name, message: error.message }],
+              browserDiagnostics: diagnostics.filter(item => item.index === failedIndex), partialCountsUnavailable: !completion,
+              durationMs: attempt.durationMs, ...(screenshot ? { screenshot } : {}),
+            });
+          }
+          await checkpoint();
+        } else {
           await checkpoint();
         }
       } finally {
-        await withDeadline(context.close(), 15_000, 'Closing conformance context timed out.').catch(() => {});
+        if (context) {
+          try { await withDeadline(context.close(), 15_000, 'Closing conformance context timed out.'); }
+          catch (error) {
+            completedBatch = false;
+            recovery.push({ phase: 'context-close', error: String(error), recordedAt: new Date().toISOString() });
+          }
+        }
       }
       if (!stopSignal && (!completedBatch || !browser.isConnected())) {
         await closeBrowser();
         await openBrowser();
       }
     }
+    await closeBrowser();
     if (inventory) await checkpoint();
     console.log(`[${backend}] ${stopSignal ? 'stopped' : 'complete requested range'}; recorded ${records.size}/${inventory?.length ?? 0}${resumed ? ' with checkpoint reuse' : ''}.`);
-    await closeBrowser();
   }
 } finally {
   try {

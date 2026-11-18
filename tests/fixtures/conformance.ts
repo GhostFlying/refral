@@ -57,6 +57,7 @@ interface ActiveCase extends Scope {
   index: number;
   url: string;
   started: number;
+  lastObservation: number;
   phase: 'running' | 'finalizing';
   passed: number;
   failed: number;
@@ -192,6 +193,7 @@ function captureContext(target: Scope, context: WebGLRenderingContext, kind: str
   target.contexts.push({ ...(hooks ? { selected: new WeakRef(context), device: hooks.device, errors: hooks.errors } : { native: context }),
     record: { requestedCore: backend, actualCore, surface, kind, attributes: context.getContextAttributes(), adapter, url } });
   activity();
+  if (current && current === target && current.contexts.length === 1) sendPartial(current);
 }
 
 async function finalizeResources(target: Scope, url: string, beforeDispose?: () => Promise<void>): Promise<void> {
@@ -253,6 +255,20 @@ function status(value: ActiveCase, completion: CaseResult['completion']): CaseRe
   return value.skipped ? 'skip' : 'harness-error';
 }
 
+function observation(active: ActiveCase) {
+  return { passed: active.passed, failed: active.failed, skipped: active.skipped,
+    skippedFailures: active.skippedFailures, assertionTimeouts: active.assertionTimeouts,
+    failures: active.failures.slice(), failuresTruncated: active.failuresTruncated,
+    errors: active.errors.slice(), adapterGaps: active.adapterGaps.slice(),
+    contexts: [...active.contexts.map(entry => entry.record), ...active.workers.flatMap(worker => worker.contexts)] };
+}
+
+function sendPartial(active: ActiveCase, completion?: CaseResult['completion']) {
+  event({ type: 'partial', index: active.index, url: active.url, observation: {
+    ...observation(active), ...(completion ? { upstreamCompletion: completion, upstreamStatus: status(active, completion) } : {}),
+  } });
+}
+
 async function finishCase(instance: OfficialHarness, original: (argument: never) => void,
   argument: string | OfficialTest, completion: CaseResult['completion']): Promise<void> {
   const active = current;
@@ -261,6 +277,7 @@ async function finishCase(instance: OfficialHarness, original: (argument: never)
   if (active.capabilityTimer !== null) clearTimeout(active.capabilityTimer);
   active.capabilityTimer = null;
   if (active.capabilityTerminated) completion = 'capability-error';
+  sendPartial(active, completion);
   const test = typeof argument === 'string'
     ? instance.runningTests[active.url] : argument;
   if (test) instance.clearTimeout(test);
@@ -278,15 +295,11 @@ async function finishCase(instance: OfficialHarness, original: (argument: never)
   catch (error) { addError(active, diagnostic(error, 'finalization', active.url)); }
   const result: CaseResult = { index: active.index, url: active.url, backend,
     status: status(active, completion), completion, capabilityTerminated: active.capabilityTerminated,
-    upstreamCompleted: completion === 'finished', passed: active.passed, failed: active.failed,
-    skipped: active.skipped, skippedFailures: active.skippedFailures,
-    assertionTimeouts: active.assertionTimeouts,
-    failures: active.failures.slice(), failuresTruncated: active.failuresTruncated,
-    errors: active.errors.slice(), contexts: [...active.contexts.map(entry => entry.record), ...active.workers.flatMap(worker => worker.contexts)],
+    upstreamCompleted: completion === 'finished', ...observation(active),
     collectedWindowContexts: active.contexts.filter(entry => entry.selected && !entry.selected.deref()).length,
     ...(active.workers.length ? { workers: active.workers.map(({ script, depth, ready, exit, contexts }) =>
       ({ script, depth, ready, ...(exit ? { exit } : {}), contexts: contexts.length })) } : {}),
-    adapterGaps: active.adapterGaps.slice(), durationMs: performance.now() - active.started - captureDuration,
+    durationMs: performance.now() - active.started - captureDuration,
     realmTransfers: active.realmTransfers, ...(screenshot ? { screenshot } : {}) };
   results.push(result);
   progress.finished++;
@@ -302,7 +315,7 @@ async function finishCase(instance: OfficialHarness, original: (argument: never)
 async function startCase(instance: OfficialHarness, original: OfficialHarness['startTest'],
   iframe: HTMLIFrameElement, file: OfficialFile, version: number): Promise<void> {
   const active: ActiveCase = { ...scope(), index: instance.files.indexOf(file), url: file.url,
-    started: performance.now(), phase: 'running', passed: 0, failed: 0, skipped: 0,
+    started: performance.now(), lastObservation: -Infinity, phase: 'running', passed: 0, failed: 0, skipped: 0,
     skippedFailures: 0, assertionTimeouts: 0,
     failures: [], failuresTruncated: 0, capabilityTerminated: false, capabilityTimer: null };
   current = active;
@@ -339,6 +352,10 @@ const report: OfficialReport = (type, _url, message, success, skipped) => {
       else current.failuresTruncated++;
     }
     progress.activeAssertions = current.passed + current.failed + current.assertionTimeouts;
+    if (performance.now() - current.lastObservation >= 250) {
+      current.lastObservation = performance.now();
+      sendPartial(current);
+    }
   }
   if (type === 6) {
     progress.running = false;
@@ -428,6 +445,9 @@ const bridge: ConformanceBridge = {
 };
 
 const session = { ready: () => readyPromise, inventory, results, progress,
+  get partial() {
+    return current?.phase === 'running' ? { index: current.index, url: current.url, observation: observation(current) } : null;
+  },
   backend, timeoutMs, abortUnsupported, probeContexts: probe.contexts, errors: probe.errors,
   run(options: { start: number; count: number }) {
     if (!harness || !inventoryReady) throw new Error('Official conformance inventory is still loading.');

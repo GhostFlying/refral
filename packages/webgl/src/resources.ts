@@ -25,10 +25,18 @@ function unwrap(value: unknown, kind: ResourceKind): ResourceHandle | null {
   return handle;
 }
 
+const littleEndian = new Uint8Array(Uint16Array.of(1).buffer)[0] === 1;
+
 function pixels(value: unknown): PixelUpload | null {
   if (value === null || value === undefined) return null;
   if (!ArrayBuffer.isView(value)) throw new TypeError('Texture pixels require an ArrayBufferView.');
-  return { bytes: bufferSourceBytes(value), viewType: typedArrayTag.call(value) ?? 'DataView' };
+  const bytes = bufferSourceBytes(value);
+  const viewType = typedArrayTag.call(value) ?? 'DataView';
+  if (viewType !== 'Uint16Array' || littleEndian) return { bytes, viewType };
+  const words = new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+  const canonical = new DataView(new ArrayBuffer(bytes.byteLength));
+  for (let i = 0; i < words.length; i++) canonical.setUint16(i * 2, words[i]!, true);
+  return { bytes: new Uint8Array(canonical.buffer), viewType };
 }
 
 export function isResourceBinding(parameter: number): boolean {

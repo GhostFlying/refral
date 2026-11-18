@@ -301,7 +301,7 @@ export function createRustDrawingCoreFromModule(
           throw new TypeError('Invalid texture upload source marker.');
         }
         const bytes =
-          upload.viewType === 'Uint8Array' || upload.viewType === 'Uint8ClampedArray'
+          upload.viewType === 'Uint8Array' || upload.viewType === 'Uint8ClampedArray' || upload.viewType === 'Uint16Array'
             ? upload.bytes
             : new Uint8Array();
         return { p: [append(bytes), bytes.byteLength], viewType: upload.viewType, source: upload.source };

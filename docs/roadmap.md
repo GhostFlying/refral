@@ -48,6 +48,8 @@ Task 039 adds WebGL1 member detection, isolates CTS optional-property lookup, an
 
 Task 040 implements shared ESSL expression and depth-range lowering. Both Refral cores pass 140/141 OGLES originals and all 15 focused GLSL originals. The remaining build fixture first encounters a varying-array translation gap. [Compiler results](tasks/040-essl100-wgsl-lowering.md)
 
+Task 041 adds typed/null 565, 4444 and 5551 texture uploads to both cores. Shared 2D/CubeMap fixtures and the original ArrayBufferView upload file pass. Packed DOM inputs and nonzero mip levels are subsequent dependencies. [Packed texture results](tasks/041-packed-texture-uploads.md)
+
 The completed milestones and subsequent compatibility dependencies follow.
 
 1. Task 025 establishes synchronous readback feasibility using actual JS/Rust cores and an independent GPU worker. Task 027 adds a main-thread Canvas2D candidate, byte-exact shared rendering corpus and matched latency/process CPU comparison. Task028 implements the user-selected Canvas2D path through both public cores, including destination ownership, packing, clipping, ordering and loss handling. The original program-handling, feedback-loop and read-pixels-pack-alignment files execute unchanged through a recorded iframe prototype adapter. ADR 007 records the accepted backend.

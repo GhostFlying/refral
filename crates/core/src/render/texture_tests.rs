@@ -39,7 +39,7 @@ fn image(core: &mut ContextCore, width: u32, height: u32, format: u32, pixels: A
 fn pixels(data: &[u8]) -> Argument {
     Argument::Pixels {
         data: data.to_vec(),
-        valid_u8: true,
+        view: PixelView::U8,
     }
 }
 fn definition(core: &mut ContextCore) -> (TextureVersion, u32, u32, Vec<u8>) {
@@ -128,7 +128,7 @@ fn texture_null_initialization_update_versions_and_failed_calls_are_atomic() {
         "texSubImage2D",
         &update(Argument::Pixels {
             data: vec![0; 3],
-            valid_u8: false,
+            view: PixelView::Other,
         }),
     );
     assert_eq!(core.get_error(), INVALID_OPERATION);

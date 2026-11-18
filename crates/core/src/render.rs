@@ -67,6 +67,13 @@ impl From<BufferHandle> for ObjectHandle {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PixelView {
+    U8,
+    U16,
+    Other,
+}
+
 pub enum Argument {
     Null,
     Number(f64),
@@ -77,11 +84,11 @@ pub enum Argument {
     Ints(Vec<i32>),
     Pixels {
         data: Vec<u8>,
-        valid_u8: bool,
+        view: PixelView,
     },
     DomPixels {
         data: Vec<u8>,
-        valid_u8: bool,
+        view: PixelView,
         converted: bool,
     },
 }

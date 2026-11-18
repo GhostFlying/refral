@@ -18,6 +18,8 @@ export type {
   DrawingSurface, ContextAttributes, RuntimeProfile, SemanticHost, DrawOperation as CoreDrawOperation,
 } from "@refral/core-api";
 
+const littleEndian = new Uint8Array(Uint16Array.of(1).buffer)[0] === 1;
+
 function unsupported(operation: string): never {
   const error = new Error(`${operation} is outside the implemented WebGL1 profile`);
   error.name = "NotSupportedError";
@@ -757,7 +759,8 @@ export class SemanticContext {
     try { return new Uint8Array(width * height * 4); }
     catch { this.error(GL.OUT_OF_MEMORY); return null; }
   }
-  private pixelData(width: number, height: number, format: number, source: unknown): Uint8Array | null {
+  private pixelData(width: number, height: number, format: number, type: number, source: unknown): Uint8Array | null {
+    const packed = type !== GL.UNSIGNED_BYTE;
     const components = format === GL.RGBA ? 4 : format === GL.RGB ? 3 : format === GL.LUMINANCE_ALPHA ? 2 : 1;
     let bytes: Uint8Array;
     let stride: number;
@@ -766,7 +769,7 @@ export class SemanticContext {
     const typedSource = ArrayBuffer.isView(source) || upload !== null;
     const domSource = upload?.source === "dom" || upload?.source === "dom-converted";
     const converted = upload?.source === "dom-converted";
-    const sourceComponents = domSource ? 4 : components;
+    const pixelBytes = domSource ? 4 : packed ? 2 : components;
     if (source === null) {
       const pixels = this.allocatePixels(width, height); if (!pixels) return null;
       if (format === GL.RGB || format === GL.LUMINANCE) {
@@ -776,26 +779,51 @@ export class SemanticContext {
     }
     if (typedSource) {
       const tag = upload?.viewType ?? Object.prototype.toString.call(source).slice(8, -1);
-      if (tag !== "Uint8Array" && tag !== "Uint8ClampedArray") {
+      if (packed ? tag !== "Uint16Array" : tag !== "Uint8Array" && tag !== "Uint8ClampedArray") {
         this.error(GL.INVALID_OPERATION); return null;
       }
       bytes = upload?.bytes ?? bytesOf(source as ArrayBufferView);
-      stride = domSource ? width * 4
-        : Math.ceil(width * components / this.unpackAlignment) * this.unpackAlignment;
-      if (bytes.byteLength < Math.max(0, (height - 1) * stride + width * sourceComponents)) {
+      const rowBytes = width * pixelBytes;
+      stride = domSource ? rowBytes : Math.ceil(rowBytes / this.unpackAlignment) * this.unpackAlignment;
+      const required = width && height ? (height - 1) * stride + rowBytes : 0;
+      if (bytes.byteLength < required) {
         this.error(GL.INVALID_OPERATION); return null;
       }
     } else {
       this.error(GL.INVALID_VALUE); return null;
     }
     const pixels = this.allocatePixels(width, height); if (!pixels) return null;
+    const words = packed ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength) : null;
+    const expand = (value: number, mask: number) => Math.round(value * 255 / mask);
+    const wordLittleEndian = upload !== null || littleEndian;
     for (let y = 0; y < height; y++) {
       const sourceY = this.unpackFlipY && !converted ? height - 1 - y : y;
       for (let x = 0; x < width; x++) {
-        const offset = sourceY * stride + x * sourceComponents;
+        const offset = sourceY * stride + x * pixelBytes;
         const destination = (y * width + x) * 4;
-        let r = bytes[offset] ?? 0; let g = bytes[offset + 1] ?? 0;
-        let b = bytes[offset + 2] ?? 0; let a = bytes[offset + 3] ?? 255;
+        let r: number, g: number, b: number, a: number;
+        if (words) {
+          const word = words.getUint16(offset, wordLittleEndian);
+          if (type === GL.UNSIGNED_SHORT_5_6_5) {
+            r = expand(word >>> 11, 31);
+            g = expand((word >>> 5) & 63, 63);
+            b = expand(word & 31, 31);
+            a = 255;
+          } else if (type === GL.UNSIGNED_SHORT_4_4_4_4) {
+            r = expand(word >>> 12, 15);
+            g = expand((word >>> 8) & 15, 15);
+            b = expand((word >>> 4) & 15, 15);
+            a = expand(word & 15, 15);
+          } else {
+            r = expand(word >>> 11, 31);
+            g = expand((word >>> 6) & 31, 31);
+            b = expand((word >>> 1) & 31, 31);
+            a = (word & 1) * 255;
+          }
+        } else {
+          r = bytes[offset] ?? 0; g = bytes[offset + 1] ?? 0;
+          b = bytes[offset + 2] ?? 0; a = bytes[offset + 3] ?? 255;
+        }
         const sourceAlpha = a;
         if (format === GL.RGB) a = 255;
         if (format === GL.ALPHA) {
@@ -823,6 +851,17 @@ export class SemanticContext {
     }
     return true;
   }
+  private validateTextureFormat(format: number, type: number): boolean {
+    if (![GL.RGBA, GL.RGB, GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA].includes(format as 0x1908) ||
+        ![GL.UNSIGNED_BYTE, GL.UNSIGNED_SHORT_5_6_5, GL.UNSIGNED_SHORT_4_4_4_4,
+          GL.UNSIGNED_SHORT_5_5_5_1].includes(type as 0x1401)) {
+      this.error(GL.INVALID_ENUM); return false;
+    }
+    if (type !== GL.UNSIGNED_BYTE && format !== (type === GL.UNSIGNED_SHORT_5_6_5 ? GL.RGB : GL.RGBA)) {
+      this.error(GL.INVALID_OPERATION); return false;
+    }
+    return true;
+  }
   private validateTextureImage(target: number, level: number, internalFormat: number,
     width: number, height: number, border: number, format: number, type: number): TextureObject | null {
     const texture = this.boundImageTexture(target);
@@ -834,8 +873,7 @@ export class SemanticContext {
       this.error(GL.INVALID_VALUE); return null;
     }
     if (level !== 0) return unsupported("texture mip levels");
-    if (![GL.RGBA, GL.RGB, GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA].includes(format as 0x1908) ||
-        type !== GL.UNSIGNED_BYTE) { this.error(GL.INVALID_ENUM); return null; }
+    if (!this.validateTextureFormat(format, type)) return null;
     if (internalFormat !== format) { this.error(GL.INVALID_OPERATION); return null; }
     return texture;
   }
@@ -851,9 +889,8 @@ export class SemanticContext {
         x + width > image.storage.width || y + height > image.storage.height) {
       this.error(GL.INVALID_VALUE); return null;
     }
-    if (![GL.RGBA, GL.RGB, GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA].includes(format as 0x1908) ||
-        type !== GL.UNSIGNED_BYTE) { this.error(GL.INVALID_ENUM); return null; }
-    if (format !== image.format) { this.error(GL.INVALID_OPERATION); return null; }
+    if (!this.validateTextureFormat(format, type)) return null;
+    if (format !== image.format || type !== image.type) { this.error(GL.INVALID_OPERATION); return null; }
     return texture;
   }
   prepareDomTextureUpload(request: DomTextureUploadRequest): DomTextureUploadPlan | null {
@@ -864,6 +901,7 @@ export class SemanticContext {
         request.width, request.height, request.format, request.type)
       : this.validateTextureImage(request.target, request.level, request.internalFormat,
         request.width, request.height, 0, request.format, request.type);
+    if (texture && request.type !== GL.UNSIGNED_BYTE) return unsupported("packed DOM texture uploads");
     return texture ? { flipY: this.unpackFlipY, premultiplyAlpha: this.unpackPremultiply,
       colorSpaceConversion: this.unpackColorSpace } : null;
   }
@@ -882,10 +920,11 @@ export class SemanticContext {
     if (upload?.source && !this.validateDomSource(width, height, true)) return;
     const texture = this.validateTextureImage(target!, level!, internalFormat!, width, height, border, format, type);
     if (!texture) return;
-    const data = this.pixelData(width, height, format, source); if (!data) return;
-    const image: TextureImage = texture.image(target!) ?? { storage: null, generation: 0, version: 0, format: GL.RGBA };
+    if (upload?.source && type !== GL.UNSIGNED_BYTE) return unsupported("packed DOM texture uploads");
+    const data = this.pixelData(width, height, format, type, source); if (!data) return;
+    const image: TextureImage = texture.image(target!) ?? { storage: null, generation: 0, version: 0, format, type };
     const previous = image.storage;
-    image.generation++; image.version++; image.format = format;
+    image.generation++; image.version++; image.format = format; image.type = type;
     if (target !== GL.TEXTURE_2D) texture.cubeImages.set(target!, image);
     if (this.resources) {
       const version = this.textureVersion(texture, target!);
@@ -912,7 +951,8 @@ export class SemanticContext {
     const texture = this.validateTextureSubImage(target!, level!, x!, y!, width, height, format, type);
     if (!texture) return;
     if (source === null) return this.error(GL.INVALID_VALUE);
-    const data = this.pixelData(width, height, format, source); if (!data) return;
+    if (upload?.source && type !== GL.UNSIGNED_BYTE) return unsupported("packed DOM texture uploads");
+    const data = this.pixelData(width, height, format, type, source); if (!data) return;
     if (width === 0 || height === 0) return;
     const image = texture.image(target!)!;
     const previous = image.storage!;

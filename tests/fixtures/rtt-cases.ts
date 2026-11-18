@@ -4,6 +4,7 @@ import type { DrawingBackend, DrawingCheck } from './dual-core-cases';
 export const uniformRttCases = ['uniform-matrix-arrays', 'uniform-int-bool-arrays', 'uniform-non-current-relink'] as const;
 export const textureRttCases = ['texture-format-rgba', 'texture-format-rgb', 'texture-format-alpha',
   'texture-format-luminance', 'texture-format-luminance-alpha', 'texture-unpack-snapshot',
+  'texture-packed-565', 'texture-packed-4444', 'texture-packed-5551', 'texture-packed-cube',
   'texture-updates-reallocation', 'texture-npot-completeness', 'texture-sampler-units', 'texture-invalid-state'] as const;
 export const framebufferRttCases = ['fbo-depth-render-sample', 'fbo-attachment-resize',
   'fbo-deletion-bound-unbound', 'fbo-feedback-loop', 'raster-masks-depth-blend-cull',
@@ -161,7 +162,71 @@ async function executeRtt(result: RttResult, context: Awaited<ReturnType<typeof 
     gl.texImage2D(gl.TEXTURE_2D, 0, info.format, 1, 1, 0, info.format, gl.UNSIGNED_BYTE, null);
     gl.viewport(32, 0, 32, 64); sample(texture);
     band(0, 32, info.expected); band(32, 32, info.zero);
+  } else if (name === 'texture-packed-565' || name === 'texture-packed-4444' || name === 'texture-packed-5551') {
+    const packed = {
+      'texture-packed-565': { format: gl.RGB, type: gl.UNSIGNED_SHORT_5_6_5,
+        red: 0xf800, green: 0x07e0, blue: 0x001f, redAlpha: 255 },
+      'texture-packed-4444': { format: gl.RGBA, type: gl.UNSIGNED_SHORT_4_4_4_4,
+        red: 0xf008, green: 0x0f0f, blue: 0x00ff, redAlpha: 136 },
+      'texture-packed-5551': { format: gl.RGBA, type: gl.UNSIGNED_SHORT_5_5_5_1,
+        red: 0xf801, green: 0x07c1, blue: 0x003f, redAlpha: 255 },
+    }[name];
+    const { format, type } = packed;
+    const texture = rttTexture(gl, 1, 2, null, format);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1);
+    const source = Uint16Array.of(0xcccc, packed.red, 0xffff, packed.green, 0xbbbb);
+    error('packed definition with padded rows and view offset', () =>
+      gl.texImage2D(gl.TEXTURE_2D, 0, format, 1, 2, 0, format, type, source.subarray(1, 4)), gl.NO_ERROR);
+    source.fill(0);
+    gl.viewport(0, 0, 16, 64);
+    sample(texture);
+    error('packed short source rejects without replacing image', () =>
+      gl.texImage2D(gl.TEXTURE_2D, 0, format, 1, 2, 0, format, type, new Uint16Array(2)), gl.INVALID_OPERATION);
+    error('packed type requires Uint16Array', () =>
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 1, 1, format, type, new Uint8Array(2)), gl.INVALID_OPERATION);
+    error('subimage type must match definition', () =>
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 1, 1, format, gl.UNSIGNED_BYTE, new Uint8Array(4)), gl.INVALID_OPERATION);
+    gl.viewport(16, 0, 16, 64);
+    sample(texture);
+    const update = Uint16Array.of(packed.blue);
+    error('packed subimage update', () =>
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 1, 1, 1, format, type, update), gl.NO_ERROR);
+    update.fill(0);
+    gl.viewport(32, 0, 16, 64);
+    sample(texture);
+    error('packed null definition', () =>
+      gl.texImage2D(gl.TEXTURE_2D, 0, format, 1, 2, 0, format, type, null), gl.NO_ERROR);
+    gl.viewport(48, 0, 16, 64);
+    sample(texture);
+    region(0, 0, 48, 32, [0, 255, 0, 255]);
+    region(0, 32, 32, 32, [packed.redAlpha, 0, 0, packed.redAlpha]);
+    region(32, 32, 16, 32, [0, 0, 255, 255]);
+    band(48, 16, [0, 0, 0, format === gl.RGB ? 255 : 0]);
   } else switch (name) {
+    case 'texture-packed-cube': {
+      const cube = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_CUBE_MAP, cube);
+      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      const p = program('precision mediump float; uniform samplerCube u_cube; void main(){gl_FragColor=textureCube(u_cube,vec3(1.0,0.0,0.0));}');
+      gl.uniform1i(gl.getUniformLocation(p, 'u_cube'), 0);
+      const face = gl.TEXTURE_CUBE_MAP_POSITIVE_X;
+      for (let side = 0; side < 6; side++) {
+        gl.texImage2D(face + side, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_SHORT_5_5_5_1, Uint16Array.of(0xf801));
+      }
+      check('define all packed cube faces', gl.getError(), gl.NO_ERROR);
+      gl.viewport(0, 0, 32, 64);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.texSubImage2D(face, 0, 0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_SHORT_5_5_5_1, Uint16Array.of(0x07c1));
+      check('update only the positive-x packed face', gl.getError(), gl.NO_ERROR);
+      gl.viewport(32, 0, 32, 64);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      band(0, 32, [255, 0, 0, 255]);
+      band(32, 32, [0, 255, 0, 255]);
+      break;
+    }
     case 'uniform-matrix-arrays': {
       const vs = 'attribute vec2 a_position; uniform mat4 u_m4[2]; void main(){gl_Position=u_m4[0]*u_m4[1]*vec4(a_position,0.,1.);}';
       const fs = 'precision mediump float; uniform mat2 u_m2[2]; uniform mat3 u_m3; void main(){gl_FragColor=vec4(u_m2[0][1][0],u_m2[1][0][1],u_m3[2][1],1.);}';
@@ -445,7 +510,7 @@ gl_FragColor=vec4(u_i[0].x==16777217?1.:0.,u_i[1].w==(-2147483647-1)&&u_b[1].z&&
 
 export async function runRttCase(name: RttCaseName, backend: DrawingBackend): Promise<RttResult> {
   const width = name === 'texture-unpack-snapshot' ? 60 : 64;
-  const alpha = name.startsWith('texture-format-') || name === 'texture-unpack-snapshot';
+  const alpha = name.startsWith('texture-format-') || name.startsWith('texture-packed-') || name === 'texture-unpack-snapshot';
   const result: RttResult = { name, backend, selectedCore: null, checks: [], observations: {}, regions: [], shaders: {},
     environment: {}, width, height: 64, pixels: [], failure: null, validationErrors: [], cleanupErrors: [] };
   let context: Awaited<ReturnType<typeof prepareRttContext>> | null = null;

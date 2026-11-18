@@ -148,6 +148,20 @@ function annotate(result, backend, problems, duplicate) {
     provenance: contexts.length === 0 ? 'no-gl-context' : mismatches.length ? 'mismatch' : 'matched' };
 }
 
+function passingAssertionDifferences(files) {
+  const byUrl = new Map();
+  for (const file of files) {
+    if (file.effectiveStatus !== 'pass' || !file.originalTestCompleted || !file.assertionCountsComplete) continue;
+    const { passed, failed, skipped, skippedFailures } = file.assertions;
+    const row = byUrl.get(file.url) ?? { index: file.index, url: file.url, counters: {} };
+    row.counters[file.backend] = { passed, failed, skipped, skippedFailures };
+    byUrl.set(file.url, row);
+  }
+  return [...byUrl.values()].filter(({ counters }) =>
+    BACKENDS.every(backend => counters[backend]) && Object.keys(counters.native).some(key =>
+      counters.js[key] !== counters.native[key] || counters.rust[key] !== counters.native[key]));
+}
+
 export function buildConformanceReport(runs, { expectedInventoryCount = 971 } = {}) {
   if (!validCount(expectedInventoryCount) || expectedInventoryCount === 0) throw new Error('Invalid expected inventory count.');
   const candidates = BACKENDS.map(backend => runs[backend]?.inventory).filter(Array.isArray);
@@ -270,7 +284,7 @@ export function buildConformanceReport(runs, { expectedInventoryCount = 971 } = 
       complete: inputIssues.length === 0,
       assertionAggregation: 'Each official URL contributes its first record once. Duplicate records invalidate that file and remain in inputIssues.',
       assertionCounterSemantics: 'Raw skipped assertions overlap original counters. totalAssertions = passed + failed + assertionTimeouts. effectiveFailed = failed - skippedFailures.',
-      inventory, backends,
+      inventory, backends, passingAssertionDifferences: passingAssertionDifferences(files),
       modules: [...modules.values()], inputIssues, files },
     clusters: { schemaVersion: 1, method: 'Evidence-pattern dependency candidates requiring specification and runtime review.',
       countsOverlap: true, uniqueHtmlFiles: inventory.length, rules: DEPENDENCY_RULES.map(({ pattern, ...rule }) =>
@@ -350,6 +364,8 @@ function markdown({ summary, clusters }) {
     const counts = BACKENDS.map(backend => moduleRows.get(`${backend}/${row.module}`).effectiveFileStatuses.pass);
     lines.push(`| ${row.module} | ${row.inventoryFiles} | ${counts.join(' | ')} |`);
   }
+  lines.push('', '## Assertion differences among completed passes', '',
+    `${summary.passingAssertionDifferences.length} original files passed on all three backends with different raw counters. Optional features, reported limits and incomplete behavior can each change which assertions run. Consult the original branch before classifying a difference. Per-backend passed, failed, skipped and skipped-failure counts are in summary.json under passingAssertionDifferences.`);
   lines.push('', '## Dependency candidates', '');
   for (const cluster of clusters.clusters) {
     lines.push(`- ${cluster.title} affects ${cluster.uniqueHtmlFiles} unique HTML files across ${cluster.backendFileExecutions} backend-file executions. Examples include ${cluster.exampleUrls.map(url => `\`${url}\``).join(', ')}.`);

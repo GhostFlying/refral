@@ -238,3 +238,7 @@ Task 078 maps ESSL 1.00 §4.1.7, §4.3.5 and Appendix A §5 to opaque structure/
 ### WebCodecs frame texture sources
 
 Task 077 covers the VideoFrame member of TexImageSource in WebGL1. Open frames pass through the existing native image extractor using the frame's upload extent and the current WebGL unpack state. Snapshot ownership is independent of later close or transfer. Closed frames have no media resource. The Chrome profile reports INVALID_OPERATION on upload and preserves the destination. [Pinned texture upload sizes](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#TEXTURE_UPLOAD_SIZE) · [WebCodecs VideoFrame rendering](https://www.w3.org/TR/webcodecs/#videoframe-rendering)
+
+### WebGL object interfaces
+
+Task 074 associates resources and query records with their Web IDL interface prototypes in the canvas realm. The private handle registry checks object provenance at conversion. The opaque object’s prototype and extensibility do not supply a logical handle. The context exposes its own WebGL1 implementation methods. [Pinned WebGL1 IDL](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/webgl.idl) · [Web IDL interfaces](https://webidl.spec.whatwg.org/#es-interfaces)

@@ -1,3 +1,4 @@
+import { webglInterfaces } from './interfaces.js';
 import { GL } from '@refral/core-api';
 import type {
   DrawingCore, FramebufferHandle, LogicalHandle, PixelUpload, RenderbufferHandle, TextureHandle,
@@ -8,10 +9,6 @@ import type { CanvasCapture } from './dom-upload.js';
 
 type ResourceHandle = TextureHandle | RenderbufferHandle | FramebufferHandle;
 type ResourceKind = ResourceHandle['kind'];
-class RefralTexture {}
-class RefralRenderbuffer {}
-class RefralFramebuffer {}
-const constructors = { texture: RefralTexture, renderbuffer: RefralRenderbuffer, framebuffer: RefralFramebuffer };
 const handles = new WeakMap<object, ResourceHandle>();
 const typedArrayTag = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), Symbol.toStringTag)!.get!;
 
@@ -53,7 +50,7 @@ export function isResourceBinding(parameter: number): boolean {
 
 /** New resource wrappers and pixel-view conversion stay at the shared facade. */
 export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCapture,
-  ErrorType: TypeErrorConstructor = TypeError) {
+  ErrorType: TypeErrorConstructor = TypeError, interfaces = webglInterfaces()) {
   const wrappers = new Map<string, object>();
   const domUploads = createDomTextureUploads(core, captureCanvas);
   function wrap(value: unknown): object | null {
@@ -65,7 +62,7 @@ export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCap
     const key = `${handle.kind}/${handle.contextId}/${handle.slot}/${handle.generation}`;
     let wrapper = wrappers.get(key);
     if (!wrapper) {
-      wrapper = new constructors[handle.kind]();
+      wrapper = Object.create(interfaces[handle.kind]) as object;
       handles.set(wrapper, handle as ResourceHandle);
       wrappers.set(key, wrapper);
     }
@@ -85,7 +82,7 @@ export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCap
     ['Framebuffer', 'framebuffer']] as const) {
     methods[`create${suffix}`] = () => {
       if (core.isContextLost()) {
-        const wrapper = new constructors[kind]();
+        const wrapper = Object.create(interfaces[kind]) as object;
         handles.set(wrapper, { kind, contextId: core.contextId, slot: 0, generation: 0 });
         return wrapper;
       }

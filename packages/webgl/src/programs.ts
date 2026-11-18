@@ -1,15 +1,10 @@
+import { interfaceRecord, webglInterfaces } from './interfaces.js';
 import { GL } from '@refral/core-api';
 import type { DrawingCore, LogicalHandle } from '@refral/core-api';
 import { requireArguments, toEnum } from './buffers.js';
 
 type ObjectKind = 'shader' | 'program' | 'uniform-location';
-class RefralShader {}
-class RefralProgram {}
-class RefralUniformLocation {}
 const objects = new WeakMap<object, LogicalHandle>();
-const constructors = {
-  shader: RefralShader, program: RefralProgram, 'uniform-location': RefralUniformLocation,
-};
 const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
 const typedArrayTag = Object.getOwnPropertyDescriptor(typedArrayPrototype, Symbol.toStringTag)!.get!;
 const typedArrayBuffer = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'buffer')!.get!;
@@ -62,7 +57,7 @@ function list(value: unknown, integral: boolean): Float32Array | Int32Array {
 }
 
 /** Facade-owned wrapper identity and WebIDL conversion for program operations. */
-export function createProgramFacade(core: DrawingCore) {
+export function createProgramFacade(core: DrawingCore, interfaces = webglInterfaces()) {
   const wrappers = new Map<string, object>();
   function wrap(handle: LogicalHandle | null): object | null {
     if (!handle) return null;
@@ -72,7 +67,7 @@ export function createProgramFacade(core: DrawingCore) {
     const key = `${handle.kind}/${handle.contextId}/${handle.slot}/${handle.generation}`;
     let wrapper = handle.kind === 'uniform-location' ? undefined : wrappers.get(key);
     if (!wrapper) {
-      wrapper = new constructors[handle.kind]();
+      wrapper = Object.create(interfaces[handle.kind]) as object;
       objects.set(wrapper, handle);
       if (handle.kind !== 'uniform-location') wrappers.set(key, wrapper);
     }
@@ -115,12 +110,14 @@ export function createProgramFacade(core: DrawingCore) {
   method('bindAttribLocation', 3, args => [program(args[0]), toEnum(args[1]), domString(args[2])]);
   method('getProgramParameter', 2, args => [program(args[0]), toEnum(args[1])]);
   for (const name of ['getActiveAttrib', 'getActiveUniform']) {
-    method(name, 2, args => [program(args[0]), toEnum(args[1])]);
+    method(name, 2, args => [program(args[0]), toEnum(args[1])],
+      value => interfaceRecord(interfaces.activeInfo, value));
   }
   method('getAttribLocation', 2, args => [program(args[0]), domString(args[1])]);
   method('getUniformLocation', 2, args => [program(args[0]), domString(args[1])], wrapResult);
   method('getUniform', 2, args => [program(args[0]), location(args[1], false)]);
-  method('getShaderPrecisionFormat', 2, args => [toEnum(args[0]), toEnum(args[1])]);
+  method('getShaderPrecisionFormat', 2, args => [toEnum(args[0]), toEnum(args[1])],
+    value => interfaceRecord(interfaces.precisionFormat, value));
 
   for (let width = 1; width <= 4; width++) {
     for (const type of ['f', 'i']) {

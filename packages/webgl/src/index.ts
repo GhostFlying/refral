@@ -1,3 +1,4 @@
+import { webglInterfaces } from './interfaces.js';
 import { GL, allocateContextId, ExecutionResources } from "@refral/core-api";
 import type { BufferHandle, BufferSnapshot, CoreKind, DrawingCore } from "@refral/core-api";
 import { createJsDrawingCore } from "@refral/core-js";
@@ -61,11 +62,13 @@ function actualAttributes(requested: WebGLContextAttributes): WebGLContextAttrib
 function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, host: BrowserHost,
   attributes: WebGLContextAttributes, core: DrawingCore,
   disposeCompiler: () => void): WebGL1PrototypeContext {
-  const bufferFacade = createBufferFacade(core);
-  const programFacade = createProgramFacade(core);
+  const realm = ('ownerDocument' in canvas ? canvas.ownerDocument.defaultView : null) ?? globalThis;
+  const interfaces = webglInterfaces(realm);
+  const bufferFacade = createBufferFacade(core, interfaces);
+  const programFacade = createProgramFacade(core, interfaces);
   const resourceFacade = createResourceFacade(core,
     (source, width, height, plan) => host.captureDomCanvas(source, width, height, plan),
-    ('ownerDocument' in canvas ? canvas.ownerDocument.defaultView?.TypeError : undefined) ?? TypeError);
+    realm.TypeError, interfaces);
   const unregisterSource = registerCanvasSource(canvas, {
     prepare: () => host.prepareCanvasSource(), isLost: () => core.isContextLost(),
   });
@@ -114,13 +117,18 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, host: BrowserH
     get drawingBufferWidth() { return core.isContextLost() ? 0 : host.surface.width; },
     get drawingBufferHeight() { return core.isContextLost() ? 0 : host.surface.height; },
     get drawingBufferColorSpace() { return 'srgb'; },
-  }, constants);
+  }, interfaces.context ?? constants);
   const proxy = new Proxy(surface, {
     has(target, property) {
-      return (typeof property === 'string' && webgl1Methods.has(property)) || Reflect.has(target, property);
+      if (typeof property !== 'string' || Object.hasOwn(target, property)) return Reflect.has(target, property);
+      if (webgl1Methods.has(property) || Object.hasOwn(constants, property)) return true;
+      return !(interfaces.context && Object.hasOwn(interfaces.context, property)) && Reflect.has(target, property);
     },
     get(target, property, receiver) {
-      if (typeof property !== 'string' || !webgl1Methods.has(property) || Object.hasOwn(target, property)) {
+      if (typeof property !== 'string' || Object.hasOwn(target, property)) return Reflect.get(target, property, receiver);
+      if (Object.hasOwn(constants, property)) return Reflect.get(constants, property);
+      if (!webgl1Methods.has(property)) {
+        if (interfaces.context && Object.hasOwn(interfaces.context, property)) return undefined;
         return Reflect.get(target, property, receiver);
       }
       if (!methods.has(property)) methods.set(property, (...args) => invoke(property, args));

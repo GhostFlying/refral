@@ -224,3 +224,7 @@ Task 065 maps polygon offset factor and units and the three enable flags (POLYGO
 ### Canvas source before rendering-context selection
 
 HTML’s canvas bitmap starts as transparent black. A texture upload snapshots its current bitmap and leaves the source’s context mode available for the caller. Task 075 uses a private Canvas2D copy when the direct WebGPU external copy reports OperationError. The source origin and the WebGL unpack plan apply to the fallback. [Canvas bitmap](https://html.spec.whatwg.org/multipage/canvas.html#the-canvas-element) · [WebGL texture upload](https://registry.khronos.org/webgl/specs/latest/1.0/#TEXTURE_UPLOAD_SIZE)
+
+### Numeric structure uniforms
+
+GLES 2.0 §2.10.4 exposes basic leaves of uniform structures, including names such as lights[1].color and the first element of lights[0].weights[0]. A basic array leaf carries its own element count and stride. GLSL ES 1.00 §4.2.4 and §4.3.5 require shared structure uniforms to have matching type names, declaration order, field names, types, precision and array shape in both stages. Task 062 retains the original declarations for compatibility checks and uses each stage’s ANGLE layout for writes. [GLES 2.0](https://registry.khronos.org/OpenGL/specs/es/2.0/es_full_spec_2.0.pdf) · [ESSL 1.00](https://registry.khronos.org/OpenGL/specs/es/2.0/GLSL_ES_Specification_1.00.pdf)

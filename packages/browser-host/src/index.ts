@@ -122,6 +122,7 @@ export class BrowserHost implements SemanticHost {
   private buffers = new Set<GPUBuffer>();
   private retiredTextures = new Set<GPUTexture>();
   private driverGroups = new WeakMap<LinkedProgram, Map<string, GPUBindGroup>>();
+  private mipPipeline: GPURenderPipeline | null = null;
   private presentationPipeline: GPURenderPipeline | null = null;
   private blackTexture: GPUTexture | null = null;
   private blackCubeTexture: GPUTexture | null = null;
@@ -246,12 +247,51 @@ export class BrowserHost implements SemanticHost {
       this.initialized.add(texture);
       this.stats.copies++;
     }
+    if (storage.mipSource) this.downsampleTexture(this.materializeTexture(storage.mipSource), texture);
     if (storage.data) this.uploadTexture(texture, storage.data, storage.width, storage.height);
     if (storage.update) {
       const update = storage.update;
       this.uploadTexture(texture, update.data, update.width, update.height, update.x, update.y);
     }
     return texture;
+  }
+
+  private downsampleTexture(source: GPUTexture, destination: GPUTexture): void {
+    this.endPass();
+    if (!this.mipPipeline) {
+      const module = this.device.createShaderModule({ code: `
+        @group(0) @binding(0) var source : texture_2d<f32>;
+        @vertex fn vertex(@builtin(vertex_index) index : u32) -> @builtin(position) vec4f {
+          let points = array<vec2f, 3>(vec2f(-1,-1), vec2f(3,-1), vec2f(-1,3));
+          return vec4f(points[index], 0, 1);
+        }
+        @fragment fn fragment(@builtin(position) position : vec4f) -> @location(0) vec4f {
+          let origin = vec2i(position.xy) * 2;
+          let limit = vec2i(textureDimensions(source)) - vec2i(1);
+          return (textureLoad(source, origin, 0)
+            + textureLoad(source, min(origin + vec2i(1,0), limit), 0)
+            + textureLoad(source, min(origin + vec2i(0,1), limit), 0)
+            + textureLoad(source, min(origin + vec2i(1,1), limit), 0)) * 0.25;
+        }` });
+      this.mipPipeline = this.device.createRenderPipeline({ layout: 'auto',
+        vertex: { module, entryPoint: 'vertex' },
+        fragment: { module, entryPoint: 'fragment', targets: [{ format: 'rgba8unorm' }] },
+      });
+      this.stats.pipelines++;
+    }
+    const group = this.device.createBindGroup({ layout: this.mipPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: source.createView() }],
+    });
+    const pass = this.getEncoder().beginRenderPass({ colorAttachments: [{
+      view: destination.createView(), loadOp: 'clear', storeOp: 'store',
+    }] });
+    pass.setPipeline(this.mipPipeline);
+    pass.setBindGroup(0, group);
+    pass.draw(3);
+    pass.end();
+    this.initialized.add(destination);
+    this.stats.bindGroups++;
+    this.stats.passes++;
   }
 
   private materializeSampledImages(images: readonly TextureStorage[], layers: 1 | 6): GPUTexture {
@@ -353,6 +393,10 @@ export class BrowserHost implements SemanticHost {
   }
 
   replaceStorage(previous: TextureStorage | null, next: TextureStorage): void {
+    if (next.mipSource) {
+      this.materializeTexture(next);
+      delete next.mipSource;
+    }
     if (next.parent) {
       this.materializeTexture(next);
       // The new GPU image now owns the content dependency through the encoded copy.

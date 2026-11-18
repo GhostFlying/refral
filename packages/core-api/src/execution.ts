@@ -30,6 +30,7 @@ export interface TextureStorage {
   generation: number;
   data?: Uint8Array;
   parent?: TextureStorage;
+  mipSource?: TextureStorage;
   update?: { x: number; y: number; width: number; height: number; data: Uint8Array };
 }
 

@@ -45,3 +45,5 @@ The [CubeMap and original DOM CTS report](validation/2026-11-18-cubemap.md) reco
 ADR 010 records the [official conformance runner adapter](adr/010-official-conformance-adapter.md), full pinned source acquisition, per-file core initialization and resumable baseline execution. [Task 038](tasks/038-official-conformance-baseline.md) tracks the 971-entry, three-backend baseline and its failure dependencies.
 
 ADR 011 records [vertex component formats, triangle strips and the ABI4 draw snapshot](adr/011-vertex-input-and-topology.md) introduced by task 039.
+
+[ADR 012](adr/012-ordered-texture-mipmaps.md) records ordered texture mip chains, GPU generation and the resource5 protocol.

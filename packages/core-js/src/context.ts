@@ -10,7 +10,7 @@ import type {
 } from "@refral/core-api";
 import {
   LogicalObject, BufferObject, TextureObject, RenderbufferObject, FramebufferObject,
-  ErrorState, isPowerOfTwo, textureSamplingLevelCount, textureTargets,
+  ErrorState, isPowerOfTwo, textureBase, textureSamplingLevelCount, textureTargets,
 } from "./resources.js";
 import type { TextureImage, VertexAttribute } from "./resources.js";
 
@@ -987,7 +987,48 @@ export class SemanticContext {
     }
     this.schedule();
   }
-  generateMipmap(_target: number): never { return unsupported("generateMipmap"); }
+  generateMipmap(target: number): void {
+    const texture = this.boundTexture(target);
+    if (texture === undefined) return;
+    if (texture === null) return this.error(GL.INVALID_OPERATION);
+    const base = textureBase(texture);
+    if (!base?.storage || !isPowerOfTwo(base.storage.width) || !isPowerOfTwo(base.storage.height)) {
+      return this.error(GL.INVALID_OPERATION);
+    }
+    const { width, height } = base.storage;
+    const targets = textureTargets(texture);
+    const levels = Math.floor(Math.log2(Math.max(width, height)));
+    for (let level = 1; level <= levels; level++) {
+      for (const face of targets) {
+        const image = texture.image(face, level);
+        if (image && (image.generation >= Number.MAX_SAFE_INTEGER || image.version >= Number.MAX_SAFE_INTEGER)) {
+          return this.error(GL.OUT_OF_MEMORY);
+        }
+      }
+    }
+    for (let level = 1; level <= levels; level++) {
+      for (const face of targets) {
+        const image = texture.image(face, level) ?? { storage: null, generation: 0, version: 0,
+          format: base.format, type: base.type };
+        const previous = image.storage;
+        image.generation++; image.version++; image.format = base.format; image.type = base.type;
+        texture.setImage(face, level, image);
+        const mipWidth = Math.max(1, width >> level);
+        const mipHeight = Math.max(1, height >> level);
+        if (this.resources) {
+          const version = this.textureVersion(texture, face, level);
+          this.resources.apply({ kind: "generate-texture-mip", version,
+            source: this.textureVersion(texture, face, level - 1), width: mipWidth, height: mipHeight });
+          image.storage = this.resources.texture(version);
+        } else {
+          image.storage = { width: mipWidth, height: mipHeight, generation: image.generation,
+            mipSource: texture.image(face, level - 1)!.storage! };
+          this.host.replaceStorage(previous, image.storage);
+        }
+      }
+    }
+    if (levels) this.schedule();
+  }
   deleteTexture(texture: TextureObject | null): void {
     if (texture === null || !this.valid(texture, TextureObject, true) || texture.deleted) return;
     texture.deleted = true;

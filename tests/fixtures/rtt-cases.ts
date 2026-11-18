@@ -5,7 +5,7 @@ export const uniformRttCases = ['uniform-matrix-arrays', 'uniform-int-bool-array
 export const textureRttCases = ['texture-format-rgba', 'texture-format-rgb', 'texture-format-alpha',
   'texture-format-luminance', 'texture-format-luminance-alpha', 'texture-unpack-snapshot',
   'texture-packed-565', 'texture-packed-4444', 'texture-packed-5551', 'texture-packed-cube',
-  'texture-manual-mip-2d', 'texture-manual-mip-cube',
+  'texture-manual-mip-2d', 'texture-manual-mip-cube', 'texture-generate-mip-from-fbo',
   'texture-updates-reallocation', 'texture-npot-completeness', 'texture-sampler-units', 'texture-invalid-state'] as const;
 export const framebufferRttCases = ['fbo-depth-render-sample', 'fbo-attachment-resize',
   'fbo-deletion-bound-unbound', 'fbo-feedback-loop', 'raster-masks-depth-blend-cull',
@@ -259,6 +259,37 @@ async function executeRtt(result: RttResult, context: Awaited<ReturnType<typeof 
       band(16, 16, [0, 255, 0, 255]);
       band(32, 16, [0, 0, 0, 255]);
       band(48, 16, [0, 0, 255, 255]);
+      break;
+    }
+    case 'texture-generate-mip-from-fbo': {
+      const t = target(32, 128);
+      error('cube face is not a generation target', () => gl.generateMipmap(gl.TEXTURE_CUBE_MAP_POSITIVE_X), gl.INVALID_ENUM);
+      const npot = rttTexture(gl, 3, 2, null);
+      error('NPOT generation is invalid', () => gl.generateMipmap(gl.TEXTURE_2D), gl.INVALID_OPERATION);
+      gl.deleteTexture(npot);
+      gl.bindTexture(gl.TEXTURE_2D, t.texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_NEAREST);
+      gl.texImage2D(gl.TEXTURE_2D, 1, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      program('precision highp float; void main(){gl_FragColor=mod(floor(gl_FragCoord.x),2.0)<1.0?vec4(1,0,0,1):vec4(0,1,0,1);}');
+      gl.viewport(0, 0, 32, 128);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      error('generate replaces manual image from GPU writes', () => gl.generateMipmap(gl.TEXTURE_2D), gl.NO_ERROR);
+      gl.viewport(0, 0, 16, 64);
+      sample(t.texture);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, t.framebuffer);
+      gl.clearColor(0, 0, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(16, 0, 16, 64);
+      sample(t.texture);
+      error('regenerate observes the latest framebuffer clear', () => gl.generateMipmap(gl.TEXTURE_2D), gl.NO_ERROR);
+      gl.viewport(32, 0, 16, 64);
+      sample(t.texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.viewport(48, 0, 16, 64);
+      sample(t.texture);
+      band(0, 32, [128, 128, 0, 255]);
+      band(32, 32, [0, 0, 255, 255]);
       break;
     }
     case 'texture-packed-cube': {

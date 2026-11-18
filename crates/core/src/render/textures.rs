@@ -102,6 +102,12 @@ pub enum ResourceOperation {
         height: u32,
         data: Vec<u8>,
     },
+    GenerateTextureMip {
+        version: TextureVersion,
+        source: TextureVersion,
+        width: u32,
+        height: u32,
+    },
     WriteTexture {
         version: TextureVersion,
         previous: TextureVersion,
@@ -583,6 +589,7 @@ impl ContextCore {
                     _ => self.record_error(INVALID_ENUM),
                 }
             }
+            "generateMipmap" => return Some(self.generate_mipmap(arg(0).number() as u32)),
             "texImage2D" => return Some(self.define_texture(args)),
             "texSubImage2D" => return Some(self.update_texture(args)),
             "prepareDomTextureUpload" => return Some(self.prepare_dom_texture_upload(args)),
@@ -1076,6 +1083,77 @@ impl ContextCore {
                 height: height as u32,
                 data,
             });
+        Reply::Null
+    }
+    fn generate_mipmap(&mut self, target: u32) -> Reply {
+        let Some(index) = self.bound_texture(target) else {
+            return Reply::Null;
+        };
+        let texture = self.render.textures.slots[index].value.as_ref().unwrap();
+        let Some(base) = texture
+            .complete_base()
+            .filter(|base| base.width.is_power_of_two() && base.height.is_power_of_two())
+        else {
+            self.record_error(INVALID_OPERATION);
+            return Reply::Null;
+        };
+        let faces = texture.faces();
+        let levels = base.width.max(base.height).ilog2() as usize;
+        for level in 1..=levels {
+            for face in faces.clone() {
+                if texture.image(face, level).is_some_and(|image| {
+                    image.storage_generation == MAX_SAFE_VERSION
+                        || image.content_version == MAX_SAFE_VERSION
+                }) {
+                    self.record_error(OUT_OF_MEMORY);
+                    return Reply::Null;
+                }
+            }
+        }
+        if self
+            .render
+            .textures
+            .before
+            .try_reserve(levels * faces.len())
+            .is_err()
+            || !self.render.textures.slots[index]
+                .value
+                .as_mut()
+                .unwrap()
+                .ensure_level(levels)
+        {
+            self.record_error(OUT_OF_MEMORY);
+            return Reply::Null;
+        }
+        for level in 1..=levels {
+            for face in faces.clone() {
+                let source = self.texture_image_version(index, face, level - 1);
+                let image = self.render.textures.slots[index]
+                    .value
+                    .as_mut()
+                    .unwrap()
+                    .image_mut(face, level);
+                let width = (base.width >> level).max(1);
+                let height = (base.height >> level).max(1);
+                image.storage_generation += 1;
+                image.content_version += 1;
+                image.storage = Some(TextureStorage {
+                    width,
+                    height,
+                    ..base
+                });
+                let version = self.texture_image_version(index, face, level);
+                self.render
+                    .textures
+                    .before
+                    .push(ResourceOperation::GenerateTextureMip {
+                        version,
+                        source,
+                        width,
+                        height,
+                    });
+            }
+        }
         Reply::Null
     }
     pub(super) fn sampler_target(ty: u32) -> u32 {

@@ -28,6 +28,7 @@ export type ResourceOperation =
   | { kind: 'define-texture'; version: TextureVersion; width: number; height: number; data: Uint8Array }
   | { kind: 'update-texture'; version: TextureVersion; previous: TextureVersion;
       x: number; y: number; width: number; height: number; data: Uint8Array }
+  | { kind: 'generate-texture-mip'; version: TextureVersion; source: TextureVersion; width: number; height: number }
   | { kind: 'write-texture'; version: TextureVersion; previous: TextureVersion }
   | { kind: 'retire-texture'; version: TextureVersion }
   | { kind: 'retire-depth'; renderbuffer: RenderbufferHandle; storageGeneration: number };
@@ -134,6 +135,24 @@ export class ExecutionResources implements ResourceRegistry {
       record.storage.reference = operation.version;
       return;
     }
+    if (operation.kind === 'generate-texture-mip') {
+      const source = this.current(operation.source).storage;
+      if (resourceHandleKey(operation.source.texture) !== resourceHandleKey(operation.version.texture)
+        || (operation.source.imageTarget ?? GL.TEXTURE_2D) !== (operation.version.imageTarget ?? GL.TEXTURE_2D)
+        || (operation.source.level ?? 0) + 1 !== operation.version.level
+        || !source.width || !source.height || (source.width === 1 && source.height === 1)
+        || operation.width !== Math.max(1, source.width >> 1)
+        || operation.height !== Math.max(1, source.height >> 1)) {
+        throw new Error('Invalid generated texture level.');
+      }
+      const current = this.textures.get(key);
+      this.validateDefinition(operation.version, current?.version);
+      const storage = { reference: operation.version, generation: operation.version.storageGeneration,
+        width: operation.width, height: operation.height, mipSource: source };
+      this.host.replaceStorage(current?.storage ?? null, storage);
+      this.textures.set(key, { version: operation.version, storage });
+      return;
+    }
     this.pixels(operation.width, operation.height, operation.data);
     let previous = this.textures.get(key)?.storage ?? null;
     const storage: TextureStorage = {
@@ -152,15 +171,18 @@ export class ExecutionResources implements ResourceRegistry {
       storage.update = { x: operation.x, y: operation.y, width: operation.width,
         height: operation.height, data: operation.data };
     } else {
-      const current = this.textures.get(key);
-      if (current && (operation.version.storageGeneration <= current.version.storageGeneration
-        || operation.version.contentVersion <= current.version.contentVersion)) {
-        throw new Error('Texture definition did not advance its generations.');
-      }
+      this.validateDefinition(operation.version, this.textures.get(key)?.version);
       storage.data = operation.data;
     }
     this.host.replaceStorage(previous, storage);
     this.textures.set(key, { version: operation.version, storage });
+  }
+
+  private validateDefinition(next: TextureVersion, previous?: TextureVersion): void {
+    if (previous && (next.storageGeneration <= previous.storageGeneration
+      || next.contentVersion <= previous.contentVersion)) {
+      throw new Error('Texture definition did not advance its generations.');
+    }
   }
 
   private advance(next: TextureVersion, previous: TextureVersion): void {

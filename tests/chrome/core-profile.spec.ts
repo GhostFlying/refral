@@ -7,10 +7,6 @@ test('explicit Rust selection runs its drawing core and JS remains the default',
     const { createWebGLOnWebGPU, getTestingHooks } = await import(/* @vite-ignore */ path);
     const js = await createWebGLOnWebGPU(document.createElement('canvas'), { version: 1 });
     const rust = await createWebGLOnWebGPU(document.createElement('canvas'), { version: 1, core: 'rust' });
-    const failure = async (operation: () => unknown) => {
-      try { await operation(); return null; }
-      catch (error) { return error instanceof Error || error instanceof DOMException ? error.name : String(error); }
-    };
     try {
       const shader = js.createShader(js.VERTEX_SHADER);
       const rustShader = rust.createShader(rust.VERTEX_SHADER);
@@ -19,6 +15,7 @@ test('explicit Rust selection runs its drawing core and JS remains the default',
       const captured = await getTestingHooks(rust).capture();
       const texture = rust.createTexture();
       rust.bindTexture(rust.TEXTURE_2D, texture);
+      rust.generateMipmap(rust.TEXTURE_2D);
       const result = {
         defaultCore: getTestingHooks(js).core,
         explicitCore: getTestingHooks(rust).core,
@@ -27,8 +24,7 @@ test('explicit Rust selection runs its drawing core and JS remains the default',
         drawError,
         captureDimensions: [captured.width, captured.height],
         rustTextureCreated: rust.isTexture(texture),
-        mipmapGap: await failure(() => rust.generateMipmap(rust.TEXTURE_2D)),
-        rustError: rust.getError(),
+        undefinedBaseError: rust.getError(),
         members: [js, rust].map(gl => ({
           draw: [typeof gl.drawArrays, 'drawArrays' in gl, gl.drawArrays === gl.drawArrays],
           webgl2Draw: [typeof Reflect.get(gl, 'drawArraysInstanced'), 'drawArraysInstanced' in gl],
@@ -50,7 +46,7 @@ test('explicit Rust selection runs its drawing core and JS remains the default',
   expect(result).toEqual({
     defaultCore: 'js', explicitCore: 'rust', jsShaderCreated: true,
     rustShaderCreated: true, drawError: 0x0502, captureDimensions: [300, 150],
-    rustTextureCreated: true, mipmapGap: 'NotSupportedError', rustError: 0,
+    rustTextureCreated: true, undefinedBaseError: 0x0502,
     members: [0, 1].map(() => ({
       draw: ['function', true, true], webgl2Draw: ['undefined', false],
       unpackColorSpace: ['undefined', false], drawingBuffer: [true, 'srgb'],

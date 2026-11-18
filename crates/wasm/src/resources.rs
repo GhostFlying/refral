@@ -2,8 +2,10 @@ use crate::render::u32_value;
 use refral_core::{ResourceOperation, TextureParameters, TextureVersion};
 
 pub(super) const VERSION_BYTES: usize = 36;
-// One deletion can retire six faces at every level of a u32-sized texture.
-pub(super) const MAX_OPERATION_HEADERS: usize = 8 + 6 * u32::BITS as usize * (4 + VERSION_BYTES);
+// One generation command can replace six faces at every nonzero level.
+const GENERATED_MIP_BYTES: usize = 4 + 2 * VERSION_BYTES + 8;
+pub(super) const MAX_OPERATION_HEADERS: usize =
+    8 + 6 * (u32::BITS as usize - 1) * GENERATED_MIP_BYTES;
 
 pub(super) fn capacity(operations: &[ResourceOperation]) -> Option<usize> {
     let mut length = 4_usize;
@@ -11,6 +13,7 @@ pub(super) fn capacity(operations: &[ResourceOperation]) -> Option<usize> {
         let size = match operation {
             ResourceOperation::DefineTexture { .. } => 56,
             ResourceOperation::UpdateTexture { .. } => 100,
+            ResourceOperation::GenerateTextureMip { .. } => GENERATED_MIP_BYTES,
             ResourceOperation::WriteTexture { .. } => 76,
             ResourceOperation::RetireTexture { .. } => 40,
             ResourceOperation::RetireDepth { .. } => 24,
@@ -104,6 +107,18 @@ pub(super) fn encode(output: &mut Vec<u8>, operations: &[ResourceOperation]) {
                 u32_value(output, data.as_ptr() as u32);
                 u32_value(output, data.len() as u32);
             }
+            ResourceOperation::GenerateTextureMip {
+                version: next,
+                source,
+                width,
+                height,
+            } => {
+                u32_value(output, 6);
+                version(output, *next);
+                version(output, *source);
+                u32_value(output, *width);
+                u32_value(output, *height);
+            }
             ResourceOperation::WriteTexture {
                 version: next,
                 previous,
@@ -162,7 +177,7 @@ mod tests {
         encode(&mut encoded, &operations);
         encode(&mut encoded, &[]);
         assert_eq!(encoded.len(), expected + 4);
-        assert_eq!(encoded.len(), MAX_OPERATION_HEADERS);
+        assert!(encoded.len() <= MAX_OPERATION_HEADERS);
         for image in 0..operations.len() {
             let start = 4 + image * 40;
             assert_eq!(

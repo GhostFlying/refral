@@ -906,10 +906,10 @@ describe('actual Rust readPixels plans', () => {
       ...overrides,
     };
   }
-  it('advertises ABI4 with resource4/readback1', () => {
+  it('advertises ABI4 with resource5/readback1', () => {
     const exports = new WebAssembly.Instance(module, {}).exports;
     expect((exports.rf_abi_version as () => number)()).toBe(4);
-    expect((exports.rf_resource_protocol_version as () => number)()).toBe(4);
+    expect((exports.rf_resource_protocol_version as () => number)()).toBe(5);
     expect((exports.rf_readback_protocol_version as () => number)()).toBe(1);
   });
   it('rejects old draw snapshots before context initialization', () => {
@@ -942,7 +942,7 @@ describe('actual Rust readPixels plans', () => {
     });
     try {
       expect(() => setup()).toThrow(
-        'Rust drawing module requires ABI4/resource4/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
+        'Rust drawing module requires ABI4/resource5/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
       );
     } finally {
       instance.mockRestore();
@@ -1128,7 +1128,7 @@ describe('DOM texture source protocol', () => {
     delete exports.rf_dom_upload_protocol_version;
     const instance = vi.spyOn(WebAssembly, 'Instance').mockImplementation(function () { return { exports }; });
     try {
-      expect(() => setup()).toThrow('Rust drawing module requires ABI4/resource4/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.');
+      expect(() => setup()).toThrow('Rust drawing module requires ABI4/resource5/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.');
     } finally { instance.mockRestore(); }
   });
   it('prepares owned unpack flags without changing storage or emitting resource operations', () => {
@@ -1299,7 +1299,7 @@ describe('DOM texture source protocol', () => {
   });
 });
 
-describe('CubeMap resource4 protocol', () => {
+describe('CubeMap resource5 protocol', () => {
   function bind(core: DrawingCore, target: number = GL.TEXTURE_CUBE_MAP) {
     const texture = core.invoke('createTexture', []);
     core.invoke('bindTexture', [target, texture]);

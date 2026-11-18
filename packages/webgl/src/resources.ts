@@ -88,6 +88,7 @@ export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCap
     method(`delete${suffix}`, 1, args => [unwrap(args[0], kind)]);
     method(`is${suffix}`, 1, args => [unwrap(args[0], kind)]);
   }
+  method('generateMipmap', 1, args => [toEnum(args[0])]);
   method('activeTexture', 1, args => [toEnum(args[0])]);
   method('texParameteri', 3, args => [toEnum(args[0]), toEnum(args[1]), integer(args[2])]);
   method('texParameterf', 3, args => [toEnum(args[0]), toEnum(args[1]), float(args[2])]);

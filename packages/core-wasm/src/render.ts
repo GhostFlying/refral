@@ -246,13 +246,13 @@ export function createRustDrawingCoreFromModule(
     required.some((name) => typeof exports[name] !== 'function')
   ) {
     throw new Error(
-      'Rust drawing module requires ABI4/resource4/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
+      'Rust drawing module requires ABI4/resource5/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
     );
   }
   const abi = exports as unknown as ABI;
   if (abi.rf_abi_version() !== 4)
     throw new Error('Rust drawing ABI version mismatch; expected 4. Rebuild with pnpm rust:build.');
-  if (abi.rf_resource_protocol_version() !== 4)
+  if (abi.rf_resource_protocol_version() !== 5)
     throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_readback_protocol_version() !== 1)
     throw new Error('Rust readback protocol mismatch. Rebuild with pnpm rust:build.');
@@ -414,6 +414,9 @@ export function createRustDrawingCoreFromModule(
           height,
           data: pixels(),
         });
+      } else if (kind === 6) {
+        services.resources.apply({ kind: 'generate-texture-mip', version, source: textureVersion(reader),
+          width: reader.u32(), height: reader.u32() });
       } else if (kind === 3) {
         services.resources.apply({ kind: 'write-texture', version, previous: textureVersion(reader) });
       } else if (kind === 4) {

@@ -59,7 +59,7 @@ Automatic microtask submission and explicit flush use the same host. The testing
 
 ## Mip image chains
 
-Resource capability 4 encodes the number of sampled levels per binding. Zero selects an incomplete texture, and positive counts carry one 2D image or six cube faces per level. The decoder verifies the image target, level and shared texture identity for the complete chain.
+Resource capability 5 encodes the number of sampled levels per binding. Zero selects an incomplete texture, and positive counts carry one 2D image or six cube faces per level. The decoder verifies the image target, level and shared texture identity for the complete chain. Resource operation 6 carries destination and predecessor image versions, followed by the derived width and height as u32 values. The host records the derivation before the next GL command.
 
 ## Readback capability v1
 

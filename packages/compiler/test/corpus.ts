@@ -193,8 +193,9 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
       !compiler.link(structVertex, mismatchedStruct).success && !compiler.link(structVertex, mismatchedPrecision).success,
       log: [mismatchedStruct.log, mismatchedPrecision.log].join("\n") },
     ...Object.entries(expressionShaders.expressionFragments).map(([name, source]) => {
-      const program = compiler.link(compiler.compile(expressionShaders.expressionVertex, "vertex"), compiler.compile(source, "fragment"));
-      return { name, passed: program.success, log: program.log };
+      const stage = compiler.compile(source, "fragment");
+      const program = compiler.link(compiler.compile(expressionShaders.expressionVertex, "vertex"), stage);
+      return { name, passed: program.success, log: [stage.log, program.log].filter(Boolean).join("\n") };
     }),
     { name: "indexed-sampler-stage-budget", passed: boundary.success && boundary.samplers[0]?.size === limit &&
       boundary.fragmentWGSL.includes("switch index") && !overBudget.success && overBudget.log.includes("Combined texture count"),

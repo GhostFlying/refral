@@ -27,3 +27,5 @@ The webgl1-double-underscore patch permits consecutive underscores in identifier
 - `patches/wgsl-expression-statements.patch` preserves ESSL expression-statement side effects with WGSL discard assignments.
 
 - `patches/wgsl-nonvoid-fallthrough.patch` uses ANGLE’s typed default-return pass to make non-void WGSL return paths exhaustive.
+
+- `patches/wgsl-component-assignment.patch` passes a vector address and scalar index for expression-valued component writes. It preserves compound, prefix and postfix results.

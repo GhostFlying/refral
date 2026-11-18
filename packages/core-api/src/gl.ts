@@ -105,7 +105,7 @@ export const GL = {
   FASTEST: 0x1101, NICEST: 0x1102, GENERATE_MIPMAP_HINT: 0x8192,
   DEPTH_COMPONENT: 0x1902, KEEP: 0x1e00, REPLACE: 0x1e01,
   INCR: 0x1e02, DECR: 0x1e03, INVERT: 0x150a,
-  INCR_WRAP: 0x8507, DECR_WRAP: 0x8508, RGBA8: 0x8058,
+  INCR_WRAP: 0x8507, DECR_WRAP: 0x8508, RGB8: 0x8051, RGBA8: 0x8058,
 } as const;
 
 export function vertexComponentBytes(type: number): number {

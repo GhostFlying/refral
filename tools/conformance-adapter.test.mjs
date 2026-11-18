@@ -38,10 +38,20 @@ function fixture(backend = 'js', options = {}) {
     getContext(...args) { return nativeGetContext(this, offscreenBrands, 'offscreen', args); }
   }
   const bridge = {
-    acquire(canvas, kind, _attributes, _url, surface) {
+    acquire(canvas, kind, _attributes, _url, surface, binding) {
       calls.acquire.push({ canvas, kind, surface });
       let context = selected.get(canvas);
-      if (!context) { context = options.context ?? { actualCore: backend }; selected.set(canvas, context); }
+      if (!context) {
+        const raw = options.context ?? { actualCore: backend };
+        context = options.adaptQueries ? Object.create(raw) : raw;
+        if (options.adaptQueries) {
+          for (const name of ['getParameter', 'getUniform', 'getVertexAttrib', 'getAttachedShaders', 'getSupportedExtensions']) {
+            if (typeof raw[name] === 'function') context[name] = (...args) => binding.queryResult(name, raw[name](...args));
+          }
+        }
+        calls.realm = binding.realm;
+        selected.set(canvas, context);
+      }
       return kind === 'webgl2' ? null : context;
     },
     worker(url, script, finish) {
@@ -231,9 +241,9 @@ test('explicit undefined is converted while an absent argument remains an error'
   assert.throws(() => new Canvas().getContext(), { name: 'TypeError' });
 });
 
-test('selected realm branding does not expose native getters, setters or methods on the facade', () => {
+test('selected bridge preserves the factory result and supplies the requesting realm', () => {
   const raw = { actualCore: 'js' };
-  const { Canvas, scope } = fixture('js', { context: raw });
+  const { Canvas, scope, calls } = fixture('js', { context: raw });
   const nativePrototype = scope.WebGLRenderingContext.prototype;
   Object.defineProperty(nativePrototype, 'unpackColorSpace', {
     get() { throw new Error('native getter executed'); },
@@ -241,7 +251,8 @@ test('selected realm branding does not expose native getters, setters or methods
   });
   nativePrototype.nativeOnly = () => {};
   const context = new Canvas().getContext('webgl');
-  assert.ok(context instanceof scope.WebGLRenderingContext);
+  assert.equal(context, raw);
+  assert.equal(calls.realm.WebGLRenderingContext, scope.WebGLRenderingContext);
   assert.equal(Object.getPrototypeOf(raw), Object.prototype);
   assert.equal('unpackColorSpace' in context, false);
   assert.equal(context.unpackColorSpace, undefined);
@@ -457,7 +468,7 @@ for (const backend of ['js', 'rust']) {
       getSupportedExtensions: () => extensions,
       getError: () => 0,
     };
-    const { Canvas, scope, calls } = fixture(backend, { context: raw });
+    const { Canvas, scope, calls } = fixture(backend, { context: raw, adaptQueries: true });
     const ChildFloat32Array = vm.runInContext('Float32Array', scope);
     const ChildInt32Array = vm.runInContext('Int32Array', scope);
     const ChildArray = vm.runInContext('Array', scope);
@@ -503,7 +514,7 @@ test('realm getter adaptation propagates the original exception object', () => {
 
 test('realm getter adaptation uses constructors captured before test mutation', () => {
   const { Canvas, scope } = fixture('js', {
-    context: { getVertexAttrib: () => new Float32Array([1, 2]), getSupportedExtensions: () => ['EXT'] },
+    adaptQueries: true, context: { getVertexAttrib: () => new Float32Array([1, 2]), getSupportedExtensions: () => ['EXT'] },
   });
   const ChildFloat32Array = vm.runInContext('Float32Array', scope);
   const ChildArray = vm.runInContext('Array', scope);

@@ -1,4 +1,4 @@
-import { webglInterfaces } from './interfaces.js';
+import { createContextInterface, webglInterfaces } from './interfaces.js';
 import { GL, allocateContextId, ExecutionResources } from "@refral/core-api";
 import type { BufferHandle, BufferSnapshot, CoreKind, DrawingCore } from "@refral/core-api";
 import { createJsDrawingCore } from "@refral/core-js";
@@ -12,7 +12,6 @@ import { createProgramFacade } from "./programs.js";
 import { createResourceFacade, isResourceBinding } from './resources.js';
 import { readPixels } from './readback.js';
 import { registerCanvasSource } from './dom-upload.js';
-import { webgl1Methods } from './methods.js';
 import { createContextLoss } from './context-loss.js';
 
 export interface ContextOptions extends WebGLContextAttributes {
@@ -36,13 +35,17 @@ export interface TestingHooks {
   dispose(): Promise<void>;
 }
 
+export interface PreparedRealm {
+  realm: typeof globalThis;
+  queryResult(name: string, value: unknown): unknown;
+}
+
 export interface PreparedContextFactory {
-  (canvas: HTMLCanvasElement | OffscreenCanvas, attributes?: WebGLContextAttributes): WebGL1PrototypeContext;
+  (canvas: HTMLCanvasElement | OffscreenCanvas, attributes?: WebGLContextAttributes, binding?: PreparedRealm): WebGL1PrototypeContext;
   dispose(): Promise<void>;
 }
 
 const hooks = new WeakMap<object, TestingHooks>();
-const constants = Object.freeze({ ...GL });
 const defaults: WebGLContextAttributes = {
   alpha: true, depth: true, stencil: false, antialias: false,
   premultipliedAlpha: true, preserveDrawingBuffer: false,
@@ -82,8 +85,7 @@ function trackBitmapTransfer(canvas: HTMLCanvasElement | OffscreenCanvas, curren
   };
 }
 
-function createGeneration(canvas: HTMLCanvasElement | OffscreenCanvas, host: BrowserHost, core: DrawingCore, releaseResources: () => void) {
-  const realm = ('ownerDocument' in canvas ? canvas.ownerDocument.defaultView : null) ?? globalThis;
+function createGeneration(realm: typeof globalThis, host: BrowserHost, core: DrawingCore, releaseResources: () => void) {
   const interfaces = webglInterfaces(realm);
   const bufferFacade = createBufferFacade(core, interfaces);
   const programFacade = createProgramFacade(core, interfaces);
@@ -114,7 +116,7 @@ function observeDeviceLoss(device: GPUDevice, owner: WeakRef<ReturnType<typeof c
 }
 
 function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: WebGLContextAttributes,
-  create: () => ReturnType<typeof createGeneration>, onDispose: () => void): WebGL1PrototypeContext {
+  create: () => ReturnType<typeof createGeneration>, onDispose: () => void, binding?: PreparedRealm): WebGL1PrototypeContext {
   let current = create();
   const interfaces = current.interfaces;
   let disposed: Promise<void> | undefined;
@@ -144,9 +146,13 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: We
     prepare: () => current.host.prepareCanvasSource(), isLost: () => current.core.isContextLost(),
   });
   observeDeviceLoss(current.host.device, new WeakRef(lost));
-  const methods = new Map<string, (...args: unknown[]) => unknown>();
   const invoke = (property: string, args: unknown[]): unknown => {
     const { core, host, bufferFacade, programFacade, resourceFacade } = current;
+    if (property === 'canvas') return canvas;
+    if (property === 'drawingBufferWidth') return core.isContextLost() ? 0 : host.surface.width;
+    if (property === 'drawingBufferHeight') return core.isContextLost() ? 0 : host.surface.height;
+    if (property === 'drawingBufferFormat') return attributes.alpha ? GL.RGBA8 : GL.RGB8;
+    if (property === 'drawingBufferColorSpace') return 'srgb';
     if (property === 'getError') return core.getError();
     if (property === 'isContextLost') return core.isContextLost();
     if (property === 'readPixels') return readPixels(core, host, args);
@@ -184,29 +190,8 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: We
     }
     return result;
   };
-  const surface = Object.setPrototypeOf({
-    get canvas() { return canvas; },
-    get drawingBufferWidth() { return current.core.isContextLost() ? 0 : current.host.surface.width; },
-    get drawingBufferHeight() { return current.core.isContextLost() ? 0 : current.host.surface.height; },
-    get drawingBufferColorSpace() { return 'srgb'; },
-  }, interfaces.context ?? constants);
-  const proxy = new Proxy(surface, {
-    has(target, property) {
-      if (typeof property !== 'string' || Object.hasOwn(target, property)) return Reflect.has(target, property);
-      if (webgl1Methods.has(property) || Object.hasOwn(constants, property)) return true;
-      return !(interfaces.context && Object.hasOwn(interfaces.context, property)) && Reflect.has(target, property);
-    },
-    get(target, property, receiver) {
-      if (typeof property !== 'string' || Object.hasOwn(target, property)) return Reflect.get(target, property, receiver);
-      if (Object.hasOwn(constants, property)) return Reflect.get(constants, property);
-      if (!webgl1Methods.has(property)) {
-        if (interfaces.context && Object.hasOwn(interfaces.context, property)) return undefined;
-        return Reflect.get(target, property, receiver);
-      }
-      if (!methods.has(property)) methods.set(property, (...args) => invoke(property, args));
-      return methods.get(property);
-    },
-  });
+  const proxy = createContextInterface(interfaces.context, binding
+    ? (name, args) => binding.queryResult(name, invoke(name, args)) : invoke);
   hooks.set(proxy, {
     core: current.core.kind,
     inspectBuffer: buffer => current.bufferFacade.inspect(buffer),
@@ -257,7 +242,8 @@ async function prepareRuntime(options: RuntimeOptions) {
   const compiler = compilerResult.value;
   const makeHost = hostResult.value;
   const makeCore = moduleResult.value ? prepareRustDrawingCores(moduleResult.value) : createJsDrawingCore;
-  const create = (canvas: HTMLCanvasElement | OffscreenCanvas, requested: WebGLContextAttributes, onDispose: () => void) => {
+  const create = (canvas: HTMLCanvasElement | OffscreenCanvas, requested: WebGLContextAttributes, onDispose: () => void, binding?: PreparedRealm) => {
+    const realm = binding?.realm ?? ('ownerDocument' in canvas ? canvas.ownerDocument.defaultView : null) ?? globalThis;
     const attributes = actualAttributes(requested);
     const errors: string[] = [];
     return wrapContext(canvas, attributes, () => {
@@ -272,14 +258,14 @@ async function prepareRuntime(options: RuntimeOptions) {
       const services = { compiler: registry, host, resources };
       try {
         const core = makeCore(coreOptions, services);
-        return createGeneration(canvas, host, core, () => { resources.dispose(); registry.dispose(); });
+        return createGeneration(realm, host, core, () => { resources.dispose(); registry.dispose(); });
       } catch (error) {
         registry.dispose();
         resources.dispose();
         void host.dispose();
         throw error;
       }
-    }, onDispose);
+    }, onDispose, binding);
   };
   return { create, dispose: makeHost.dispose };
 }
@@ -288,8 +274,8 @@ async function prepareRuntime(options: RuntimeOptions) {
 export async function prepareContextFactory(options: RuntimeOptions = {}): Promise<PreparedContextFactory> {
   const prepared = await prepareRuntime(options);
   const contexts = new Set<WeakRef<WebGL1PrototypeContext>>();
-  const factory: PreparedContextFactory = (canvas, requested = {}) => {
-    const context = prepared.create(canvas, requested, () => contexts.delete(reference));
+  const factory: PreparedContextFactory = (canvas, requested = {}, binding) => {
+    const context = prepared.create(canvas, requested, () => contexts.delete(reference), binding);
     const reference = new WeakRef(context);
     contexts.add(reference);
     return context;

@@ -988,8 +988,19 @@ export class BrowserHost implements SemanticHost {
     this.endPass();
     const texture = this.createTexture(width, height, 'rgba8unorm');
     try {
-      this.device.queue.copyExternalImageToTexture({ source, flipY: plan.flipY },
-        { texture, colorSpace: 'srgb', premultipliedAlpha: plan.premultiplyAlpha }, { width, height });
+      const destination = { texture, colorSpace: 'srgb' as const, premultipliedAlpha: plan.premultiplyAlpha };
+      const size = { width, height };
+      try {
+        this.device.queue.copyExternalImageToTexture({ source, flipY: plan.flipY }, destination, size);
+      } catch (error) {
+        if (!(error instanceof DOMException) || error.name !== 'OperationError') throw error;
+        // Chrome cannot directly import a canvas that has never acquired a rendering context.
+        const snapshot = new OffscreenCanvas(width, height);
+        const context = snapshot.getContext('2d');
+        if (!context) throw error;
+        context.drawImage(source, 0, 0);
+        this.device.queue.copyExternalImageToTexture({ source: snapshot, flipY: plan.flipY }, destination, size);
+      }
       this.stats.copies++;
       this.stats.uploadedBytes += width * height * 4;
       this.canvasReadback ??= new CanvasReadback(this.device, this.stats);

@@ -965,8 +965,9 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Unorm8 sRGB ImageData with five output formats plus sRGB Canvas/OffscreenCanvas and decoded HTMLImage RGBA uploads/subimages. Intrinsic/cross-realm brands, WebIDL order, flip/PMA, source snapshots, current default-buffer ordering, registered-source loss, CORS/security, actual image dimensions and ICC NONE/default are verified. Packed DOM uploads support RGB/565, RGBA/4444 and RGBA/5551 definitions and updates at level zero for the accepted source kinds, including 2D and cube faces.",
+          "coverage": "Unorm8 sRGB ImageData with five output formats plus sRGB Canvas/OffscreenCanvas and decoded HTMLImage RGBA uploads/subimages. Intrinsic/cross-realm brands, WebIDL order, flip/PMA, source snapshots, current default-buffer ordering, registered-source loss, CORS/security, actual image dimensions and ICC NONE/default are verified. Packed DOM uploads support RGB/565, RGBA/4444 and RGBA/5551 definitions and updates at level zero for the accepted source kinds, including 2D and cube faces. A fresh nonzero HTML canvas uploads transparent pixels without taking its rendering context. The direct WebGPU copy and private fallback both consume the source on return.",
           "tests": [
+            "tests/chrome/fresh-canvas-texture.spec.ts",
             "tests/chrome/dom-imagedata.spec.ts",
             "packages/core-js/src/dom-upload.test.ts",
             "tests/chrome/dom-canvas-image.spec.ts",
@@ -1079,8 +1080,9 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Unorm8 sRGB ImageData with five output formats plus sRGB Canvas/OffscreenCanvas and decoded HTMLImage RGBA uploads/subimages. Intrinsic/cross-realm brands, WebIDL order, flip/PMA, source snapshots, current default-buffer ordering, registered-source loss, CORS/security, actual image dimensions and ICC NONE/default are verified. Packed DOM uploads support RGB/565, RGBA/4444 and RGBA/5551 definitions and updates at level zero for the accepted source kinds, including 2D and cube faces.",
+          "coverage": "Unorm8 sRGB ImageData with five output formats plus sRGB Canvas/OffscreenCanvas and decoded HTMLImage RGBA uploads/subimages. Intrinsic/cross-realm brands, WebIDL order, flip/PMA, source snapshots, current default-buffer ordering, registered-source loss, CORS/security, actual image dimensions and ICC NONE/default are verified. Packed DOM uploads support RGB/565, RGBA/4444 and RGBA/5551 definitions and updates at level zero for the accepted source kinds, including 2D and cube faces. A fresh nonzero HTML canvas uploads transparent pixels without taking its rendering context. The direct WebGPU copy and private fallback both consume the source on return.",
           "tests": [
+            "tests/chrome/fresh-canvas-texture.spec.ts",
             "tests/chrome/dom-imagedata.spec.ts",
             "crates/core/src/render/dom_texture_tests.rs",
             "tests/chrome/dom-canvas-image.spec.ts",

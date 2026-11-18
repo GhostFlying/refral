@@ -479,7 +479,7 @@ fn reply_capacity(value: &Reply) -> Option<usize> {
         Reply::ReadPixelsPlan(plan) => Some(40 + crate::resources::target_capacity(&plan.target)),
         Reply::Clear(snapshot) => Some(204 + crate::resources::target_capacity(&snapshot.target)),
         Reply::Draw(snapshot) => {
-            let mut total = 244_usize
+            let mut total = 256_usize
                 .checked_add(crate::resources::target_capacity(&snapshot.target))?
                 .checked_add(snapshot.vertex_uniforms.len())?
                 .checked_add(snapshot.fragment_uniforms.len())?;
@@ -594,8 +594,8 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             json!({"type":"clear"})
         }
         Reply::Draw(snapshot) => {
-            u32_value(output, 0x35444652);
-            u32_value(output, 5);
+            u32_value(output, 0x36444652);
+            u32_value(output, 6);
             u32_value(output, snapshot.artifact_id);
             for value in [
                 snapshot.program.context_id,
@@ -607,6 +607,9 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             output.extend_from_slice(&snapshot.link_generation.to_le_bytes());
             crate::resources::target(output, snapshot.target);
             raster(output, snapshot.state);
+            u32_value(output, u32::from(snapshot.state.polygon_offset_fill));
+            f32_value(output, snapshot.state.polygon_offset_factor);
+            f32_value(output, snapshot.state.polygon_offset_units);
             for value in [
                 snapshot.mode,
                 snapshot.vertex_count,

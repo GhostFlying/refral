@@ -16,6 +16,17 @@ function setup(contextId = 1) {
 }
 
 describe('resource facade conversion and identity', () => {
+  it('converts coverage and depth bias arguments before mutating state', () => {
+    const { methods, invoke } = setup();
+    expect(() => methods.polygonOffset!(1)).toThrow(TypeError);
+    expect(() => methods.sampleCoverage!(0.5)).toThrow(TypeError);
+    expect(invoke).not.toHaveBeenCalled();
+    methods.polygonOffset!('1.1', -0.25);
+    expect(invoke).toHaveBeenLastCalledWith('polygonOffset', [Math.fround(1.1), -0.25]);
+    methods.sampleCoverage!('0.7', {});
+    expect(invoke).toHaveBeenLastCalledWith('sampleCoverage', [Math.fround(0.7), true]);
+  });
+
   it('converts hint enums and unrestricted line width before core dispatch', () => {
     const { methods, invoke } = setup();
     expect(() => methods.hint!(GL.GENERATE_MIPMAP_HINT)).toThrow(TypeError);

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { checkHintAndLineWidth } from "../../../tests/core/raster-queries.js";
+import { checkHintAndLineWidth, checkOffsetAndSampleState } from "../../../tests/core/raster-queries.js";
 import { GL, SemanticContext } from "./index.js";
 import type { Compiler, SemanticHost } from "@refral/core-api";
 
@@ -19,6 +19,9 @@ function createContext() {
 }
 
 describe("JS raster state semantics", () => {
+  it("tracks polygon offset, single-sample coverage and raster precision", () => {
+    checkOffsetAndSampleState(createContext().core);
+  });
   it("preserves hint and requested line width through invalid mutations", () => {
     checkHintAndLineWidth(createContext().core);
   });

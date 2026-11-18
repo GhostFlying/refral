@@ -96,6 +96,10 @@ export class SemanticContext {
   private scheduled = false;
   private lost = false;
   private dither = true;
+  private sampleAlphaToCoverage = false;
+  private sampleCoverageEnabled = false;
+  private sampleCoverageValue = 1;
+  private sampleCoverageInvert = false;
   private requestedLineWidth = 1;
   private mipmapHint: number = GL.DONT_CARE;
   private maxBufferBytes: number;
@@ -1320,6 +1324,14 @@ export class SemanticContext {
     return !this.lost && renderbuffer instanceof RenderbufferObject && renderbuffer.owner === this.owner && renderbuffer.initialized && !renderbuffer.deleted;
   }
 
+  polygonOffset(factor: number, units: number): void {
+    this.state.polygonOffsetFactor = factor;
+    this.state.polygonOffsetUnits = units;
+  }
+  sampleCoverage(value: number, invert: boolean): void {
+    this.sampleCoverageValue = clamp(value);
+    this.sampleCoverageInvert = invert;
+  }
   lineWidth(width: number): void {
     if (!(width > 0)) return this.error(GL.INVALID_VALUE);
     this.requestedLineWidth = width;
@@ -1339,7 +1351,9 @@ export class SemanticContext {
     else if (capability === GL.SCISSOR_TEST) this.state.scissorTest = enabled;
     else if (capability === GL.DITHER) this.dither = enabled;
     else if (capability === GL.STENCIL_TEST) this.state.stencilTest = enabled;
-    else if (capability === GL.POLYGON_OFFSET_FILL) unsupported("polygon offset state");
+    else if (capability === GL.POLYGON_OFFSET_FILL) this.state.polygonOffsetFill = enabled;
+    else if (capability === GL.SAMPLE_COVERAGE) this.sampleCoverageEnabled = enabled;
+    else if (capability === GL.SAMPLE_ALPHA_TO_COVERAGE) this.sampleAlphaToCoverage = enabled;
     else this.error(GL.INVALID_ENUM);
   }
   isEnabled(capability: number): boolean {
@@ -1349,7 +1363,9 @@ export class SemanticContext {
     if (capability === GL.SCISSOR_TEST) return this.state.scissorTest;
     if (capability === GL.DITHER) return this.dither;
     if (capability === GL.STENCIL_TEST) return this.state.stencilTest;
-    if (capability === GL.POLYGON_OFFSET_FILL) return false;
+    if (capability === GL.POLYGON_OFFSET_FILL) return this.state.polygonOffsetFill;
+    if (capability === GL.SAMPLE_COVERAGE) return this.sampleCoverageEnabled;
+    if (capability === GL.SAMPLE_ALPHA_TO_COVERAGE) return this.sampleAlphaToCoverage;
     this.error(GL.INVALID_ENUM); return false;
   }
   viewport(x: number, y: number, width: number, height: number): void {
@@ -1493,11 +1509,13 @@ export class SemanticContext {
       [GL.VENDOR]: "Refral", [GL.RENDERER]: "WebGPU",
       [GL.RED_BITS]: colorBits, [GL.GREEN_BITS]: colorBits, [GL.BLUE_BITS]: colorBits,
       [GL.ALPHA_BITS]: alphaBits, [GL.DEPTH_BITS]: depthBits, [GL.STENCIL_BITS]: stencilBits,
-      [GL.SAMPLES]: 0, [GL.SAMPLE_BUFFERS]: 0,
+      [GL.SAMPLES]: 0, [GL.SAMPLE_BUFFERS]: 0, [GL.SUBPIXEL_BITS]: 4,
+      [GL.POLYGON_OFFSET_FACTOR]: this.state.polygonOffsetFactor, [GL.POLYGON_OFFSET_UNITS]: this.state.polygonOffsetUnits,
+      [GL.SAMPLE_COVERAGE_VALUE]: this.sampleCoverageValue, [GL.SAMPLE_COVERAGE_INVERT]: this.sampleCoverageInvert,
     };
     if (parameter in values) return values[parameter];
     if ([GL.BLEND, GL.CULL_FACE, GL.DEPTH_TEST, GL.SCISSOR_TEST, GL.DITHER,
-      GL.STENCIL_TEST, GL.POLYGON_OFFSET_FILL].includes(parameter as 0x0be2)) return this.isEnabled(parameter);
+      GL.STENCIL_TEST, GL.POLYGON_OFFSET_FILL, GL.SAMPLE_COVERAGE, GL.SAMPLE_ALPHA_TO_COVERAGE].includes(parameter as 0x0be2)) return this.isEnabled(parameter);
     this.error(GL.INVALID_ENUM); return null;
   }
   getShaderPrecisionFormat(shaderType: number, precision: number): { rangeMin: number; rangeMax: number; precision: number } | null {

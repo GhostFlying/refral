@@ -2477,8 +2477,49 @@
       }
     },
     {
+      "id": "polygon-offset-and-sample-state",
+      "api": "polygonOffset, sampleCoverage, capability and raster parameter queries",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "coverage": "Queryable polygon fill enable, factor and units, single-sample coverage and alpha-to-coverage enables, clamped coverage value and invert, and SUBPIXEL_BITS. Triangle depth bias uses the hardware depth format and rounds units to signed 32-bit bias.",
+          "tests": [
+            "conformance/rendering/polygon-offset.html",
+            "conformance/state/gl-enable-enum-test.html",
+            "tests/core/raster-queries.ts",
+            "tests/chrome/dual-core-drawing.spec.ts::dual-core drawing polygon-offset-and-samples"
+          ],
+          "evidence": [
+            "docs/tasks/065-polygon-offset-and-sample-state.md",
+            "artifacts/conformance/campaign/raster-coverage/js/results.json",
+            "artifacts/conformance/campaign/raster-coverage/dual-core/result.json"
+          ],
+          "unsupportedBehavior": "Unknown capability enums set INVALID_ENUM. This profile reports zero sample buffers."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "coverage": "Queryable polygon fill enable, factor and units, single-sample coverage and alpha-to-coverage enables, clamped coverage value and invert, and SUBPIXEL_BITS. Triangle depth bias uses the hardware depth format and rounds units to signed 32-bit bias.",
+          "tests": [
+            "conformance/rendering/polygon-offset.html",
+            "conformance/state/gl-enable-enum-test.html",
+            "tests/core/raster-queries.ts",
+            "tests/chrome/dual-core-drawing.spec.ts::dual-core drawing polygon-offset-and-samples"
+          ],
+          "evidence": [
+            "docs/tasks/065-polygon-offset-and-sample-state.md",
+            "artifacts/conformance/campaign/raster-coverage/rust/results.json",
+            "artifacts/conformance/campaign/raster-coverage/dual-core/result.json"
+          ],
+          "unsupportedBehavior": "Unknown capability enums set INVALID_ENUM. This profile reports zero sample buffers."
+        }
+      },
+      "specRefs": [
+        "draw-operations"
+      ]
+    },
+    {
       "id": "additional-rendering-capabilities",
-      "api": "enabled compressed texture formats, point drawing, and polygon offset",
+      "api": "enabled compressed texture formats and point drawing",
       "cores": {
         "js": {
           "status": "unimplemented",

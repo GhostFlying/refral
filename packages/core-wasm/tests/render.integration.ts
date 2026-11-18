@@ -16,7 +16,7 @@ import type {
   PixelUpload,
 } from '@refral/core-api';
 import { createRustDrawingCoreFromModule } from '../src/render';
-import { checkHintAndLineWidth } from '../../../tests/core/raster-queries';
+import { checkHintAndLineWidth, checkOffsetAndSampleState } from '../../../tests/core/raster-queries';
 import { checkPrimitiveDraws } from '../../../tests/core/primitive-draw-contract';
 import { runBufferCoreContract } from '../../../tests/core/buffer-contract';
 
@@ -338,6 +338,14 @@ describe('actual Rust drawing Wasm', () => {
 });
 
 describe('typed uniform and raster draw snapshots', () => {
+  it('tracks polygon offset, single-sample coverage and raster precision', () => {
+    const { core } = setup();
+    try {
+      checkOffsetAndSampleState(core);
+    } finally {
+      core.dispose();
+    }
+  });
   it('preserves hint and requested line width through invalid mutations', () => {
     const { core } = setup();
     try {
@@ -925,9 +933,9 @@ describe('actual Rust readPixels plans', () => {
       ...overrides,
     };
   }
-  it('advertises ABI5 with resource8/readback1', () => {
+  it('advertises ABI6 with resource8/readback1', () => {
     const exports = new WebAssembly.Instance(module, {}).exports;
-    expect((exports.rf_abi_version as () => number)()).toBe(5);
+    expect((exports.rf_abi_version as () => number)()).toBe(6);
     expect((exports.rf_resource_protocol_version as () => number)()).toBe(8);
     expect((exports.rf_readback_protocol_version as () => number)()).toBe(1);
   });
@@ -937,7 +945,7 @@ describe('actual Rust readPixels plans', () => {
       return { exports: { ...exports, rf_abi_version: () => 3 } };
     });
     try {
-      expect(() => setup()).toThrow('Rust drawing ABI version mismatch; expected 5. Rebuild with pnpm rust:build.');
+      expect(() => setup()).toThrow('Rust drawing ABI version mismatch; expected 6. Rebuild with pnpm rust:build.');
     } finally {
       instance.mockRestore();
     }
@@ -961,7 +969,7 @@ describe('actual Rust readPixels plans', () => {
     });
     try {
       expect(() => setup()).toThrow(
-        'Rust drawing module requires ABI5/resource8/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
+        'Rust drawing module requires ABI6/resource8/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
       );
     } finally {
       instance.mockRestore();
@@ -1147,7 +1155,7 @@ describe('DOM texture source protocol', () => {
     delete exports.rf_dom_upload_protocol_version;
     const instance = vi.spyOn(WebAssembly, 'Instance').mockImplementation(function () { return { exports }; });
     try {
-      expect(() => setup()).toThrow('Rust drawing module requires ABI5/resource8/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.');
+      expect(() => setup()).toThrow('Rust drawing module requires ABI6/resource8/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.');
     } finally { instance.mockRestore(); }
   });
   it('prepares owned unpack flags without changing storage or emitting resource operations', () => {

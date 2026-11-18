@@ -42,6 +42,9 @@ pub struct RasterState {
     pub scissor_test: bool,
     pub color_mask: [bool; 4],
     pub depth_test: bool,
+    pub polygon_offset_fill: bool,
+    pub polygon_offset_factor: f32,
+    pub polygon_offset_units: f32,
     pub depth_mask: bool,
     pub depth_func: u32,
     pub depth_range: [f32; 2],
@@ -69,6 +72,9 @@ impl Default for RasterState {
             scissor_test: false,
             color_mask: [true; 4],
             depth_test: false,
+            polygon_offset_fill: false,
+            polygon_offset_factor: 0.0,
+            polygon_offset_units: 0.0,
             depth_mask: true,
             depth_func: 0x201,
             depth_range: [0.0, 1.0],
@@ -115,6 +121,11 @@ impl ContextCore {
         let front = &state.stencil_front;
         let back = &state.stencil_back;
         Some(match parameter {
+            0x0d50 => Reply::Number(4.0),
+            0x8038 => Reply::Number(state.polygon_offset_factor as f64),
+            0x2a00 => Reply::Number(state.polygon_offset_units as f64),
+            0x80aa => Reply::Number(self.render.sample_coverage_value as f64),
+            0x80ab => Reply::Boolean(self.render.sample_coverage_invert),
             0x0ba2 => Reply::Ints(state.viewport.to_vec()),
             0x0c10 => Reply::Ints(state.scissor.to_vec()),
             0x0b21 => Reply::Number(self.render.requested_line_width as f64),
@@ -150,7 +161,7 @@ impl ContextCore {
             0x80ca => Reply::Number(state.blend_dst_alpha as f64),
             0x0b45 => Reply::Number(state.cull_face as f64),
             0x0b46 => Reply::Number(state.front_face as f64),
-            0x0be2 | 0x0b44 | 0x0b71 | 0x0c11 | 0x0bd0 | 0x0b90 | 0x8037 => {
+            0x0be2 | 0x0b44 | 0x0b71 | 0x0c11 | 0x0bd0 | 0x0b90 | 0x8037 | 0x80a0 | 0x809e => {
                 Reply::Boolean(self.enabled(parameter)?)
             }
             _ => return None,
@@ -165,7 +176,9 @@ impl ContextCore {
             0x0c11 => state.scissor_test,
             0x0bd0 => self.render.dither,
             0x0b90 => state.stencil_test,
-            0x8037 => false,
+            0x8037 => state.polygon_offset_fill,
+            0x80a0 => self.render.sample_coverage,
+            0x809e => self.render.sample_alpha_to_coverage,
             _ => return None,
         })
     }
@@ -173,6 +186,14 @@ impl ContextCore {
         let number = |index: usize| args.get(index).map_or(0.0, Argument::number);
         let boolean = |index: usize| args.get(index).is_some_and(Argument::boolean);
         match operation {
+            "polygonOffset" => {
+                self.render.raster.polygon_offset_factor = number(0) as f32;
+                self.render.raster.polygon_offset_units = number(1) as f32;
+            }
+            "sampleCoverage" => {
+                self.render.sample_coverage_value = clamped(number(0));
+                self.render.sample_coverage_invert = boolean(1);
+            }
             "lineWidth" => {
                 let width = number(0) as f32;
                 if width > 0.0 {
@@ -200,8 +221,9 @@ impl ContextCore {
                     0x0c11 => self.render.raster.scissor_test = enabled,
                     0x0bd0 => self.render.dither = enabled,
                     0x0b90 => self.render.raster.stencil_test = enabled,
-                    0x8037 if enabled => return Some(Reply::Unsupported("polygon offset")),
-                    0x8037 => {}
+                    0x8037 => self.render.raster.polygon_offset_fill = enabled,
+                    0x80a0 => self.render.sample_coverage = enabled,
+                    0x809e => self.render.sample_alpha_to_coverage = enabled,
                     _ => self.record_error(INVALID_ENUM),
                 }
             }

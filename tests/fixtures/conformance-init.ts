@@ -21,13 +21,28 @@ export interface ConformanceDiagnostic {
   kind: string; name: string; message: string; url: string; level?: 'observed'; frameUrl?: string;
 }
 export interface ConformanceGap { kind: string; message: string; url: string }
-export interface ConformanceBridge {
+export interface WorkerContextRecord {
+  kind: string;
+  actualCore: ConformanceBackend;
+  attributes: WebGLContextAttributes | null;
+  adapter: Record<string, unknown>;
+}
+export type WorkerObservation =
+  | { type: 'ready' | 'finished' }
+  | { type: 'context'; context: WorkerContextRecord }
+  | { type: 'error'; name?: string; message: string }
+  | { type: 'gap'; message: string };
+
+export interface CanvasBridge {
   acquire(canvas: HTMLCanvasElement | OffscreenCanvas, kind: string, attributes: WebGLContextAttributes | undefined,
     url: string, surface: CanvasSurface): WebGLRenderingContext | null;
   context(context: WebGLRenderingContext, kind: string, attributes: WebGLContextAttributes | undefined,
     url: string, surface: CanvasSurface): void;
   error(value: ConformanceDiagnostic): void;
   gap(value: ConformanceGap): void;
+}
+export interface ConformanceBridge extends CanvasBridge {
+  worker(url: string, script: string, finish: () => Promise<void>): (event: WorkerObservation) => void;
   realmTransfer?(url: string): void;
   attach(harness: OfficialHarness): void;
   report: OfficialReport;
@@ -38,14 +53,17 @@ export interface ConformanceBridge {
 }
 
 /** Serialized into every browser document by Playwright. Keep runtime helpers inside this function. */
-export function installConformanceBridge(options: { backend: ConformanceBackend }): void {
-  Reflect.set(window, '__refralConformanceInitBackend', options.backend);
+export function installConformanceBridge(options: { backend: ConformanceBackend; worker?: CanvasBridge }): void {
   const runnerPath = '/third_party/cts/sdk/tests/webgl-conformance-tests.html';
   const testsPath = '/third_party/cts/sdk/tests/';
-  const isRunner = location.pathname === runnerPath;
-  let isChild = location.pathname.startsWith(testsPath);
-  try { isChild ||= window.parent.location.pathname.startsWith(testsPath); } catch { /* Cross-origin frame. */ }
-  if (!isRunner && !isChild) return;
+  let isRunner = false;
+  if (!options.worker) {
+    Reflect.set(window, '__refralConformanceInitBackend', options.backend);
+    isRunner = location.pathname === runnerPath;
+    let isChild = location.pathname.startsWith(testsPath);
+    try { isChild ||= window.parent.location.pathname.startsWith(testsPath); } catch { /* Cross-origin frame. */ }
+    if (!isRunner && !isChild) return;
+  }
 
   function bridge(): ConformanceBridge | null {
     let current: Window = window;
@@ -67,7 +85,7 @@ export function installConformanceBridge(options: { backend: ConformanceBackend 
       name: typeof detail?.name === 'string' ? detail.name : 'Error',
       message: typeof detail?.message === 'string' ? detail.message : String(reason), url,
       frameUrl: location.href, ...(kind === 'resource' ? { level: 'observed' as const } : {}) };
-    const target = bridge();
+    const target = options.worker ?? bridge();
     if (target) target.error(value);
     else console.error('[RefralConformanceBridgeError]', JSON.stringify(value));
   }
@@ -80,8 +98,8 @@ export function installConformanceBridge(options: { backend: ConformanceBackend 
     throw error;
   }
 
-  window.addEventListener('error', event => {
-    if (event.target instanceof Element) {
+  globalThis.addEventListener('error', event => {
+    if (typeof Element !== 'undefined' && event.target instanceof Element) {
       const source = event.target.getAttribute('src') ?? event.target.getAttribute('href');
       const url = source ? new URL(source, event.target.baseURI).href : location.href;
       diagnostic('resource', { name: 'ResourceLoadError',
@@ -90,7 +108,7 @@ export function installConformanceBridge(options: { backend: ConformanceBackend 
       diagnostic('page', event.error ?? { name: 'Error', message: event.message }, event.filename || location.href);
     }
   }, true);
-  window.addEventListener('unhandledrejection', event => diagnostic('promise', event.reason));
+  globalThis.addEventListener('unhandledrejection', event => diagnostic('promise', event.reason));
 
   const ChildArray = Array;
   const isArray = Array.isArray;
@@ -114,6 +132,7 @@ export function installConformanceBridge(options: { backend: ConformanceBackend 
   const childContexts = new WeakMap<WebGLRenderingContext, WebGLRenderingContext>();
 
   function childResult(value: unknown): unknown {
+    if (options.worker) return value; // The worker factory already lives in this realm.
     if (isArray(value)) {
       const result = new ChildArray(value.length);
       for (let index = 0; index < value.length; index++) result[index] = value[index];
@@ -184,13 +203,13 @@ export function installConformanceBridge(options: { backend: ConformanceBackend 
         }
         if (options.backend === 'native') {
           const context = Reflect.apply(original, this, [kind, attributes]) as WebGLRenderingContext | null;
-          if (context) requiredBridge().context(context, kind, attributes, location.href, surface);
+          if (context) (options.worker ?? requiredBridge()).context(context, kind, attributes, location.href, surface);
           return context;
         }
         // The host acquires the canvas's WebGPU slot during the first selected WebGL call.
         if (!selected.has(this) && nativeMode.has(this)) return null;
         try {
-          const context = requiredBridge().acquire(this, kind, attributes, location.href, surface);
+          const context = (options.worker ?? requiredBridge()).acquire(this, kind, attributes, location.href, surface);
           if (!context) return null;
           selected.add(this);
           return childContext(context);
@@ -200,15 +219,66 @@ export function installConformanceBridge(options: { backend: ConformanceBackend 
         }
       } });
   }
-  installCanvasContext(HTMLCanvasElement.prototype, 'html-canvas');
+  if (!options.worker) installCanvasContext(HTMLCanvasElement.prototype, 'html-canvas');
   if (typeof OffscreenCanvas !== 'undefined') installCanvasContext(OffscreenCanvas.prototype, 'offscreen-canvas');
 
-  if (options.backend !== 'native' && typeof Worker !== 'undefined') {
+  if (typeof Worker !== 'undefined') {
     const OriginalWorker = Worker;
-    window.Worker = new Proxy(OriginalWorker, { construct(target, args, newTarget) {
-      requiredBridge().gap({ kind: 'worker-webgl-provenance', url: location.href,
-        message: `Worker execution retains its original implementation. Selected-core WebGL provenance is unavailable for ${String(args[0])}.` });
-      return Reflect.construct(target, args, newTarget);
+    globalThis.Worker = new Proxy(OriginalWorker, { construct(target, args, newTarget) {
+      if (!args.length) return Reflect.construct(target, args, newTarget);
+      const source = new URL(args[0], options.worker ? location.href : document.baseURI);
+      if (options.worker || source.origin !== location.origin || !source.pathname.startsWith(testsPath)
+        || (args[1]?.type && args[1].type !== 'classic')) {
+        if (options.backend === 'native') return Reflect.construct(target, args, newTarget);
+        const message = `Selected-core instrumentation is unavailable for this worker: ${source.href}`;
+        (options.worker ?? requiredBridge()).gap({ kind: 'worker-webgl-provenance', url: location.href, message });
+        throw new DOMException(message, 'NotSupportedError');
+      }
+      const token = crypto.randomUUID();
+      const entry = new URL(source);
+      entry.searchParams.set('__refral_worker', token);
+      entry.searchParams.set('__refral_backend', options.backend);
+      const worker = Reflect.construct(target, [entry.href, ...args.slice(1)], newTarget) as Worker;
+      const post = worker.postMessage.bind(worker);
+      const terminate = worker.terminate.bind(worker);
+      let ready = false;
+      let closed = false;
+      let drained: (() => void) | undefined;
+      const pending: { message: unknown; transfer: Transferable[] }[] = [];
+      const observe = requiredBridge().worker(location.href, source.href, async () => {
+        if (closed) return;
+        try {
+          if (ready) await new Promise<void>((resolve, reject) => {
+            const deadline = setTimeout(() => reject(new Error('Worker resource finalization timed out.')), 2000);
+            drained = () => { clearTimeout(deadline); resolve(); };
+            post({ __refralFinish: token });
+          });
+        } finally { terminate(); }
+      });
+      // Preserve immediate structured-clone and transfer semantics while the worker initializes.
+      Object.defineProperty(worker, 'postMessage', { configurable: true, writable: true,
+        value(message: unknown, transferOrOptions?: Transferable[] | StructuredSerializeOptions) {
+          if (ready || closed) return Reflect.apply(post, worker, arguments);
+          if (!arguments.length) throw new TypeError('Worker.postMessage requires a message.');
+          const transfer = Array.from(transferOrOptions && Symbol.iterator in Object(transferOrOptions)
+            ? transferOrOptions as Iterable<Transferable> : (transferOrOptions as StructuredSerializeOptions | undefined)?.transfer ?? []);
+          pending.push(structuredClone({ message, transfer }, { transfer }));
+        } });
+      worker.terminate = () => { closed = true; pending.length = 0; terminate(); };
+      worker.addEventListener('message', event => {
+        if (event.data?.__refralWorker !== token) return;
+        event.stopImmediatePropagation();
+        const detail = event.data.detail as WorkerObservation;
+        observe(detail);
+        if (detail.type === 'ready') {
+          ready = true;
+          delete (worker as Partial<Worker>).postMessage;
+          for (const item of pending) post(item.message, item.transfer);
+          pending.length = 0;
+        } else if (detail.type === 'finished') drained?.();
+      });
+      worker.addEventListener('error', event => observe({ type: 'error', name: event.error?.name, message: event.message }));
+      return worker;
     } });
   }
 

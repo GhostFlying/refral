@@ -9,7 +9,7 @@ function fixture(backend = 'js', options = {}) {
   const canvasBrands = new WeakSet();
   const offscreenBrands = new WeakSet();
   const selected = new WeakMap();
-  const calls = { native: [], acquire: [], contexts: [], errors: [], gaps: [], realmTransfers: [] };
+  const calls = { native: [], acquire: [], contexts: [], workers: [], errors: [], gaps: [], realmTransfers: [] };
   const nativeString = String;
 
   function width(receiver, brands, label) {
@@ -44,15 +44,22 @@ function fixture(backend = 'js', options = {}) {
       if (!context) { context = options.context ?? { actualCore: backend }; selected.set(canvas, context); }
       return kind === 'webgl2' ? null : context;
     },
+    worker(url, script, finish) {
+      const record = { url, script, finish, events: [] };
+      calls.workers.push(record);
+      return event => record.events.push(event);
+    },
     context(context, kind, _attributes, _url, surface) { calls.contexts.push({ context, kind, surface }); },
     error(value) { calls.errors.push(value); },
     gap(value) { calls.gaps.push(value); },
     realmTransfer(url) { calls.realmTransfers.push(url); },
   };
   const scope = {
-    console: { error() {} }, DOMException, URL,
-    location: { pathname: options.pathname ?? '/third_party/cts/sdk/tests/conformance/context/canvas.html',
+    console: { error() {} }, DOMException, URL, crypto: globalThis.crypto, structuredClone,
+    ...(options.Worker ? { Worker: options.Worker } : {}),
+    location: { origin: 'http://localhost', pathname: options.pathname ?? '/third_party/cts/sdk/tests/conformance/context/canvas.html',
       href: `http://localhost${options.pathname ?? '/third_party/cts/sdk/tests/conformance/context/canvas.html'}` },
+    document: { baseURI: 'http://localhost/third_party/cts/sdk/tests/conformance/context/canvas.html' },
     HTMLCanvasElement: Canvas, WebGLRenderingContext: class {}, OffscreenCanvas: Offscreen,
     Element: class {}, addEventListener() {},
     ...(options.bridge === false ? {} : { __refralConformanceBridge: bridge }),
@@ -186,6 +193,36 @@ for (const [name, surface] of [['Canvas', 'html-canvas'], ['Offscreen', 'offscre
     assert.equal(setup.calls.acquire.length, 0);
   });
 }
+
+test('worker startup detaches transferable buffers immediately and only delivers upstream messages to the original listener', () => {
+  class ClassicWorker extends EventTarget {
+    posted = [];
+    constructor(entry) { super(); this.entry = new URL(entry); }
+    postMessage(message, transfer) { this.posted.push(structuredClone(message, { transfer })); }
+    terminate() {}
+  }
+  const { scope, calls } = fixture('rust', { Worker: ClassicWorker });
+  const worker = new scope.Worker('my-worker.js');
+  const publicReplies = [];
+  worker.addEventListener('message', event => publicReplies.push(event.data));
+  const view = new Uint8Array([12, 34]);
+  worker.postMessage(view, [view.buffer]);
+  assert.equal(view.byteLength, 0);
+  assert.equal(worker.posted.length, 0);
+  const token = worker.entry.searchParams.get('__refral_worker');
+  assert.equal(worker.entry.searchParams.get('__refral_backend'), 'rust');
+  worker.dispatchEvent(new MessageEvent('message', { data: { __refralWorker: token, detail: { type: 'ready' } } }));
+  assert.deepEqual([...worker.posted[0]], [12, 34]);
+  assert.equal(calls.workers[0].events[0].type, 'ready');
+  worker.dispatchEvent(new MessageEvent('message', { data: 'original reply' }));
+  assert.deepEqual(publicReplies, ['original reply']);
+});
+
+test('selected worker sources outside the instrumented suite cannot create native WebGL contexts', () => {
+  const { scope, calls } = fixture('js', { Worker: class { constructor() { throw new Error('native worker started'); } } });
+  assert.throws(() => new scope.Worker('blob:http://localhost/other'), { name: 'NotSupportedError' });
+  assert.equal(calls.gaps[0].kind, 'worker-webgl-provenance');
+});
 
 test('explicit undefined is converted while an absent argument remains an error', () => {
   const { Canvas, calls } = fixture();
@@ -322,6 +359,25 @@ test('native conformance finalization collects metadata without synthesizing con
   assert.equal(result.errors.length, 0);
   assert.equal(result.contexts[0].surface, 'offscreen-canvas');
   assert.deepEqual(extensions, ['WEBGL_debug_renderer_info']);
+});
+
+test('worker ownership distinguishes a verified CPU job, a mismatched WebGL core and missing startup', async () => {
+  for (const [mode, expected] of [['cpu', 'pass'], ['mismatched', 'harness-error'], ['unconfirmed', 'unsupported']]) {
+    const setup = await nativeSession();
+    setup.start(0);
+    const url = `http://localhost/third_party/cts/sdk/tests/${setup.files[0].url}`;
+    const observe = setup.bridge.worker(url, 'worker.js', async () => {});
+    if (mode !== 'unconfirmed') observe({ type: 'ready' });
+    if (mode === 'mismatched') observe({ type: 'context', context: {
+      kind: 'webgl', actualCore: 'js', attributes: {}, adapter: {},
+    } });
+    await setup.finish(0);
+    const [result] = setup.scope.conformanceSession.results;
+    assert.equal(result.status, expected);
+    assert.equal(result.workers[0].ready, mode !== 'unconfirmed');
+    assert.equal(result.contexts.length, mode === 'mismatched' ? 1 : 0);
+    if (mode === 'mismatched') assert.equal(result.contexts[0].realm, 'dedicated-worker');
+  }
 });
 
 test('previous-frame diagnostics stay with the completed result while active-frame errors remain active', async () => {

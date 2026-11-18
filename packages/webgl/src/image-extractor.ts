@@ -7,6 +7,9 @@ export interface NativeUploadExtent {
   exact: boolean;
 }
 
+// Capture the platform intrinsic before a test realm installs its public WebGL context hook.
+const offscreenContext = globalThis.OffscreenCanvas?.prototype.getContext;
+
 /** Private native upload captures decoded images, bitmaps and current frames with WebGL unpack rules. */
 export class ImageExtractor {
   private readonly gl: WebGLRenderingContext;
@@ -15,9 +18,9 @@ export class ImageExtractor {
   private readonly limit: number;
 
   constructor() {
-    const gl = new OffscreenCanvas(1, 1).getContext('webgl', {
+    const gl = offscreenContext && Reflect.apply(offscreenContext, new OffscreenCanvas(1, 1), ['webgl', {
       alpha: true, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false,
-    });
+    }]) as WebGLRenderingContext | null;
     if (!gl) throw new DOMException('Native WebGL image extraction is unavailable.', 'NotSupportedError');
     this.gl = gl;
     const texture = gl.createTexture();

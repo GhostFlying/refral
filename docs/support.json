@@ -65,11 +65,13 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Explicit asynchronous WebGL1 factory. Differential fixtures request alpha=false, depth=true, stencil=false, antialias=false, preserveDrawingBuffer=true. Same-thread OffscreenCanvas supports drawing and use of the registered canvas as a texture source.",
+          "coverage": "Explicit asynchronous WebGL1 factory. Differential fixtures request alpha=false, depth=true, stencil=false, antialias=false, preserveDrawingBuffer=true. Same-thread OffscreenCanvas supports drawing and use of the registered canvas as a texture source. A dedicated Worker can use the async factory on a transferred OffscreenCanvas, with independent GPU drawing and readback.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/offscreen-context.spec.ts",
+            "tests/chrome/worker-context.spec.ts",
+            "sdk/tests/conformance/offscreencanvas/context-creation-worker.html",
             "sdk/tests/conformance/offscreencanvas/context-creation.html"
           ],
           "evidence": [
@@ -94,12 +96,14 @@
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "Explicit async factory selects Rust, initializes one semantic instance, and returns recorded requested attributes. Shared drawing scenes use alpha=false, depth=true, stencil=false, antialias=false and DPR1. Same-thread OffscreenCanvas supports drawing and use of the registered canvas as a texture source.",
+          "coverage": "Explicit async factory selects Rust, initializes one semantic instance, and returns recorded requested attributes. Shared drawing scenes use alpha=false, depth=true, stencil=false, antialias=false and DPR1. Same-thread OffscreenCanvas supports drawing and use of the registered canvas as a texture source. A dedicated Worker can use the async factory on a transferred OffscreenCanvas, with independent GPU drawing and readback.",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
             "packages/core-wasm/tests/render.integration.ts",
             "tests/chrome/offscreen-context.spec.ts",
+            "tests/chrome/worker-context.spec.ts",
+            "sdk/tests/conformance/offscreencanvas/context-creation-worker.html",
             "sdk/tests/conformance/offscreencanvas/context-creation.html"
           ],
           "evidence": [

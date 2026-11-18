@@ -1,12 +1,13 @@
 import { prepareContextFactory, getTestingHooks } from '@refral/webgl';
 import type { PreparedContextFactory } from '@refral/webgl';
 import type { CanvasSurface, ConformanceBackend, ConformanceBridge, ConformanceDiagnostic, ConformanceGap,
-  OfficialFile, OfficialHarness, OfficialReport, OfficialTest } from './conformance-init.js';
+  OfficialFile, OfficialHarness, OfficialReport, OfficialTest, WorkerObservation } from './conformance-init.js';
 
 interface ContextRecord {
   requestedCore: ConformanceBackend;
   actualCore: ConformanceBackend;
   surface: CanvasSurface;
+  realm?: 'dedicated-worker';
   kind: string;
   attributes: WebGLContextAttributes | null;
   adapter: Record<string, unknown>;
@@ -35,12 +36,14 @@ interface CaseResult {
   lateDiagnostics?: ConformanceDiagnostic[];
   contexts: ContextRecord[];
   adapterGaps: ConformanceGap[];
+  workers?: { script: string; ready: boolean; contexts: number }[];
   durationMs: number;
   realmTransfers: number;
   screenshot?: CaseScreenshot;
 }
 interface Scope {
   factory: PreparedContextFactory | null;
+  workers: { script: string; ready: boolean; contexts: ContextRecord[]; finish(): Promise<void> }[];
   canvases: WeakMap<HTMLCanvasElement | OffscreenCanvas, WebGLRenderingContext>;
   contexts: Map<WebGLRenderingContext, ContextRecord>;
   errors: ConformanceDiagnostic[];
@@ -88,7 +91,7 @@ const readyPromise = new Promise<string[]>((resolve, reject) => {
 void readyPromise.catch(() => {});
 
 function scope(factory: PreparedContextFactory | null = null): Scope {
-  return { factory, canvases: new WeakMap(), contexts: new Map(), errors: [], adapterGaps: [], realmTransfers: 0 };
+  return { factory, workers: [], canvases: new WeakMap(), contexts: new Map(), errors: [], adapterGaps: [], realmTransfers: 0 };
 }
 const probe = scope();
 
@@ -188,6 +191,12 @@ function captureContext(target: Scope, context: WebGLRenderingContext, kind: str
 }
 
 async function finalizeResources(target: Scope, url: string, beforeDispose?: () => Promise<void>): Promise<void> {
+  for (const worker of target.workers) {
+    try { await worker.finish(); }
+    catch (error) { addError(target, diagnostic(error, 'worker-finalization', url)); }
+    if (!worker.ready) addGap(target, { kind: 'worker-webgl-provenance', url,
+      message: `Worker did not acknowledge execution of its original entry: ${worker.script}` });
+  }
   if (backend === 'native') {
     for (const [context, record] of target.contexts) {
       try {
@@ -262,7 +271,9 @@ async function finishCase(instance: OfficialHarness, original: (argument: never)
     skipped: active.skipped, skippedFailures: active.skippedFailures,
     assertionTimeouts: active.assertionTimeouts,
     failures: active.failures.slice(), failuresTruncated: active.failuresTruncated,
-    errors: active.errors.slice(), contexts: [...active.contexts.values()],
+    errors: active.errors.slice(), contexts: [...active.contexts.values(), ...active.workers.flatMap(worker => worker.contexts)],
+    ...(active.workers.length ? { workers: active.workers.map(({ script, ready, contexts }) =>
+      ({ script, ready, contexts: contexts.length })) } : {}),
     adapterGaps: active.adapterGaps.slice(), durationMs: performance.now() - active.started - captureDuration,
     realmTransfers: active.realmTransfers, ...(screenshot ? { screenshot } : {}) };
   results.push(result);
@@ -348,6 +359,24 @@ const bridge: ConformanceBridge = {
   context(context, kind, _attributes, url, surface) {
     const target = selectedScope(url);
     if (target) captureContext(target, context, kind, url, surface);
+  },
+  worker(url, script, finish) {
+    const target = selectedScope(url);
+    if (!target) throw new Error('Missing scope for official worker.');
+    const worker = { script, ready: false, contexts: [] as ContextRecord[], finish };
+    target.workers.push(worker);
+    return (event: WorkerObservation) => {
+      if (event.type === 'ready') worker.ready = true;
+      else if (event.type === 'error') addError(target, { kind: 'worker', name: event.name ?? 'WorkerError', message: event.message, url });
+      else if (event.type === 'gap') addGap(target, { kind: 'worker-webgl-provenance', message: event.message, url });
+      else if (event.type === 'context') {
+        if (event.context.actualCore !== backend) addError(target, { kind: 'core-selection', name: 'CoreSelectionError',
+          message: `Worker requested ${backend}, received ${event.context.actualCore}.`, url });
+        worker.contexts.push({ ...event.context, requestedCore: backend, realm: 'dedicated-worker',
+          surface: 'offscreen-canvas', url: script });
+      }
+      activity();
+    };
   },
   error: routeError,
   gap(value) { addGap(selectedScope(value.url) ?? probe, value); },

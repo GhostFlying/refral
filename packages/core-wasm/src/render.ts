@@ -150,10 +150,6 @@ class Reader {
     this.offset += length;
     return value;
   }
-  buffer(): Uint8Array {
-    this.skip(12 + 16);
-    return this.bytes();
-  }
   finish(): void {
     if (this.offset !== this.data.byteLength) throw new Error('Trailing Rust drawing reply bytes.');
   }
@@ -547,6 +543,25 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     return { color, ...(colorKind === 3 ? { colorOpaque: true } : {}),
       depth, depthGeneration, ...(depthFormat ? { depthFormat } : {}), width, height, isDefault };
   }
+  // The wire repeats the payload, but a handle/storage/content version denotes immutable bytes.
+  // Keep only the last draw's streams so deletion and large changing workloads retain bounded data.
+  let previousBuffers = new Map<string, Uint8Array>();
+  function drawBuffer(reader: Reader, current: Map<string, Uint8Array>): Uint8Array {
+    const owner = reader.u32();
+    const slot = reader.u32();
+    const generation = reader.u32();
+    const storage = reader.u64();
+    const content = reader.u64();
+    const payload = reader.bytes();
+    if (owner !== contextId || !slot || !generation || (payload.length && (!storage || !content))) {
+      throw new Error('Invalid Rust draw buffer version.');
+    }
+    const key = `${slot}:${generation}:${storage}:${content}`;
+    const bytes = current.get(key) ?? previousBuffers.get(key) ?? payload.slice();
+    if (bytes.length !== payload.length) throw new Error('Inconsistent Rust draw buffer length.');
+    current.set(key, bytes);
+    return bytes;
+  }
   function executeDraw(bytes: Uint8Array): void {
     const reader = new Reader(bytes);
     if (reader.u32() !== 0x36444652 || reader.u32() !== 6)
@@ -565,6 +580,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     const count = reader.u32();
     const attributeCount = reader.u32();
     const vertexAttributes: DrawOperation['attributes'] = [];
+    const currentBuffers = new Map<string, Uint8Array>();
     for (let index = 0; index < attributeCount; index++) {
       const location = reader.u32();
       const shaderType = reader.u32();
@@ -575,17 +591,18 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       const stride = reader.u32();
       const offset = reader.u32();
       const constant = [reader.f32(), reader.f32(), reader.f32(), reader.f32()];
-      const data = reader.u32() ? reader.buffer() : null;
+      const data = reader.u32() ? drawBuffer(reader, currentBuffers) : null;
       vertexAttributes.push({ location, shaderType, size, type, normalized: normalized === 1,
         stride, offset, constant, data });
     }
-    const indices = reader.u32() ? { type: reader.u32(), offset: reader.u32(), data: reader.buffer() } : null;
+    const indices = reader.u32() ? { type: reader.u32(), offset: reader.u32(), data: drawBuffer(reader, currentBuffers) } : null;
     const vertexUniforms = reader.bytes();
     const fragmentUniforms = reader.bytes();
     const textureCount = reader.u32();
     const textures: TextureBinding[] = [];
     for (let index = 0; index < textureCount; index++) textures.push(textureBinding(reader));
     reader.finish();
+    previousBuffers = currentBuffers;
     services.host.draw({
       program,
       mode,
@@ -726,6 +743,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       handle(buffer, (context, slot, generation) => abi.rf_bind_buffer(target, context, slot, generation));
     },
     deleteBuffer(buffer: BufferHandle | null) {
+      previousBuffers.clear();
       handle(buffer, (context, slot, generation) => abi.rf_delete_buffer(context, slot, generation));
     },
     isBuffer(buffer: BufferHandle | null) {
@@ -768,6 +786,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     markLost() {
       const changed = abi.rf_mark_lost() === 1;
       if (changed) {
+        previousBuffers.clear();
         services.compiler.dispose();
         services.resources.dispose();
       }
@@ -775,6 +794,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     },
     isContextLost: () => abi.rf_is_context_lost() === 1,
     dispose() {
+      previousBuffers.clear();
       abi.rf_dispose();
       services.compiler.dispose();
       services.resources.dispose();

@@ -315,6 +315,8 @@ describe('actual Rust drawing Wasm', () => {
       core.invoke('compileShader', [fragment]);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
       expect(state.draws).toHaveLength(3);
+      expect(state.draws[2].attributes[0].data).toBe(state.draws[1].attributes[0].data);
+      expect(state.draws[1].attributes[0].data).not.toBe(state.draws[0].attributes[0].data);
       state.failLink();
       core.invoke('linkProgram', [program]);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);

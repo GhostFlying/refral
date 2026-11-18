@@ -193,11 +193,54 @@ function readRaster(reader: Reader, width: number, height: number): RasterState 
   return state;
 }
 
+/** Each prepared factory owns one lazy instance; all GL state stays in context-specific Rust storage. */
+export function prepareRustDrawingCores(module: WebAssembly.Module) {
+  const capabilities = WebAssembly.Module.exports(module);
+  if (!['rf_select_context', 'rf_drop_context'].every(name => capabilities.some(e => e.name === name))) {
+    return (options: DrawingCoreOptions, services: DrawingCoreServices) =>
+      createRustDrawingCoreFromModule(module, options, services);
+  }
+  let raw: WebAssembly.Exports | undefined;
+  let next = 1;
+  let active = 0;
+  const released = new FinalizationRegistry<number>(id => {
+    (raw!.rf_drop_context as (id: number) => void)(id);
+    if (active === id) active = 0;
+  });
+  return (options: DrawingCoreOptions, services: DrawingCoreServices): DrawingCore => {
+    if (next > 0xffff_ffff) throw new RangeError('Rust context selector space exhausted.');
+    const id = next++;
+    const instance = raw ??= new WebAssembly.Instance(module, {}).exports;
+    const select = instance.rf_select_context as (id: number) => void;
+    const bound: Record<string, WebAssembly.ExportValue> = {};
+    for (const [name, entry] of Object.entries(instance)) {
+      bound[name] = typeof entry !== 'function' ? entry : (...args: number[]) => {
+        if (active !== id) { select(id); active = id; }
+        return entry(...args);
+      };
+    }
+    try {
+      const core = drawingCoreFromExports(bound, options, services);
+      released.register(bound, id);
+      return core;
+    } catch (error) {
+      (instance.rf_drop_context as (id: number) => void)(id);
+      if (active === id) active = 0;
+      throw error;
+    }
+  };
+}
+
 export function createRustDrawingCoreFromModule(
   module: WebAssembly.Module,
   options: DrawingCoreOptions,
   services: DrawingCoreServices,
 ): DrawingCore {
+  return drawingCoreFromExports(new WebAssembly.Instance(module, {}).exports, options, services);
+}
+
+function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCoreOptions,
+  services: DrawingCoreServices): DrawingCore {
   const { contextId, maxBufferBytes, surface, profile, attributes } = options;
   if (
     !Number.isInteger(contextId) ||
@@ -207,7 +250,6 @@ export function createRustDrawingCoreFromModule(
     maxBufferBytes < 0
   )
     throw new RangeError('Invalid Rust context options.');
-  const exports = new WebAssembly.Instance(module, {}).exports;
   const required: (keyof Omit<ABI, 'memory'>)[] = [
     'rf_abi_version',
     'rf_resource_protocol_version',

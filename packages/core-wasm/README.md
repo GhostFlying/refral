@@ -2,7 +2,7 @@
 
 `createRustBufferCore(options, wasmURL?)` implements the shared Buffer contract with an independent Rust/Wasm instance per context. Its default module URL is `/artifacts/core-wasm/refral_core.wasm`; run `pnpm rust:build` before browser verification.
 
-The `refral-core` crate owns the semantic state and native unit tests. `refral-wasm` exports a private version 6 `rf_*` ABI. The adapter validates exports and ABI version before initialization, shares only the compiled module across contexts, and copies inspection output into owned JavaScript bytes.
+The `refral-core` crate owns the semantic state and native unit tests. `refral-wasm` exports a private version 6 `rf_*` ABI. The standalone Buffer adapter validates exports and ABI version before initialization, shares only the compiled module across contexts, and copies inspection output into owned JavaScript bytes. Prepared drawing factories use one Wasm instance with context-specific Rust state and transport storage as described in [ADR 014](../../docs/adr/014-prepared-wasm-contexts.md).
 
 An upload calls a prepare export, copies its exact view into Rust-owned staging memory, then calls `rf_upload_commit` synchronously. The core validates metadata before staging allocation and validates again when consuming the staged bytes. No export accepts an arbitrary input pointer. Staging and core storage currently each copy the input; measurement must include both copies. Arena views are recreated after prepare/inspection so Wasm memory growth cannot leave the adapter using a detached view. Snapshot storage remains valid independently of later uploads and deletion.
 

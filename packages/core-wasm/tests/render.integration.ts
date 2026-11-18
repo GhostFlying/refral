@@ -15,7 +15,7 @@ import type {
   DomTextureUploadRequest,
   PixelUpload,
 } from '@refral/core-api';
-import { createRustDrawingCoreFromModule } from '../src/render';
+import { createRustDrawingCoreFromModule, prepareRustDrawingCores } from '../src/render';
 import { checkHintAndLineWidth, checkOffsetAndSampleState } from '../../../tests/core/raster-queries';
 import { checkPrimitiveDraws } from '../../../tests/core/primitive-draw-contract';
 import { runBufferCoreContract } from '../../../tests/core/buffer-contract';
@@ -37,6 +37,7 @@ function setup(
   maxBufferBytes = 1024 * 1024,
   dimensionLimit = 4096,
   attributes: ContextAttributes = { alpha: true, depth: true },
+  prepared?: ReturnType<typeof prepareRustDrawingCores>,
 ) {
   let nextId = 1;
   let linkSuccess = true;
@@ -127,8 +128,8 @@ function setup(
     apply(operation);
   });
   const surface = { width: 16, height: 16 };
-  const core = createRustDrawingCoreFromModule(
-    module,
+  const makeCore = prepared ?? createRustDrawingCoreFromModule.bind(null, module);
+  const core = makeCore(
     {
       contextId,
       maxBufferBytes,
@@ -166,6 +167,54 @@ function setup(
     },
   };
 }
+it('isolates packed Rust states during alternating access, compiler reentry, exceptions and disposal', () => {
+  const instances = vi.spyOn(WebAssembly, 'Instance');
+  try {
+    const factory = prepareRustDrawingCores(module);
+    const other = prepareRustDrawingCores(module);
+    const make = (id: number, source = factory) => setup(id, 1024, 128, undefined, source);
+    const a = make(15), b = make(16), separate = make(15, other);
+    expect(instances).toHaveBeenCalledTimes(2);
+    function buffer(core: DrawingCore, byte: number) {
+      const handle = core.createBuffer()!;
+      core.bindBuffer(GL.ARRAY_BUFFER, handle);
+      core.bufferData(GL.ARRAY_BUFFER, new Uint8Array([byte]), GL.STATIC_DRAW);
+      return handle;
+    }
+    const first = buffer(a.core, 8), second = buffer(b.core, 9), isolated = buffer(separate.core, 10);
+    expect(first.slot).toBe(second.slot);
+    expect(first).toEqual(isolated);
+    expect([...a.core.inspectBuffer(first)!.data]).toEqual([8]);
+    expect([...separate.core.inspectBuffer(isolated)!.data]).toEqual([10]);
+    a.core.bindBuffer(GL.ARRAY_BUFFER, second);
+    expect(a.core.getError()).toBe(GL.INVALID_OPERATION);
+    expect(b.core.getError()).toBe(GL.NO_ERROR);
+
+    const shader = a.core.invoke('createShader', [GL.VERTEX_SHADER]) as LogicalHandle;
+    const original = a.compile.getMockImplementation()!;
+    a.compile.mockImplementationOnce((source, stage) => {
+      expect([...b.core.inspectBuffer(second)!.data]).toEqual([9]);
+      return original(source, stage);
+    });
+    a.core.invoke('compileShader', [shader]);
+    expect(a.core.invoke('getShaderParameter', [shader, GL.COMPILE_STATUS])).toBe(true);
+    a.compile.mockImplementationOnce(() => {
+      b.core.bindBuffer(0, second);
+      throw new Error('compiler interrupted');
+    });
+    expect(() => a.core.invoke('compileShader', [shader])).toThrow('compiler interrupted');
+    expect(a.core.getError()).toBe(GL.NO_ERROR);
+    expect(b.core.getError()).toBe(GL.INVALID_ENUM);
+    a.core.dispose();
+    expect(a.core.isContextLost()).toBe(true);
+    expect(b.core.isContextLost()).toBe(false);
+    expect([...b.core.inspectBuffer(second)!.data]).toEqual([9]);
+    expect([...separate.core.inspectBuffer(isolated)!.data]).toEqual([10]);
+    b.core.dispose();
+    separate.core.dispose();
+  } finally { instances.mockRestore(); }
+});
+
 function scene(core: DrawingCore) {
   const vertex = core.invoke('createShader', [GL.VERTEX_SHADER]) as LogicalHandle;
   const fragment = core.invoke('createShader', [GL.FRAGMENT_SHADER]) as LogicalHandle;

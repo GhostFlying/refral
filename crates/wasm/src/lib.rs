@@ -1,9 +1,10 @@
-//! Private, versioned, single-context ABI for the browser adapter.
+//! Private, versioned ABI with optional isolated contexts in a shared instance.
 //!
 //! Upload pointers always refer to the Rust-owned input arena. No export accepts
 //! a caller-supplied pointer or dereferences memory selected by the caller.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
 
 use refral_core::{BufferCore, BufferHandle, BufferSnapshot, INVALID_OPERATION, OUT_OF_MEMORY};
 
@@ -28,6 +29,34 @@ struct State {
 
 thread_local! {
     static STATE: RefCell<Option<State>> = const { RefCell::new(None) };
+    static ACTIVE: Cell<u32> = const { Cell::new(0) };
+    static PARKED: RefCell<BTreeMap<u32, State>> = const { RefCell::new(BTreeMap::new()) };
+}
+
+#[no_mangle]
+pub extern "C" fn rf_select_context(selector: u32) {
+    ACTIVE.with(|active| {
+        let previous = active.replace(selector);
+        if previous != selector {
+            PARKED.with_borrow_mut(|parked| {
+                STATE.with_borrow_mut(|current| {
+                    if let Some(old) = current.take() {
+                        parked.insert(previous, old);
+                    }
+                    *current = parked.remove(&selector);
+                });
+            });
+        }
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn rf_drop_context(selector: u32) {
+    if ACTIVE.get() == selector {
+        STATE.take();
+    } else {
+        PARKED.with_borrow_mut(|parked| parked.remove(&selector));
+    }
 }
 
 fn with_state<R>(fallback: R, call: impl FnOnce(&mut State) -> R) -> R {
@@ -326,6 +355,30 @@ mod tests {
         ARRAY_BUFFER, ARRAY_BUFFER_BINDING, BUFFER_SIZE, CONTEXT_LOST_WEBGL, INVALID_ENUM,
         INVALID_VALUE, NO_ERROR, STATIC_DRAW,
     };
+
+    #[test]
+    fn context_selection_preserves_pending_input_and_releases_only_its_owner() {
+        rf_select_context(1);
+        let slot = bind_new();
+        assert_eq!(rf_buffer_data_prepare(ARRAY_BUFFER, 2.0, STATIC_DRAW), 1);
+        STATE.with_borrow_mut(|state| state.as_mut().unwrap().input.copy_from_slice(&[8, 9]));
+        rf_select_context(2);
+        assert_eq!(rf_init(2, 1024.0), 1);
+        assert_eq!(rf_create_buffer(), slot);
+        rf_bind_buffer(ARRAY_BUFFER, 2, slot, rf_result_generation());
+        rf_buffer_data_size(ARRAY_BUFFER, 11.0, STATIC_DRAW);
+        rf_select_context(1);
+        rf_upload_commit();
+        assert_eq!(rf_inspect_buffer(1, slot, 1), 1);
+        assert_eq!(rf_snapshot_length(), 2);
+        rf_drop_context(2);
+        assert_eq!(rf_get_buffer_parameter(ARRAY_BUFFER, BUFFER_SIZE), 2.0);
+        rf_select_context(2);
+        assert_eq!(rf_is_context_lost(), 1);
+        rf_select_context(1);
+        rf_drop_context(1);
+        assert_eq!(rf_is_context_lost(), 1);
+    }
 
     fn bind_new() -> u32 {
         assert_eq!(rf_init(1, 1024.0), 1);

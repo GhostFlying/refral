@@ -24,6 +24,7 @@ export interface RuntimeProfile {
   combinedTextureUnits: number;
 }
 export interface TextureStorage {
+  texelFormat?: 'rgba32float';
   reference?: TextureVersion;
   width: number;
   height: number;

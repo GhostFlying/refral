@@ -51,6 +51,7 @@ fn definition(core: &mut ContextCore) -> (TextureVersion, u32, u32, Vec<u8>) {
         width,
         height,
         data,
+        ..
     } = before.remove(0)
     else {
         panic!()

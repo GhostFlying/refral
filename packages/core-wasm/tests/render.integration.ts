@@ -1,3 +1,4 @@
+import { checkFloatTextureStorage } from '../../../tests/core/float-textures';
 import { checkVertexArrayOwnership } from '../../../tests/core/vertex-arrays';
 import { readFile } from 'node:fs/promises';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -235,6 +236,11 @@ function scene(core: DrawingCore) {
   return { vertex, fragment, program, location, buffer };
 }
 describe('actual Rust drawing Wasm', () => {
+  it('retains full-precision float texture updates through the resource transport', () => {
+    const { core, resources } = setup();
+    try { checkFloatTextureStorage(core, resources); } finally { core.dispose(); }
+  });
+
   it('retains buffer storage for an unbound vertex array and rejects stale names', () => {
     checkVertexArrayOwnership(setup().core);
   });

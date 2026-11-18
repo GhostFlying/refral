@@ -403,7 +403,7 @@ impl ContextCore {
             if storage.width == 0 || storage.height == 0 {
                 return INCOMPLETE_ATTACHMENT;
             }
-            if storage.format != RGBA && storage.format != RGB {
+            if storage.ty == FLOAT || (storage.format != RGBA && storage.format != RGB) {
                 return INCOMPLETE_ATTACHMENT;
             }
             Some((storage.width, storage.height))

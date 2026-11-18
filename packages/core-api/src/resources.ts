@@ -17,7 +17,7 @@ export const CUBE_FACES = [
   GL.TEXTURE_CUBE_MAP_POSITIVE_Z, GL.TEXTURE_CUBE_MAP_NEGATIVE_Z,
 ] as const;
 
-/** Source view identity is retained for GL pixel-type validation. Uint16 words use little-endian bytes. */
+/** Source view identity is retained for GL pixel-type validation. Uint16 and Float32 elements use little-endian bytes. */
 export interface PixelUpload {
   readonly bytes: Uint8Array;
   readonly viewType: string;
@@ -25,7 +25,7 @@ export interface PixelUpload {
 }
 
 export type ResourceOperation =
-  | { kind: 'define-texture'; version: TextureVersion; width: number; height: number; data: Uint8Array }
+  | { kind: 'define-texture'; texelFormat?: 'rgba32float'; version: TextureVersion; width: number; height: number; data: Uint8Array }
   | { kind: 'update-texture'; version: TextureVersion; previous: TextureVersion;
       x: number; y: number; width: number; height: number; data: Uint8Array }
   | { kind: 'generate-texture-mip'; version: TextureVersion; source: TextureVersion; width: number; height: number }
@@ -108,9 +108,10 @@ export class ExecutionResources implements ResourceRegistry {
     return record;
   }
 
-  private pixels(width: number, height: number, data: Uint8Array): void {
+  private pixels(width: number, height: number, data: Uint8Array, texelFormat?: 'rgba32float'): void {
+    const bytes = width * height * (texelFormat === 'rgba32float' ? 16 : 4);
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 0 || height < 0
-      || !Number.isSafeInteger(width * height * 4) || data.byteLength !== width * height * 4) {
+      || !Number.isSafeInteger(bytes) || data.byteLength !== bytes) {
       throw new Error('Invalid owned texture execution payload.');
     }
   }
@@ -161,7 +162,7 @@ export class ExecutionResources implements ResourceRegistry {
       const current = this.textures.get(key);
       this.validateDefinition(operation.version, current?.version);
       const storage = { reference: operation.version, generation: operation.version.storageGeneration,
-        width: operation.width, height: operation.height, mipSource: source };
+        width: operation.width, height: operation.height, ...(source.texelFormat ? { texelFormat: source.texelFormat } : {}), mipSource: source };
       this.host.replaceStorage(current?.storage ?? null, storage);
       this.textures.set(key, { version: operation.version, storage });
       return;
@@ -187,7 +188,6 @@ export class ExecutionResources implements ResourceRegistry {
       this.textures.set(key, { version: operation.version, storage });
       return;
     }
-    this.pixels(operation.width, operation.height, operation.data);
     let previous = this.textures.get(key)?.storage ?? null;
     const storage: TextureStorage = {
       reference: operation.version, generation: operation.version.storageGeneration,
@@ -199,6 +199,8 @@ export class ExecutionResources implements ResourceRegistry {
       if (!Number.isSafeInteger(operation.x) || !Number.isSafeInteger(operation.y)
         || operation.x < 0 || operation.y < 0 || operation.x + operation.width > previous.width
         || operation.y + operation.height > previous.height) throw new Error('Invalid texture update region.');
+      this.pixels(operation.width, operation.height, operation.data, previous.texelFormat);
+      if (previous.texelFormat) storage.texelFormat = previous.texelFormat;
       storage.width = previous.width;
       storage.height = previous.height;
       storage.parent = previous;
@@ -206,6 +208,8 @@ export class ExecutionResources implements ResourceRegistry {
         height: operation.height, data: operation.data };
     } else {
       this.validateDefinition(operation.version, this.textures.get(key)?.version);
+      this.pixels(operation.width, operation.height, operation.data, operation.texelFormat);
+      if (operation.texelFormat) storage.texelFormat = operation.texelFormat;
       storage.data = operation.data;
     }
     this.host.replaceStorage(previous, storage);

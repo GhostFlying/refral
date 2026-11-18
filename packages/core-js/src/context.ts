@@ -82,6 +82,9 @@ export class SemanticContext {
   private readonly defaultArray: VertexArrayObject;
   private currentArray: VertexArrayObject;
   private arraysEnabled = false;
+  private floatTextures = false;
+  supportsFloatTextures(): boolean { return true; }
+  enableFloatTextures(): void { this.floatTextures = true; }
   private get elementBuffer() { return this.currentArray.element; }
   private set elementBuffer(buffer: BufferObject | null) { this.currentArray.element = buffer; }
   private get attributes(): VertexAttribute[] { return this.currentArray.attributes; }
@@ -831,12 +834,13 @@ export class SemanticContext {
   }
   compressedTexSubImage2D(target: number): void { this.compressedTexImage2D(target); }
 
-  private allocatePixels(width: number, height: number): Uint8Array | null {
-    try { return new Uint8Array(width * height * 4); }
+  private allocatePixels(width: number, height: number, bytesPerPixel = 4): Uint8Array | null {
+    try { return new Uint8Array(width * height * bytesPerPixel); }
     catch { this.error(GL.OUT_OF_MEMORY); return null; }
   }
   private pixelData(width: number, height: number, format: number, type: number, source: unknown): Uint8Array | null {
-    const packed = type !== GL.UNSIGNED_BYTE;
+    const float = type === GL.FLOAT;
+    const packed = !float && type !== GL.UNSIGNED_BYTE;
     const components = format === GL.RGBA ? 4 : format === GL.RGB ? 3 : format === GL.LUMINANCE_ALPHA ? 2 : 1;
     let bytes: Uint8Array;
     let stride: number;
@@ -846,9 +850,16 @@ export class SemanticContext {
     const domSource = upload?.source === "dom" || upload?.source === "dom-converted";
     const converted = upload?.source === "dom-converted";
     const packedView = packed && !domSource;
-    const pixelBytes = domSource ? 4 : packed ? 2 : components;
+    const pixelBytes = domSource ? 4 : packed ? 2 : components * (float ? 4 : 1);
     if (source === null) {
-      const pixels = this.allocatePixels(width, height); if (!pixels) return null;
+      const pixels = this.allocatePixels(width, height, float ? 16 : 4); if (!pixels) return null;
+      if (float) {
+        if (format === GL.RGB || format === GL.LUMINANCE) {
+          const rgba = new DataView(pixels.buffer);
+          for (let i = 12; i < pixels.length; i += 16) rgba.setFloat32(i, 1, true);
+        }
+        return pixels;
+      }
       if (format === GL.RGB || format === GL.LUMINANCE) {
         for (let pixel = 0; pixel < width * height; pixel++) pixels[pixel * 4 + 3] = 255;
       }
@@ -856,7 +867,9 @@ export class SemanticContext {
     }
     if (typedSource) {
       const tag = upload?.viewType ?? Object.prototype.toString.call(source).slice(8, -1);
-      if (packedView ? tag !== "Uint16Array" : tag !== "Uint8Array" && tag !== "Uint8ClampedArray") {
+      const matchesView = float && !domSource ? tag === "Float32Array" : packedView
+        ? tag === "Uint16Array" : tag === "Uint8Array" || tag === "Uint8ClampedArray";
+      if (!matchesView) {
         this.error(GL.INVALID_OPERATION); return null;
       }
       bytes = upload?.bytes ?? bytesOf(source as ArrayBufferView);
@@ -869,7 +882,31 @@ export class SemanticContext {
     } else {
       this.error(GL.INVALID_VALUE); return null;
     }
-    const pixels = this.allocatePixels(width, height); if (!pixels) return null;
+    const pixels = this.allocatePixels(width, height, float ? 16 : 4); if (!pixels) return null;
+    if (float) {
+      const input = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      const rgba = new DataView(pixels.buffer);
+      for (let y = 0; y < height; y++) {
+        const row = (this.unpackFlipY && !converted ? height - 1 - y : y) * stride;
+        for (let x = 0; x < width; x++) {
+          const start = row + x * pixelBytes;
+          const component = (i: number) => domSource ? bytes[start + i]! / 255 : input.getFloat32(start + i * 4, upload !== null || littleEndian);
+          const luminance = format === GL.LUMINANCE || format === GL.LUMINANCE_ALPHA;
+          const r = format === GL.ALPHA ? 0 : component(0);
+          const g = format === GL.ALPHA ? 0 : luminance ? r : component(1);
+          const b = format === GL.ALPHA ? 0 : luminance ? r : component(2);
+          const a = format === GL.RGB || format === GL.LUMINANCE ? 1 : domSource || format === GL.RGBA
+            ? component(3) : format === GL.LUMINANCE_ALPHA ? component(1) : component(0);
+          const factor = this.unpackPremultiply && !converted ? (domSource ? component(3) : a) : 1;
+          const dst = (y * width + x) * 16;
+          rgba.setFloat32(dst, r * factor, true);
+          rgba.setFloat32(dst + 4, g * factor, true);
+          rgba.setFloat32(dst + 8, b * factor, true);
+          rgba.setFloat32(dst + 12, a, true);
+        }
+      }
+      return pixels;
+    }
     const words = packedView ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength) : null;
     const expand = (value: number, mask: number) => Math.round(value * 255 / mask);
     const quantize = (value: number, bits: number) => expand(value >>> (8 - bits), (1 << bits) - 1);
@@ -940,11 +977,11 @@ export class SemanticContext {
   }
   private validateTextureFormat(format: number, type: number): boolean {
     if (![GL.RGBA, GL.RGB, GL.ALPHA, GL.LUMINANCE, GL.LUMINANCE_ALPHA].includes(format as 0x1908) ||
-        ![GL.UNSIGNED_BYTE, GL.UNSIGNED_SHORT_5_6_5, GL.UNSIGNED_SHORT_4_4_4_4,
+        !(type === GL.FLOAT && this.floatTextures) && ![GL.UNSIGNED_BYTE, GL.UNSIGNED_SHORT_5_6_5, GL.UNSIGNED_SHORT_4_4_4_4,
           GL.UNSIGNED_SHORT_5_5_5_1].includes(type as 0x1401)) {
       this.error(GL.INVALID_ENUM); return false;
     }
-    if (type !== GL.UNSIGNED_BYTE && format !== (type === GL.UNSIGNED_SHORT_5_6_5 ? GL.RGB : GL.RGBA)) {
+    if (type !== GL.FLOAT && type !== GL.UNSIGNED_BYTE && format !== (type === GL.UNSIGNED_SHORT_5_6_5 ? GL.RGB : GL.RGBA)) {
       this.error(GL.INVALID_OPERATION); return false;
     }
     return true;
@@ -1020,7 +1057,7 @@ export class SemanticContext {
     const source = this.target();
     if (!source) return;
     const sourceHasAlpha = source.isDefault ? this.contextAttributes.alpha : !source.colorOpaque;
-    if ((!sourceHasAlpha && format !== GL.RGB && format !== GL.LUMINANCE)
+    if (parent?.type === GL.FLOAT || (!sourceHasAlpha && format !== GL.RGB && format !== GL.LUMINANCE)
       || (this.framebuffer?.color === texture && this.framebuffer.colorTarget === target && level === 0)) {
       return this.error(GL.INVALID_OPERATION);
     }
@@ -1072,10 +1109,10 @@ export class SemanticContext {
     texture.setImage(target!, level!, image);
     if (this.resources) {
       const version = this.textureVersion(texture, target!, level!);
-      this.resources.apply({ kind: "define-texture", version, width, height, data });
+      this.resources.apply({ kind: "define-texture", version, width, height, data, ...(type === GL.FLOAT ? { texelFormat: "rgba32float" as const } : {}) });
       image.storage = this.resources.texture(version);
     } else {
-      image.storage = { width, height, generation: image.generation, data };
+      image.storage = { width, height, generation: image.generation, data, ...(type === GL.FLOAT ? { texelFormat: "rgba32float" as const } : {}) };
       this.host.replaceStorage(previous, image.storage);
     }
     this.schedule();
@@ -1108,7 +1145,7 @@ export class SemanticContext {
       image.storage = this.resources.texture(version);
     } else {
       image.storage = { width: previous.width, height: previous.height,
-        generation: image.generation, parent: previous,
+        generation: image.generation, parent: previous, ...(previous.texelFormat ? { texelFormat: previous.texelFormat } : {}),
         update: { x: x!, y: y!, width, height, data } };
       this.host.replaceStorage(previous, image.storage);
     }
@@ -1149,7 +1186,7 @@ export class SemanticContext {
           image.storage = this.resources.texture(version);
         } else {
           image.storage = { width: mipWidth, height: mipHeight, generation: image.generation,
-            mipSource: texture.image(face, level - 1)!.storage! };
+            texelFormat: base.storage!.texelFormat, mipSource: texture.image(face, level - 1)!.storage! };
           this.host.replaceStorage(previous, image.storage);
         }
       }
@@ -1242,7 +1279,7 @@ export class SemanticContext {
     ] as const;
     const attachments = auxiliaries.filter(([object]) => object !== null);
     if (!this.framebuffer.color && attachments.length === 0) return GL.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
-    if (this.framebuffer.color && (!color?.width || !color.height ||
+    if (this.framebuffer.color && (!color?.width || !color.height || colorImage?.type === GL.FLOAT ||
         (colorRenderbuffer ? !isColorRenderbufferFormat(colorRenderbuffer.format)
           : colorImage?.format !== GL.RGB && colorImage?.format !== GL.RGBA) ||
         (colorTexture?.target === GL.TEXTURE_CUBE_MAP && !textureBase(colorTexture)))) {

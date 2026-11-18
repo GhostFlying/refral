@@ -136,6 +136,8 @@ export function textureSamplingLevelCount(texture: TextureObject): number {
   if (!base?.storage) return 0;
   const { width, height } = base.storage;
   const { minFilter, wrapS, wrapT } = texture.parameters;
+  if (base.type === GL.FLOAT && (texture.parameters.magFilter !== GL.NEAREST
+    || (minFilter !== GL.NEAREST && minFilter !== GL.NEAREST_MIPMAP_NEAREST))) return 0;
   const nonMip = minFilter === GL.NEAREST || minFilter === GL.LINEAR;
   if (!isPowerOfTwo(width) || !isPowerOfTwo(height)) {
     return nonMip && wrapS === GL.CLAMP_TO_EDGE && wrapT === GL.CLAMP_TO_EDGE ? 1 : 0;

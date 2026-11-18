@@ -29,7 +29,14 @@ function pixels(value: unknown): PixelUpload | null {
   if (!ArrayBuffer.isView(value)) throw new TypeError('Texture pixels require an ArrayBufferView.');
   const bytes = bufferSourceBytes(value);
   const viewType = typedArrayTag.call(value) ?? 'DataView';
-  if (viewType !== 'Uint16Array' || littleEndian) return { bytes, viewType };
+  if (littleEndian) return { bytes, viewType };
+  if (viewType === 'Float32Array') {
+    const values = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+    const canonical = new DataView(new ArrayBuffer(bytes.byteLength));
+    for (let i = 0; i < values.length; i++) canonical.setFloat32(i * 4, values[i]!, true);
+    return { bytes: new Uint8Array(canonical.buffer), viewType };
+  }
+  if (viewType !== 'Uint16Array') return { bytes, viewType };
   const words = new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
   const canonical = new DataView(new ArrayBuffer(bytes.byteLength));
   for (let i = 0; i < words.length; i++) canonical.setUint16(i * 2, words[i]!, true);

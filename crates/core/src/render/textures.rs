@@ -23,6 +23,38 @@ fn quantize_channel(value: u8, bits: u32) -> u8 {
     expand_component(u16::from(value >> (8 - bits)), (1 << bits) - 1)
 }
 
+fn float_texel(
+    format: u32,
+    dom: bool,
+    source: Option<&[u8]>,
+    offset: usize,
+    premultiply: bool,
+) -> [f32; 4] {
+    let read = |i: usize| match source {
+        None => 0.0,
+        Some(bytes) if dom => f32::from(bytes[offset + i]) / 255.0,
+        Some(bytes) => {
+            let start = offset + i * 4;
+            f32::from_le_bytes(bytes[start..start + 4].try_into().unwrap())
+        }
+    };
+    let [r, g, b, a] = match format {
+        ALPHA => [0.0, 0.0, 0.0, read(if dom { 3 } else { 0 })],
+        LUMINANCE => [read(0), read(0), read(0), 1.0],
+        LUMINANCE_ALPHA => [read(0), read(0), read(0), read(if dom { 3 } else { 1 })],
+        RGB => [read(0), read(1), read(2), 1.0],
+        _ => [read(0), read(1), read(2), read(3)],
+    };
+    let alpha = if !premultiply {
+        1.0
+    } else if dom {
+        read(3)
+    } else {
+        a
+    };
+    [r * alpha, g * alpha, b * alpha, a]
+}
+
 fn unpack_word(word: u16, ty: u32) -> (u8, u8, u8, u8) {
     match ty {
         UNSIGNED_SHORT_5_6_5 => (
@@ -113,6 +145,7 @@ pub struct TextureCopy {
 
 pub enum ResourceOperation {
     DefineTexture {
+        float_texels: bool,
         version: TextureVersion,
         width: u32,
         height: u32,
@@ -216,6 +249,7 @@ pub(super) struct TextureState {
     pub(super) slots: Vec<RenderSlot<Texture>>,
     pub(super) units: [TextureUnit; 32],
     pub(super) active: usize,
+    float_enabled: bool,
     unpack_alignment: usize,
     pub(super) pack_alignment: usize,
     unpack_flip: bool,
@@ -261,6 +295,7 @@ impl Default for TextureState {
             slots: Vec::new(),
             units: [TextureUnit::default(); 32],
             active: 0,
+            float_enabled: false,
             unpack_alignment: 4,
             pack_alignment: 4,
             unpack_flip: false,
@@ -432,6 +467,10 @@ impl ContextCore {
     pub(super) fn texture_invoke(&mut self, operation: &str, args: &[Argument]) -> Option<Reply> {
         let arg = |index: usize| args.get(index).unwrap_or(&Argument::Null);
         match operation {
+            "enableFloatTextures" => {
+                self.render.textures.float_enabled = true;
+                return Some(Reply::Null);
+            }
             "createTexture" => {
                 let texture = Texture {
                     deleted: false,
@@ -644,15 +683,11 @@ impl ContextCore {
         Some(Reply::Null)
     }
     fn validate_texture_format(&mut self, format: u32, ty: u32) -> bool {
-        if !matches!(format, RGBA | RGB | ALPHA | LUMINANCE | LUMINANCE_ALPHA)
-            || !matches!(
-                ty,
-                UNSIGNED_BYTE
-                    | UNSIGNED_SHORT_4_4_4_4
-                    | UNSIGNED_SHORT_5_5_5_1
-                    | UNSIGNED_SHORT_5_6_5
-            )
-        {
+        let supported_type = matches!(
+            ty,
+            UNSIGNED_BYTE | UNSIGNED_SHORT_4_4_4_4 | UNSIGNED_SHORT_5_5_5_1 | UNSIGNED_SHORT_5_6_5
+        ) || ty == FLOAT && self.render.textures.float_enabled;
+        if !matches!(format, RGBA | RGB | ALPHA | LUMINANCE | LUMINANCE_ALPHA) || !supported_type {
             self.record_error(INVALID_ENUM);
             return false;
         }
@@ -873,7 +908,7 @@ impl ContextCore {
                 ..
             }
         );
-        let packed_view = !dom && ty != UNSIGNED_BYTE;
+        let packed_view = !dom && ty != UNSIGNED_BYTE && ty != FLOAT;
         let dom_bits = if dom {
             match ty {
                 UNSIGNED_SHORT_5_6_5 => Some([5, 6, 5, 1]),
@@ -889,12 +924,13 @@ impl ContextCore {
         } else if packed_view {
             2
         } else {
-            match format {
+            let components = match format {
                 RGBA => 4,
                 RGB => 3,
                 LUMINANCE_ALPHA => 2,
                 _ => 1,
-            }
+            };
+            components * if ty == FLOAT { 4 } else { 1 }
         };
         let alignment = if dom {
             1
@@ -927,7 +963,9 @@ impl ContextCore {
                 return None;
             }
             Argument::Pixels { data, view } | Argument::DomPixels { data, view, .. } => {
-                let expected_view = if packed_view {
+                let expected_view = if ty == FLOAT && !dom {
+                    PixelView::F32
+                } else if packed_view {
                     PixelView::U16
                 } else {
                     PixelView::U8
@@ -945,7 +983,7 @@ impl ContextCore {
         };
         let Some(length) = (width as usize)
             .checked_mul(height as usize)
-            .and_then(|pixels| pixels.checked_mul(4))
+            .and_then(|pixels| pixels.checked_mul(if ty == FLOAT { 16 } else { 4 }))
         else {
             self.record_error(OUT_OF_MEMORY);
             return None;
@@ -962,6 +1000,21 @@ impl ContextCore {
                     y
                 };
                 let offset = source_y * stride + x * pixel_bytes;
+                if ty == FLOAT {
+                    let texel = float_texel(
+                        format,
+                        dom,
+                        source,
+                        offset,
+                        self.render.textures.unpack_premultiply && !converted,
+                    );
+                    let dst = (y * width as usize + x) * 16;
+                    for (channel, component) in texel.iter().enumerate() {
+                        pixels[dst + channel * 4..dst + channel * 4 + 4]
+                            .copy_from_slice(&component.to_le_bytes());
+                    }
+                    continue;
+                }
                 let (mut r, mut g, mut b, a) = if let Some(bytes) = source {
                     if packed_view {
                         let word = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
@@ -1084,6 +1137,7 @@ impl ContextCore {
             .textures
             .before
             .push(ResourceOperation::DefineTexture {
+                float_texels: ty == FLOAT,
                 version,
                 width: width as u32,
                 height: height as u32,
@@ -1189,7 +1243,12 @@ impl ContextCore {
             .image(face, level)
             .and_then(|image| image.storage);
         let storage = if subimage {
-            old_storage.unwrap()
+            let storage = old_storage.unwrap();
+            if storage.ty == FLOAT {
+                self.record_error(INVALID_OPERATION);
+                return Reply::Null;
+            }
+            storage
         } else {
             TextureStorage {
                 width,
@@ -1466,6 +1525,11 @@ fn texture_sampling_level_count(texture: &Texture) -> usize {
         return 0;
     };
     let parameters = texture.parameters;
+    if base.ty == FLOAT
+        && (parameters.mag_filter != 0x2600 || !matches!(parameters.min_filter, 0x2600 | 0x2700))
+    {
+        return 0;
+    }
     let non_mip = matches!(parameters.min_filter, 0x2600 | 0x2601);
     if !base.width.is_power_of_two() || !base.height.is_power_of_two() {
         return usize::from(non_mip && parameters.wrap_s == 0x812f && parameters.wrap_t == 0x812f);

@@ -93,6 +93,8 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
   const resourceFacade = createResourceFacade(core,
     (source, width, height, plan) => host.captureDomCanvas(source, width, height, plan),
     realm.TypeError, interfaces);
+  const supportsFloat = core.invoke('supportsFloatTextures', []) === true;
+  let floatExtension: object | undefined;
   const supportsArrays = core.invoke('supportsVertexArrayObjects', []) === true;
   let arrays: ReturnType<typeof createVertexArrayExtension> | undefined;
   let releasing: Promise<void> | undefined;
@@ -102,7 +104,15 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
     return releasing;
   }
   return { core, host, interfaces, bufferFacade, programFacade, resourceFacade, releaseGPU,
-    supportsArrays,
+    supportsArrays, supportsFloat,
+    enableFloatTextures() {
+      if (!supportsFloat) return null;
+      if (!floatExtension) {
+        core.invoke('enableFloatTextures', []);
+        floatExtension = new realm.Object();
+      }
+      return floatExtension;
+    },
     enableVertexArrays() {
       if (!supportsArrays) return null;
       arrays ??= createVertexArrayExtension(core, interfaces.buffer, realm.TypeError);
@@ -178,11 +188,12 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: We
     }
     if (property === 'getContextAttributes') return core.isContextLost() ? null : { ...attributes };
     if (property === 'getSupportedExtensions') return core.isContextLost() ? null :
-      (current.supportsArrays ? ['OES_vertex_array_object', 'WEBGL_lose_context'] : ['WEBGL_lose_context']);
+      [...(current.supportsFloat ? ['OES_texture_float'] : []), ...(current.supportsArrays ? ['OES_vertex_array_object'] : []), 'WEBGL_lose_context'];
     if (property === 'getExtension') {
       requireArguments(property, args, 1);
       const name = `${args[0]}`.toLowerCase();
       if (core.isContextLost()) return null;
+      if (name === 'oes_texture_float') return current.enableFloatTextures();
       if (name === 'oes_vertex_array_object') return current.enableVertexArrays();
       return name === 'webgl_lose_context' ? lost.extension : null;
     }

@@ -64,7 +64,7 @@ function textureAllocationBytes(texture: GPUTexture): number {
   for (let level = 0; level < texture.mipLevelCount; level++) {
     texelsPerLayer += Math.max(1, texture.width >> level) * Math.max(1, texture.height >> level);
   }
-  return texelsPerLayer * texture.depthOrArrayLayers * 4;
+  return texelsPerLayer * texture.depthOrArrayLayers * (texture.format === 'rgba32float' ? 16 : 4);
 }
 
 function aligned(value: number, alignment: number): number {
@@ -164,21 +164,21 @@ export class BrowserHost implements SemanticHost {
     group: GPUBindGroup; vertex: GPUBuffer; fragment: GPUBuffer; encoder: GPUCommandEncoder;
   }>();
   private readonly emptyTextureGroups = new WeakMap<GPUBindGroupLayout, GPUBindGroup>();
-  private programs = new WeakMap<LinkedProgram, {
+  private programs = new WeakMap<LinkedProgram, Map<string, {
     layout: GPUPipelineLayout;
     sampledElements: { type: number; samplerBinding: number; textureBinding: number }[];
     groups: [GPUBindGroupLayout, GPUBindGroupLayout, GPUBindGroupLayout];
     vertex: GPUShaderModule;
     fragment: GPUShaderModule;
     pipelines: Map<string, GPURenderPipeline>;
-  }>();
+  }>>();
   private samplers = new Map<string, GPUSampler>();
   private clearPipelines = new Map<string, GPURenderPipeline>();
   private textures = new Set<GPUTexture>();
   private buffers = new Set<GPUBuffer>();
   private retiredTextures = new Set<GPUTexture>();
-  private driverGroups = new WeakMap<LinkedProgram, Map<string, GPUBindGroup>>();
-  private mipPipeline: GPURenderPipeline | null = null;
+  private driverGroups = new WeakMap<GPUBindGroupLayout, Map<string, GPUBindGroup>>();
+  private mipPipelines = new Map<GPUTextureFormat, GPURenderPipeline>();
   private textureCopyPipeline: GPURenderPipeline | null = null;
   private presentationConfigured = false;
   private lastPresentedTexture: GPUTexture | null = null;
@@ -277,7 +277,7 @@ export class BrowserHost implements SemanticHost {
   private createTexture(width: number, height: number, format: GPUTextureFormat, layers = 1, mipLevelCount = 1): GPUTexture {
     const texture = this.device.createTexture({
       size: { width: Math.max(1, width), height: Math.max(1, height), depthOrArrayLayers: layers }, format, mipLevelCount,
-      usage: format === "rgba8unorm" ? TEXTURE_USAGE : GPUTextureUsage.RENDER_ATTACHMENT,
+      usage: format === "rgba8unorm" || format === "rgba32float" ? TEXTURE_USAGE : GPUTextureUsage.RENDER_ATTACHMENT,
     });
     this.textures.add(texture);
     this.stats.allocatedTextureBytes += textureAllocationBytes(texture);
@@ -330,10 +330,11 @@ export class BrowserHost implements SemanticHost {
     x = 0, y = 0, layer = 0): void {
     if (!width || !height) return;
     this.endPass();
-    const bytesPerRow = aligned(width * 4, 256);
+    const rowBytes = width * (texture.format === "rgba32float" ? 16 : 4);
+    const bytesPerRow = aligned(rowBytes, 256);
     const staging = new Uint8Array(bytesPerRow * height);
     for (let row = 0; row < height; row++) {
-      staging.set(data.subarray(row * width * 4, (row + 1) * width * 4), row * bytesPerRow);
+      staging.set(data.subarray(row * rowBytes, (row + 1) * rowBytes), row * bytesPerRow);
     }
     const buffer = this.createBuffer(staging, GPUBufferUsage.COPY_SRC, true);
     this.getEncoder().copyBufferToTexture({ buffer, bytesPerRow },
@@ -345,7 +346,7 @@ export class BrowserHost implements SemanticHost {
   private materializeTexture(storage: TextureStorage): GPUTexture {
     let texture = this.textureCache.get(storage);
     if (texture) return texture;
-    texture = this.createTexture(storage.width, storage.height, "rgba8unorm");
+    texture = this.createTexture(storage.width, storage.height, storage.texelFormat ?? "rgba8unorm");
     this.textureCache.set(storage, texture);
     if (storage.parent) {
       const parent = this.materializeTexture(storage.parent);
@@ -439,7 +440,8 @@ export class BrowserHost implements SemanticHost {
 
   private downsampleTexture(source: GPUTexture, destination: GPUTexture): void {
     this.endPass();
-    if (!this.mipPipeline) {
+    let pipeline = this.mipPipelines.get(destination.format);
+    if (!pipeline) {
       const module = this.device.createShaderModule({ code: `
         @group(0) @binding(0) var source : texture_2d<f32>;
         @vertex fn vertex(@builtin(vertex_index) index : u32) -> @builtin(position) vec4f {
@@ -454,19 +456,23 @@ export class BrowserHost implements SemanticHost {
             + textureLoad(source, min(origin + vec2i(0,1), limit), 0)
             + textureLoad(source, min(origin + vec2i(1,1), limit), 0)) * 0.25;
         }` });
-      this.mipPipeline = this.device.createRenderPipeline({ layout: 'auto',
+      const sourceLayout = this.device.createBindGroupLayout({ entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+      ] });
+      pipeline = this.device.createRenderPipeline({ layout: this.device.createPipelineLayout({ bindGroupLayouts: [sourceLayout] }),
         vertex: { module, entryPoint: 'vertex' },
-        fragment: { module, entryPoint: 'fragment', targets: [{ format: 'rgba8unorm' }] },
+        fragment: { module, entryPoint: 'fragment', targets: [{ format: destination.format }] },
       });
+      this.mipPipelines.set(destination.format, pipeline);
       this.stats.pipelines++;
     }
-    const group = this.device.createBindGroup({ layout: this.mipPipeline.getBindGroupLayout(0),
+    const group = this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: source.createView() }],
     });
     const pass = this.getEncoder().beginRenderPass({ colorAttachments: [{
       view: destination.createView(), loadOp: 'clear', storeOp: 'store',
     }] });
-    pass.setPipeline(this.mipPipeline);
+    pass.setPipeline(pipeline);
     pass.setBindGroup(0, group);
     pass.draw(3);
     pass.end();
@@ -496,7 +502,7 @@ export class BrowserHost implements SemanticHost {
       return this.materializeTexture(image);
     });
     this.endPass();
-    const texture = this.createTexture(first.width, first.height, 'rgba8unorm', layers, levels);
+    const texture = this.createTexture(first.width, first.height, first.texelFormat ?? 'rgba8unorm', layers, levels);
     for (const [index, source] of sources.entries()) {
       const mipLevel = Math.floor(index / layers);
       this.getEncoder().copyTextureToTexture({ texture: source },
@@ -626,8 +632,13 @@ export class BrowserHost implements SemanticHost {
     }
   }
 
-  private programResources(program: LinkedProgram) {
-    let resources = this.programs.get(program);
+  private programResources(program: LinkedProgram, textures: DrawOperation['textures']) {
+    const floatSlots = textures.map(binding =>
+      (binding.storage ?? binding.mipImages?.[0] ?? binding.cubeFaces?.[0])?.texelFormat === 'rgba32float');
+    const key = floatSlots.map(value => value ? '1' : '0').join('');
+    let variants = this.programs.get(program);
+    if (!variants) { variants = new Map(); this.programs.set(program, variants); }
+    let resources = variants.get(key);
     if (resources) return resources;
     const uniformLayout = this.device.createBindGroupLayout({ entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } },
@@ -637,12 +648,12 @@ export class BrowserHost implements SemanticHost {
     const sampledElements = program.samplers.flatMap(sampler => Array.from({ length: sampler.size }, (_, i) => ({
       type: sampler.type, samplerBinding: sampler.samplerBinding + i * 2, textureBinding: sampler.textureBinding + i * 2,
     })));
-    for (const sampler of sampledElements) {
+    for (const [index, sampler] of sampledElements.entries()) {
       textureEntries.push({ binding: sampler.samplerBinding,
-        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } });
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, sampler: { type: floatSlots[index] ? "non-filtering" : "filtering" } });
       textureEntries.push({ binding: sampler.textureBinding,
         visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-        texture: { sampleType: "float", viewDimension: sampler.type === GL.SAMPLER_CUBE ? 'cube' : '2d' } });
+        texture: { sampleType: floatSlots[index] ? "unfilterable-float" : "float", viewDimension: sampler.type === GL.SAMPLER_CUBE ? 'cube' : '2d' } });
     }
     const textureLayout = this.device.createBindGroupLayout({ entries: textureEntries });
     const driverLayout = this.device.createBindGroupLayout({ entries: [
@@ -655,7 +666,7 @@ export class BrowserHost implements SemanticHost {
       vertex: this.device.createShaderModule({ code: program.vertexWGSL }),
       fragment: this.device.createShaderModule({ code: program.fragmentWGSL }),
       pipelines: new Map<string, GPURenderPipeline>() };
-    this.programs.set(program, resources);
+    variants.set(key, resources);
     return resources;
   }
 
@@ -774,7 +785,7 @@ export class BrowserHost implements SemanticHost {
     const maxFloat = 3.4028234663852886e38;
     const depthBiasSlopeScale = biasEnabled
       ? Math.max(-maxFloat, Math.min(maxFloat, state.polygonOffsetFactor || 0)) : 0;
-    const resources = this.programResources(program);
+    const resources = this.programResources(program, operation.textures);
     const stencil = state.stencilTest && targetHasStencil(target) ? {
       stencilFront: stencilFace(state.stencilFront), stencilBack: stencilFace(state.stencilBack),
       stencilReadMask: state.stencilFront.valueMask & 0xff, stencilWriteMask: state.stencilFront.writeMask & 0xff,
@@ -840,8 +851,8 @@ export class BrowserHost implements SemanticHost {
       if (!textureEntries.length) this.emptyTextureGroups.set(textureLayout, textureGroup);
     }
     const driverKey = JSON.stringify([target.width, target.height, state.depthRange, points ? [width, height] : null]);
-    let driverCache = this.driverGroups.get(program);
-    if (!driverCache) { driverCache = new Map(); this.driverGroups.set(program, driverCache); }
+    let driverCache = this.driverGroups.get(resources.groups[2]);
+    if (!driverCache) { driverCache = new Map(); this.driverGroups.set(resources.groups[2], driverCache); }
     let driverGroup = driverCache.get(driverKey);
     if (!driverGroup) {
       const data = new ArrayBuffer(Math.max(32, program.driverUniformBufferSize));

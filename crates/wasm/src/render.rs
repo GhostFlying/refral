@@ -9,6 +9,11 @@ use serde_json::{json, Value};
 const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
 
 #[no_mangle]
+pub extern "C" fn rf_float_texture_protocol_version() -> u32 {
+    1
+}
+
+#[no_mangle]
 pub extern "C" fn rf_vertex_array_protocol_version() -> u32 {
     1
 }
@@ -197,6 +202,7 @@ fn argument(value: &Value, bytes: &[u8], allocation_failed: &mut bool) -> Option
         let view = match value.get("viewType")?.as_str()? {
             "Uint8Array" | "Uint8ClampedArray" => PixelView::U8,
             "Uint16Array" => PixelView::U16,
+            "Float32Array" => PixelView::F32,
             _ => PixelView::Other,
         };
         let mut data = Vec::new();

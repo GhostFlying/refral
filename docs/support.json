@@ -2387,6 +2387,58 @@
       }
     },
     {
+      "id": "float-texture-sampling",
+      "api": "OES_texture_float, FLOAT texImage2D and texSubImage2D, float texture sampler completeness",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Full Float32Array and normalized DOM source uploads in all five base formats, null initialization, owned subimages, 2D and cube nearest sampling including mip levels, optional activation and context restoration.",
+          "tests": [
+            "tests/core/float-textures.ts",
+            "tests/chrome/float-textures.spec.ts",
+            "sdk/tests/conformance/extensions/oes-texture-float.html",
+            "sdk/tests/conformance/extensions/oes-texture-float-with-canvas.html",
+            "sdk/tests/conformance/extensions/oes-texture-float-with-image-data.html",
+            "sdk/tests/conformance/extensions/oes-texture-float-with-image.html",
+            "sdk/tests/conformance/extensions/oes-texture-float-with-video.html",
+            "sdk/tests/conformance/extensions/oes-texture-float-linear.html",
+            "sdk/tests/conformance/offscreencanvas/context-lost-restored-worker.html"
+          ],
+          "evidence": [
+            "docs/tasks/084-float-textures.md",
+            "artifacts/conformance/campaign/float-textures-on-main/js/results.json"
+          ],
+          "unsupportedBehavior": "FLOAT uploads generate INVALID_ENUM before extension activation. OES_texture_float_linear and WEBGL_color_buffer_float are unavailable. Float attachments are incomplete and linear filtering uses incomplete-texture sampling."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Full Float32Array and normalized DOM source uploads in all five base formats, null initialization, owned subimages, 2D and cube nearest sampling including mip levels, optional activation and context restoration.",
+          "tests": [
+            "tests/core/float-textures.ts",
+            "tests/chrome/float-textures.spec.ts",
+            "sdk/tests/conformance/extensions/oes-texture-float.html",
+            "sdk/tests/conformance/extensions/oes-texture-float-with-canvas.html",
+            "sdk/tests/conformance/extensions/oes-texture-float-with-image-data.html",
+            "sdk/tests/conformance/extensions/oes-texture-float-with-image.html",
+            "sdk/tests/conformance/extensions/oes-texture-float-with-video.html",
+            "sdk/tests/conformance/extensions/oes-texture-float-linear.html",
+            "sdk/tests/conformance/offscreencanvas/context-lost-restored-worker.html"
+          ],
+          "evidence": [
+            "docs/tasks/084-float-textures.md",
+            "artifacts/conformance/campaign/float-textures-on-main/rust/results.json"
+          ],
+          "unsupportedBehavior": "FLOAT uploads generate INVALID_ENUM before extension activation. OES_texture_float_linear and WEBGL_color_buffer_float are unavailable. Float attachments are incomplete and linear filtering uses incomplete-texture sampling."
+        }
+      }
+    },
+    {
       "id": "vertex-array-objects",
       "api": "OES_vertex_array_object, VERTEX_ARRAY_BINDING_OES, createVertexArrayOES, bindVertexArrayOES, deleteVertexArrayOES, isVertexArrayOES",
       "cores": {

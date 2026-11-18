@@ -104,8 +104,9 @@ pub(super) fn encode(output: &mut Vec<u8>, operations: &[ResourceOperation]) {
                 width,
                 height,
                 data,
+                float_texels,
             } => {
-                u32_value(output, 1);
+                u32_value(output, if *float_texels { 8 } else { 1 });
                 version(output, *next);
                 u32_value(output, *width);
                 u32_value(output, *height);

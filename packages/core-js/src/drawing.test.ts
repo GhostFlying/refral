@@ -1,3 +1,4 @@
+import { checkFloatTextureStorage } from '../../../tests/core/float-textures';
 import { checkVertexArrayOwnership } from '../../../tests/core/vertex-arrays';
 import { checkPrimitiveDraws } from "../../../tests/core/primitive-draw-contract";
 import { describe, expect, it, vi } from "vitest";
@@ -46,7 +47,7 @@ function createContext() {
     profile: { vertexAttributes: 4, vertexUniformVectors: 128, fragmentUniformVectors: 64,
       varyingVectors: 8, vertexTextureUnits: 4, fragmentTextureUnits: 4, combinedTextureUnits: 4 },
   }, { host, compiler: registry, resources });
-  return { core, host, registry, release, dispose };
+  return { core, host, registry, release, dispose, resources };
 }
 
 function createLinkedProgram(core: DrawingCore) {
@@ -64,6 +65,11 @@ function createLinkedProgram(core: DrawingCore) {
 }
 
 describe("JS DrawingCore logical boundary", () => {
+  it('retains full-precision float texture updates through the resource transport', () => {
+    const { core, resources } = createContext();
+    try { checkFloatTextureStorage(core, resources); } finally { core.dispose(); }
+  });
+
   it('retains buffer storage for an unbound vertex array and rejects stale names', () => {
     checkVertexArrayOwnership(createContext().core);
   });

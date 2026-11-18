@@ -74,6 +74,7 @@ impl From<BufferHandle> for ObjectHandle {
 pub enum PixelView {
     U8,
     U16,
+    F32,
     Other,
 }
 

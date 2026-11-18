@@ -349,7 +349,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
           throw new TypeError('Invalid texture upload source marker.');
         }
         const bytes =
-          upload.viewType === 'Uint8Array' || upload.viewType === 'Uint8ClampedArray' || upload.viewType === 'Uint16Array'
+          upload.viewType === 'Uint8Array' || upload.viewType === 'Uint8ClampedArray' || upload.viewType === 'Uint16Array' || upload.viewType === 'Float32Array'
             ? upload.bytes
             : new Uint8Array();
         return { p: [append(bytes), bytes.byteLength], viewType: upload.viewType, source: upload.source };
@@ -442,10 +442,11 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
         continue;
       }
       const version = textureVersion(reader);
-      if (kind === 1) {
+      if (kind === 1 || kind === 8) {
         const width = reader.u32();
         const height = reader.u32();
-        services.resources.apply({ kind: 'define-texture', version, width, height, data: pixels() });
+        services.resources.apply({ kind: 'define-texture', version, width, height, data: pixels(),
+          ...(kind === 8 && { texelFormat: 'rgba32float' as const }) });
       } else if (kind === 2) {
         const previous = textureVersion(reader);
         const x = reader.u32();
@@ -814,6 +815,10 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       return { flipY: values[0] === 1, premultiplyAlpha: values[1] === 1, colorSpaceConversion: values[2]! };
     },
     invoke(operation: string, args: unknown[]): unknown {
+      if (operation === 'supportsFloatTextures') {
+        const version = exports.rf_float_texture_protocol_version;
+        return typeof version === 'function' && version() === 1;
+      }
       if (operation === 'supportsVertexArrayObjects') {
         const version = exports.rf_vertex_array_protocol_version;
         return typeof version === 'function' && version() === 1;

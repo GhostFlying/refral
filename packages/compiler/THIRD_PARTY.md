@@ -25,3 +25,5 @@ The webgl1-double-underscore patch permits consecutive underscores in identifier
 - `patches/wgsl-point-primitives.patch` maps the ESSL fragment point coordinate into ANGLE's private input and emits separate WebGL1 shader entries for instanced point quads. The vertex entry reads the reserved WebGL1 driver uniform words for viewport size and writes sprite coordinates above the eight advertised varying locations. The normal entries preserve the existing shader path.
 
 - `patches/wgsl-expression-statements.patch` preserves ESSL expression-statement side effects with WGSL discard assignments.
+
+- `patches/wgsl-nonvoid-fallthrough.patch` uses ANGLE’s typed default-return pass to make non-void WGSL return paths exhaustive.

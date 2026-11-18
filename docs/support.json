@@ -208,8 +208,9 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "ANGLE Wasm handles ESSL100 vertex/fragment compilation, including user identifiers containing consecutive underscores, and reports real diagnostics. Differential verifies a missing identifier fails with a nonempty log.",
+          "coverage": "ANGLE Wasm handles ESSL100 vertex/fragment compilation, including user identifiers containing consecutive underscores, and reports real diagnostics. Differential verifies a missing identifier fails with a nonempty log. Original rendering verifies discarded expression side effects, conditional non-void returns and expression-valued component writes.",
           "tests": [
+            "tests/chrome/compiler.spec.ts::ESSL expression and function side effects survive WGSL lowering",
             "tests/chrome/differential.spec.ts::WebGL1 differential relink-and-errors",
             "tests/chrome/compiler.spec.ts::ANGLE Wasm compiles ESSL corpus and WebGPU accepts linked WGSL",
             "tests/chrome/cts.spec.ts::sdk/tests/conformance/glsl/misc/shader-with-invalid-identifier.frag.html",
@@ -265,8 +266,9 @@
         },
         "rust": {
           "status": "cts-verified",
-          "coverage": "ESSL100 compile status/logs and exact DOMString source, including invalid shader diagnostics. Shared ANGLE service with Rust-owned lifecycle.",
+          "coverage": "ESSL100 compile status/logs and exact DOMString source, including invalid shader diagnostics. Shared ANGLE service with Rust-owned lifecycle. Original rendering verifies discarded expression side effects, conditional non-void returns and expression-valued component writes.",
           "tests": [
+            "tests/chrome/compiler.spec.ts::ESSL expression and function side effects survive WGSL lowering",
             "tests/chrome/cts.spec.ts::pinned Khronos CTS cases execute original assertions"
           ],
           "evidence": [

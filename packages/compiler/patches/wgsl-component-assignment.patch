@@ -1,0 +1,112 @@
+--- a/src/compiler/translator/wgsl/WGSLProgramPrelude.h
++++ b/src/compiler/translator/wgsl/WGSLProgramPrelude.h
+@@ -30,3 +30,5 @@
+
+-    WGSLWrapperFunction assign(const TType &dest, const TType &src, TOperator op);
++    // For a vector component, dest is the enclosing vector and root supplies its address space.
++    WGSLWrapperFunction assign(const TType &dest, const TType &src, TOperator op,
++                               const TType *componentRoot = nullptr);
+
+@@ -54,2 +56,3 @@
+         TOperator op;
++        bool component;
+
+@@ -57,3 +60,4 @@
+         {
+-            return std::tie(dest, src, op) < std::tie(other.dest, other.src, other.op);
++            return std::tie(dest, src, op, component) <
++                   std::tie(other.dest, other.src, other.op, other.component);
+         }
+--- a/src/compiler/translator/wgsl/WGSLProgramPrelude.cpp
++++ b/src/compiler/translator/wgsl/WGSLProgramPrelude.cpp
+@@ -180,7 +180,9 @@
+
+-WGSLWrapperFunction WGSLProgramPrelude::assign(const TType &dest, const TType &src, TOperator op)
++WGSLWrapperFunction WGSLProgramPrelude::assign(const TType &dest, const TType &src, TOperator op,
++                                               const TType *componentRoot)
+ {
+-    uint64_t uniqueId = InsertIntoMapWithUniqueId(mUniqueFuncId, mAssigned, {dest, src, op});
++    uint64_t uniqueId = InsertIntoMapWithUniqueId(mUniqueFuncId, mAssigned,
++                                                  {dest, src, op, componentRoot != nullptr});
+
+-    switch (GetWgslAddressSpaceForPointer(dest))
++    switch (GetWgslAddressSpaceForPointer(componentRoot ? *componentRoot : dest))
+     {
+@@ -319,5 +321,14 @@
+             sink << "fn " << funcName << "(dest : ptr<" << addressSpace << ", " << destTypeStr.str()
+-                 << ">, src : " << srcTypeStr.str() << ") -> " << destTypeStr.str() << "  {\n";
+-            sink << "  *dest " << GetOperatorString(assigned.first.op) << " src;\n";
+-            sink << "  return *dest;\n";
++                 << (assigned.first.component ? ">, index : u32, src : " : ">, src : ")
++                 << srcTypeStr.str() << ") -> "
++                 << (assigned.first.component ? srcTypeStr.str() : destTypeStr.str()) << "  {\n";
++            const char *lvalue = assigned.first.component ? "(*dest)[index]" : "*dest";
++            const TOperator op = assigned.first.op;
++            const bool postfix = op == EOpPostIncrement || op == EOpPostDecrement;
++            const char *operation = op == EOpPreIncrement || op == EOpPostIncrement ? "+=" :
++                                    op == EOpPreDecrement || op == EOpPostDecrement ? "-=" :
++                                    GetOperatorString(op);
++            if (postfix) sink << "  let previous = " << lvalue << ";\n";
++            sink << "  " << lvalue << " " << operation << " src;\n";
++            sink << "  return " << (postfix ? "previous" : lvalue) << ";\n";
+             sink << "}\n";
+--- a/src/compiler/translator/wgsl/TranslatorWGSL.cpp
++++ b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
+@@ -220,2 +220,3 @@
+     void emitArrayIndex(TIntermTyped &leftNode, TIntermTyped &rightNode);
++    bool emitComponentWrite(TIntermTyped *left, TOperator op, TIntermTyped *right);
+     void emitStructIndex(TIntermBinary *binaryNode);
+@@ -1256,2 +1257,40 @@
+     WriteNameOf(mSink, getDirectField(leftNode, rightNode), kUserVariableNamePrefix);
++}
++
++// A component is writable in WGSL but cannot be a pointer operand. Pass its
++// containing vector by reference and evaluate the index and RHS once by value.
++bool OutputWGSLTraverser::emitComponentWrite(TIntermTyped *left, TOperator op, TIntermTyped *right)
++{
++    TIntermSwizzle *swizzle = left->getAsSwizzleNode();
++    TIntermBinary *index = left->getAsBinaryNode();
++    TIntermTyped *vector = nullptr;
++    if (swizzle && swizzle->getSwizzleOffsets().size() == 1) {
++      vector = swizzle->getOperand();
++    } else if (index && (index->getOp() == EOpIndexDirect || index->getOp() == EOpIndexIndirect) &&
++               index->getLeft()->getType().isVector()) {
++      vector = index->getLeft();
++    } else {
++      return false;
++    }
++    const TType &root = FindRootVariable(vector)->getType();
++    const WGSLWrapperFunction fn =
++        mPrelude->assign(vector->getType(), right ? right->getType() : left->getType(), op, &root);
++    mSink << fn.prefix;
++    groupedTraverse(*vector);
++    mSink << ", ";
++    if (swizzle) {
++      mSink << swizzle->getSwizzleOffsets()[0] << "u";
++    } else {
++      mSink << "u32(clamp(i32(";
++      index->getRight()->traverse(this);
++      mSink << "), 0, " << static_cast<unsigned int>(vector->getNominalSize() - 1) << "))";
++    }
++    mSink << ", ";
++    if (right) {
++      right->traverse(this);
++    } else {
++      mSink << "1";
++    }
++    mSink << fn.suffix;
++    return true;
+ }
+@@ -1260,2 +1299,6 @@
+ {
++    if (binaryNode->isAssignment() && !isStatement(binaryNode) &&
++        emitComponentWrite(binaryNode->getLeft(), binaryNode->getOp(), binaryNode->getRight())) {
++      return false;
++    }
+     const TOperator op      = binaryNode->getOp();
+@@ -1331,2 +1374,5 @@
+     const TOperator op      = unaryNode->getOp();
++    if (unaryNode->isAssignment() && emitComponentWrite(unaryNode->getOperand(), op, nullptr)) {
++      return false;
++    }
+     const TType &resultType = unaryNode->getType();

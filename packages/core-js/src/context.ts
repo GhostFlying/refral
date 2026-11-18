@@ -788,6 +788,12 @@ export class SemanticContext {
       [GL.TEXTURE_WRAP_T]: texture.parameters.wrapT };
     if (parameter in values) return values[parameter]; this.error(GL.INVALID_ENUM); return null;
   }
+  compressedTexImage2D(target: number): void {
+    const texture = this.boundImageTexture(target);
+    if (texture !== undefined) this.error(texture === null ? GL.INVALID_OPERATION : GL.INVALID_ENUM);
+  }
+  compressedTexSubImage2D(target: number): void { this.compressedTexImage2D(target); }
+
   private allocatePixels(width: number, height: number): Uint8Array | null {
     try { return new Uint8Array(width * height * 4); }
     catch { this.error(GL.OUT_OF_MEMORY); return null; }
@@ -1415,6 +1421,7 @@ export class SemanticContext {
 
   getParameter(parameter: number): unknown {
     if (this.lost) return null;
+    if (parameter === GL.COMPRESSED_TEXTURE_FORMATS) return new Uint32Array(0);
     if (parameter === GL.IMPLEMENTATION_COLOR_READ_FORMAT || parameter === GL.IMPLEMENTATION_COLOR_READ_TYPE) {
       if (this.checkFramebufferStatus(GL.FRAMEBUFFER) !== GL.FRAMEBUFFER_COMPLETE) {
         this.error(GL.INVALID_OPERATION);

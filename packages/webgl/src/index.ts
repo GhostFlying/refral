@@ -64,7 +64,8 @@ function wrapContext(canvas: HTMLCanvasElement, host: BrowserHost,
   const bufferFacade = createBufferFacade(core);
   const programFacade = createProgramFacade(core);
   const resourceFacade = createResourceFacade(core,
-    (source, width, height, plan) => host.captureDomCanvas(source, width, height, plan));
+    (source, width, height, plan) => host.captureDomCanvas(source, width, height, plan),
+    ('ownerDocument' in canvas ? canvas.ownerDocument.defaultView?.TypeError : undefined) ?? TypeError);
   const unregisterSource = registerCanvasSource(canvas, {
     prepare: () => host.prepareCanvasSource(), isLost: () => core.isContextLost(),
   });

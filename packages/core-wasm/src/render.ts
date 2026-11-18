@@ -862,6 +862,8 @@ export function createRustDrawingCoreFromModule(
       }
       if (operation === 'getParameter' && args[0] === GL.VIEWPORT && value instanceof Float32Array)
         return new Int32Array(value);
+      if (operation === 'getParameter' && args[0] === GL.COMPRESSED_TEXTURE_FORMATS && value instanceof Int32Array)
+        return new Uint32Array(value);
       return value === null && !operation.startsWith('get') && !operation.startsWith('create')
         ? undefined
         : value;

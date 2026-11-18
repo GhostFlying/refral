@@ -39,6 +39,12 @@ function pixels(value: unknown): PixelUpload | null {
   return { bytes: new Uint8Array(canonical.buffer), viewType };
 }
 
+// No compressed format is enabled. Validate the required view without sending unused bytes to Wasm.
+function compressedByteLength(source: unknown, ErrorType: TypeErrorConstructor): number {
+  if (!ArrayBuffer.isView(source)) throw new ErrorType('Compressed texture data requires an ArrayBufferView.');
+  return bufferSourceBytes(source, true, ErrorType).byteLength;
+}
+
 export function isResourceBinding(parameter: number): boolean {
   return parameter === GL.TEXTURE_BINDING_2D || parameter === GL.TEXTURE_BINDING_CUBE_MAP
     || parameter === GL.FRAMEBUFFER_BINDING
@@ -46,7 +52,8 @@ export function isResourceBinding(parameter: number): boolean {
 }
 
 /** New resource wrappers and pixel-view conversion stay at the shared facade. */
-export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCapture) {
+export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCapture,
+  ErrorType: TypeErrorConstructor = TypeError) {
   const wrappers = new Map<string, object>();
   const domUploads = createDomTextureUploads(core, captureCanvas);
   function wrap(value: unknown): object | null {
@@ -69,7 +76,7 @@ export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCap
   function method(name: string, minimum: number, normalize: (args: unknown[]) => unknown[],
     result: (value: unknown, args: unknown[]) => unknown = value => value) {
     methods[name] = (...args) => {
-      requireArguments(name, args, minimum);
+      requireArguments(name, args, minimum, ErrorType);
       const normalized = normalize(args);
       return result(core.invoke(name, normalized), normalized);
     };
@@ -94,6 +101,10 @@ export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCap
   method('texParameterf', 3, args => [toEnum(args[0]), toEnum(args[1]), float(args[2])]);
   method('pixelStorei', 2, args => [toEnum(args[0]), integer(args[1])]);
   method('getTexParameter', 2, args => [toEnum(args[0]), toEnum(args[1])]);
+  method('compressedTexImage2D', 7, args => [toEnum(args[0]), integer(args[1]), toEnum(args[2]),
+    integer(args[3]), integer(args[4]), integer(args[5]), compressedByteLength(args[6], ErrorType)]);
+  method('compressedTexSubImage2D', 8, args => [toEnum(args[0]), integer(args[1]), integer(args[2]),
+    integer(args[3]), integer(args[4]), integer(args[5]), toEnum(args[6]), compressedByteLength(args[7], ErrorType)]);
   methods.texImage2D = (...args) => {
     requireArguments('texImage2D', args, 6);
     if (args.length === 6) return domUploads.upload({

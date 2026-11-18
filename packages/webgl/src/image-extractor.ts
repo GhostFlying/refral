@@ -1,6 +1,6 @@
 import type { DomTextureUploadPlan, PixelUpload } from '@refral/core-api';
 
-/** Private native upload preserves decoded image RGB, including zero-alpha values and ICC NONE. */
+/** Private native upload captures decoded images and current video frames with WebGL unpack rules. */
 export class ImageExtractor {
   private readonly gl: WebGLRenderingContext;
   private readonly texture: WebGLTexture;
@@ -48,7 +48,7 @@ export class ImageExtractor {
   private dimension(horizontal: boolean, guess: number): number {
     const contains = (coordinate: number) => this.contains(horizontal ? coordinate : 0, horizontal ? 0 : coordinate);
     if (guess > 0 && contains(guess - 1) && !contains(guess)) return guess;
-    // Density-corrected natural sizes and SVG element sizes can differ from uploaded storage.
+    // Density-corrected image sizes and the display extent of a video can differ from uploaded storage.
     let lower = 0;
     let upper = this.limit;
     while (lower < upper) {
@@ -59,13 +59,13 @@ export class ImageExtractor {
     return lower;
   }
 
-  capture(image: HTMLImageElement, guessWidth: number, guessHeight: number, plan: DomTextureUploadPlan) {
+  capture(source: HTMLImageElement | HTMLVideoElement, guessWidth: number, guessHeight: number, plan: DomTextureUploadPlan) {
     const gl = this.gl;
     this.check();
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, Number(plan.flipY));
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, Number(plan.premultiplyAlpha));
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, plan.colorSpaceConversion);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
     const error = gl.getError();
     const unavailable = { width: 0, height: 0,
       pixels: (): PixelUpload => ({ bytes: new Uint8Array(0), viewType: 'Uint8Array', source: 'dom-converted' }) };

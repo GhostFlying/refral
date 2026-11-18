@@ -1040,7 +1040,7 @@
             "HTMLImage extraction requires a private native WebGL context at runtime, accepted in ADR008.",
             "ImageData acceptance is unorm8 sRGB with five UNSIGNED_BYTE formats. Canvas/image acceptance is RGBA/UNSIGNED_BYTE level zero, with sRGB Canvas encoding.",
             "Refral source ordering/loss coordination uses the same loaded facade module. Independent module/realm Refral sources and unregistered native WebGL source loss have pending acceptance.",
-            "Wide-gamut/HDR Canvas, additional ImageData encodings, ImageBitmap/video and mipmaps retain compatibility tasks."
+            "Wide-gamut/HDR Canvas, additional ImageData encodings, ImageBitmap, VideoFrame and mipmaps retain compatibility tasks. See texture-video-source for HTMLVideoElement."
           ],
           "unsupportedBehavior": "Invalid supported inputs produce WebIDL exceptions, SecurityError or core GL errors before destination mutation. Additional ImageData encodings and unavailable native image extraction report explicit capability errors. Other unaccepted source combinations are scoped by these limits."
         },
@@ -1154,9 +1154,57 @@
             "HTMLImage extraction requires a private native WebGL context at runtime, accepted in ADR008.",
             "ImageData acceptance is unorm8 sRGB with five UNSIGNED_BYTE formats. Canvas/image acceptance is RGBA/UNSIGNED_BYTE level zero, with sRGB Canvas encoding.",
             "Refral source ordering/loss coordination uses the same loaded facade module. Independent module/realm Refral sources and unregistered native WebGL source loss have pending acceptance.",
-            "Wide-gamut/HDR Canvas, additional ImageData encodings, ImageBitmap/video and mipmaps retain compatibility tasks."
+            "Wide-gamut/HDR Canvas, additional ImageData encodings, ImageBitmap, VideoFrame and mipmaps retain compatibility tasks. See texture-video-source for HTMLVideoElement."
           ],
           "unsupportedBehavior": "Invalid supported inputs produce WebIDL exceptions, SecurityError or core GL errors before destination mutation. Additional ImageData encodings and unavailable native image extraction report explicit capability errors. Other unaccepted source combinations are scoped by these limits."
+        }
+      }
+    },
+    {
+      "id": "texture-video-source",
+      "api": "texImage2D and texSubImage2D HTMLVideoElement overloads",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": ["chrome-macos-arm64"],
+          "coverage": "Current-frame definitions and subimages, unsigned-byte and packed outputs, rotation and non-square pixels, alpha, flip, unpack conversion, intrinsic dimensions, CORS and ordered snapshots.",
+          "tests": [
+            "tests/chrome/video-upload.spec.ts",
+            "sdk/tests/conformance/textures/video/tex-2d-rgba-rgba-unsigned_byte.html",
+            "sdk/tests/conformance/textures/misc/texture-corner-case-videos.html",
+            "sdk/tests/conformance/textures/misc/texture-video-transparent.html",
+            "sdk/tests/conformance/textures/misc/video-rotation.html"
+          ],
+          "evidence": [
+            { "path": "artifacts/video-upload/public/result.json", "passed": true },
+            { "path": "artifacts/video-upload/official/js/results.json", "passed": true, "originalFiles": 13, "assertions": 557 }
+          ],
+          "limits": [
+            "Synchronous native WebGL extraction and RGBA readback are required. Decoder availability depends on Chrome and installed media support.",
+            "The original format cases exercise the default upload color-space path. The unpackColorSpace property, WebCodecs VideoFrame and ImageBitmap have separate scope."
+          ],
+          "unsupportedBehavior": "Unavailable frames produce INVALID_VALUE. Origin violations throw SecurityError. Unavailable native extraction reports NotSupportedError."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": ["chrome-macos-arm64"],
+          "coverage": "Current-frame definitions and subimages, unsigned-byte and packed outputs, rotation and non-square pixels, alpha, flip, unpack conversion, intrinsic dimensions, CORS and ordered snapshots.",
+          "tests": [
+            "tests/chrome/video-upload.spec.ts",
+            "sdk/tests/conformance/textures/video/tex-2d-rgba-rgba-unsigned_byte.html",
+            "sdk/tests/conformance/textures/misc/texture-corner-case-videos.html",
+            "sdk/tests/conformance/textures/misc/texture-video-transparent.html",
+            "sdk/tests/conformance/textures/misc/video-rotation.html"
+          ],
+          "evidence": [
+            { "path": "artifacts/video-upload/public/result.json", "passed": true },
+            { "path": "artifacts/video-upload/official/rust/results.json", "passed": true, "originalFiles": 13, "assertions": 557 }
+          ],
+          "limits": [
+            "Synchronous native WebGL extraction and RGBA readback are required. Decoder availability depends on Chrome and installed media support.",
+            "The original format cases exercise the default upload color-space path. The unpackColorSpace property, WebCodecs VideoFrame and ImageBitmap have separate scope."
+          ],
+          "unsupportedBehavior": "Unavailable frames produce INVALID_VALUE. Origin violations throw SecurityError. Unavailable native extraction reports NotSupportedError."
         }
       }
     },

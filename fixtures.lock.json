@@ -31,7 +31,8 @@
       "sdk/tests/js/tests/tex-image-and-sub-image-2d-with-image-data.js",
       "sdk/tests/js/tests/tex-image-and-sub-image-2d-with-canvas.js",
       "sdk/tests/js/tests/tex-image-and-sub-image-2d-with-image.js",
-      "sdk/tests/resources/red-green.png"
+      "sdk/tests/resources/red-green.png",
+      "sdk/tests/resources/transparent-2frames.webm"
     ],
     "specifications": [
       "specs/latest/1.0/index.html",

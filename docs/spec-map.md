@@ -1,5 +1,11 @@
 # Specification and verification map
 
+## HTMLVideoElement upload assertions
+
+Task050 maps the WebGL1 DOM overloads to the current decoded video frame. The uploaded frame determines the definition or update extent. Chrome reports INVALID_VALUE for a missing frame and can retain an uploadable frame at HAVE_METADATA after playback ends. Native extraction tests decoder availability directly. Cross-origin video without CORS permission throws SecurityError before texture mutation. [Pinned overload and origin rules](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#ORIGIN_RESTRICTIONS), [frame sizing](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#TEXTURE_UPLOAD_SIZE), [media readiness](https://html.spec.whatwg.org/multipage/media.html#ready-states)
+
+The source starts at its upper-left corner unless UNPACK_FLIP_Y_WEBGL reverses row order. UNPACK_PREMULTIPLY_ALPHA_WEBGL applies the source alpha once. NONE preserves the source RGB encoding after YUV-to-RGB conversion. The upload consumes the current frame synchronously. Later playback or seeking cannot change an earlier texture version. Destination checks use the same level, format, face, extent, and storage rules as other DOM sources. [Pinned pixel storage rules](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#PIXEL_STORAGE_PARAMETERS), [pinned video generator](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/sdk/tests/js/tests/tex-image-and-sub-image-2d-with-video.js)
+
 ## CubeMap texture and sampler assertions
 
 Tasks034–037 follow pinned GLES2.0.25 sections2.10.4–5,3.7.1–4,3.7.10–13 and the pinned WebGL texture/query/uniform rules. First successful binding fixes texture target. Each unit independently retains TEXTURE_2D and TEXTURE_CUBE_MAP. Binding/parameter targets use the whole cube, while image APIs use one face. Invalid target types and rejected object rebinding preserve prior state.

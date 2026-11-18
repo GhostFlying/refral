@@ -98,8 +98,8 @@ export async function probeResourceJoin(device: GPUDevice, bridge: CanvasReadbac
       const samples = Number(new BigUint64Array(count.getMappedRange())[0]);
       count.unmap();
       const reference = draw ? expectedSamples(words[0]!) : 0;
-      // WebGPU allows a binary occlusion result in place of the exact count.
-      if (draw ? samples !== 1 && samples !== reference : samples !== 0) throw new Error('Occlusion result mismatch.');
+      // WebGPU only guarantees a nonzero result if at least one sample passed.
+      if ((samples !== 0) !== (reference !== 0)) throw new Error('Occlusion result mismatch.');
       observations.push({ draw, bytes, samples, reference });
     }
     return observations;

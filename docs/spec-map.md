@@ -210,3 +210,7 @@ Task 061 exposes the existing WebGL1 factory for an OffscreenCanvas owned by the
 ## Dedicated worker canvas and messages
 
 Task 064 uses an OffscreenCanvas's owning worker and navigator GPU adapter for its WebGL state and drawing buffer. Structured serialization copies an input at postMessage time and detaches transferred buffers immediately. The dedicated worker executes its original classic entry with worker-relative importScripts resolution. Each context record comes from that worker's own core. [HTML dedicated workers](https://html.spec.whatwg.org/multipage/workers.html#dedicated-workers-and-the-worker-interface) · [HTML transferable objects](https://html.spec.whatwg.org/multipage/structured-data.html#transferable-objects)
+
+## Synchronous canvas image observation
+
+The WebGL1 drawing buffer is the image source for same-task Canvas2D drawing and canvas serialization. Task 066 publishes default color writes in GL call order. When premultipliedAlpha is false the compositor consumes the product of stored color and alpha. GL pixel reads retain the unmultiplied RGBA8 values. At small nonzero alpha the browser host uses a floating-point presentation surface to retain channel precision through export. [WebGL drawing buffer](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#THE_DRAWING_BUFFER)

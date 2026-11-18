@@ -31,7 +31,7 @@ The JS implementation lives in `packages/core-js`. Shared contracts cover Buffer
 
 ## Initial execution
 
-Use a single owner thread. Schedule automatic submission at the current task's microtask checkpoint, and submit explicitly on `flush`. Uniform and resource updates preserve the values observed by earlier draws. GPU work holds resource references through submission.
+Use a single owner thread. Publish default framebuffer color writes before returning so synchronous DOM consumers see the current canvas. Offscreen framebuffer work can batch until the microtask checkpoint or an explicit `flush`. Per-task staging and cache retirement still run at those checkpoints. Uniform and resource updates preserve the values observed by earlier draws. GPU work holds resource references through submission.
 
 ## Synchronous readback
 

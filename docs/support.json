@@ -2194,14 +2194,14 @@
     },
     {
       "id": "automatic-submission",
-      "api": "automatic microtask submission and flush",
+      "api": "default framebuffer publication, automatic microtask submission and flush",
       "cores": {
         "js": {
           "status": "differential-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Draws outside rAF and inside rAF submit automatically. Explicit flush works with pending drawing.",
+          "coverage": "Default-buffer color clears and draws publish in time for same-task DOM canvas consumers. FBO draws and uploads use microtask submission, and flush submits pending work.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential automatic-submit",
             "tests/chrome/dual-core-drawing.spec.ts"
@@ -2222,7 +2222,7 @@
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "Microtask submission inside and outside requestAnimationFrame, explicit flush and presented canvas pixels. Common host encoding/submission follows each Rust-owned draw snapshot.",
+          "coverage": "The common host publishes Rust-owned default-buffer clear/draw results for same-task DOM image consumers. FBO work can batch until microtask submission or explicit flush.",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",

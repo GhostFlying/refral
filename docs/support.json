@@ -80,14 +80,16 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Explicit asynchronous WebGL1 factory. Differential fixtures request alpha=false, depth=true, stencil=false, antialias=false, preserveDrawingBuffer=true. Same-thread OffscreenCanvas supports drawing and use of the registered canvas as a texture source. A dedicated Worker can use the async factory on a transferred OffscreenCanvas, with independent GPU drawing and readback.",
+          "coverage": "Explicit asynchronous WebGL1 factory. Differential fixtures request alpha=false, depth=true, stencil=false, antialias=false, preserveDrawingBuffer=true. Same-thread OffscreenCanvas supports drawing and use of the registered canvas as a texture source. A dedicated Worker can use the async factory on a transferred OffscreenCanvas, with independent GPU drawing and readback. A nonpreserved transferred OffscreenCanvas discards its color, depth and stencil after an observed placeholder presentation. Standalone canvases retain these attachments.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/offscreen-context.spec.ts",
             "tests/chrome/worker-context.spec.ts",
             "sdk/tests/conformance/offscreencanvas/context-creation-worker.html",
-            "sdk/tests/conformance/offscreencanvas/context-creation.html"
+            "sdk/tests/conformance/offscreencanvas/context-creation.html",
+            "tests/chrome/offscreen-discard.spec.ts",
+            "sdk/tests/conformance/offscreencanvas/context-attribute-preserve-drawing-buffer.html"
           ],
           "evidence": [
             {
@@ -99,19 +101,22 @@
             {
               "path": "artifacts/conformance/campaign/window-offscreen/js/results.json",
               "passed": true
+            },
+            {
+              "path": "artifacts/offscreen-discard/worker-visible/results.json",
+              "passed": true
             }
           ],
           "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "limits": [
             "WebGL-like structural context identity",
             "Antialias is reported false",
-            "Stencil context requests raise NotSupportedError",
-            "preserveDrawingBuffer defaults to false; post-composite DOM source observations are documented under acceptedDifferences."
+            "The transferred OffscreenCanvas discard probe is verified on Chrome 158 Metal. Ambiguous texture expiry preserves the attachments. The accepted HTML post-composite drawImage difference is listed under acceptedDifferences."
           ]
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "Explicit async factory selects Rust, initializes one semantic instance, and returns recorded requested attributes. Shared drawing scenes use alpha=false, depth=true, stencil=false, antialias=false and DPR1. Same-thread OffscreenCanvas supports drawing and use of the registered canvas as a texture source. A dedicated Worker can use the async factory on a transferred OffscreenCanvas, with independent GPU drawing and readback.",
+          "coverage": "Explicit async factory selects Rust, initializes one semantic instance, and returns recorded requested attributes. Shared drawing scenes use alpha=false, depth=true, stencil=false, antialias=false and DPR1. Same-thread OffscreenCanvas supports drawing and use of the registered canvas as a texture source. A dedicated Worker can use the async factory on a transferred OffscreenCanvas, with independent GPU drawing and readback. A nonpreserved transferred OffscreenCanvas discards its color, depth and stencil after an observed placeholder presentation. Standalone canvases retain these attachments.",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
@@ -119,7 +124,9 @@
             "tests/chrome/offscreen-context.spec.ts",
             "tests/chrome/worker-context.spec.ts",
             "sdk/tests/conformance/offscreencanvas/context-creation-worker.html",
-            "sdk/tests/conformance/offscreencanvas/context-creation.html"
+            "sdk/tests/conformance/offscreencanvas/context-creation.html",
+            "tests/chrome/offscreen-discard.spec.ts",
+            "sdk/tests/conformance/offscreencanvas/context-attribute-preserve-drawing-buffer.html"
           ],
           "evidence": [
             {
@@ -133,11 +140,16 @@
             {
               "path": "artifacts/conformance/campaign/window-offscreen/rust/results.json",
               "passed": true
+            },
+            {
+              "path": "artifacts/offscreen-discard/worker-visible/results.json",
+              "passed": true
             }
           ],
           "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
           "limits": [
-            "See buffer-lifecycle-contract for the independently verified common Buffer scope."
+            "See buffer-lifecycle-contract for the independently verified common Buffer scope.",
+            "The transferred OffscreenCanvas discard probe is verified on Chrome 158 Metal. Ambiguous texture expiry preserves the attachments. The accepted HTML post-composite drawImage difference is listed under acceptedDifferences."
           ]
         }
       }

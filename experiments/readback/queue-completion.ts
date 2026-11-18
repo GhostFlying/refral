@@ -19,7 +19,7 @@ export async function measureQueueCompletion() {
   const errors: string[] = [];
   device.addEventListener('uncapturederror', event => errors.push(event.error.message));
   const stats: HostStats = { draws: 0, passes: 0, submits: 0, copies: 0, uploadedBytes: 0, pipelines: 0,
-    bindGroups: 0, allocatedBufferBytes: 0, allocatedTextureBytes: 0, peakAllocatedBufferBytes: 0, peakAllocatedTextureBytes: 0 };
+    bindGroups: 0, offscreenDiscardProbes: 0, offscreenDiscards: 0, offscreenDiscardIndeterminate: 0, allocatedBufferBytes: 0, allocatedTextureBytes: 0, peakAllocatedBufferBytes: 0, peakAllocatedTextureBytes: 0 };
   const bridge = new CanvasReadback(device, stats);
   const usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST;
   const target = device.createTexture({ size: [256, 256], format: 'rgba8unorm', usage });

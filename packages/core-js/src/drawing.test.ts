@@ -1,15 +1,17 @@
 import { checkFloatTextureStorage } from '../../../tests/core/float-textures';
 import { checkVertexArrayOwnership } from '../../../tests/core/vertex-arrays';
-import { checkPrimitiveDraws } from "../../../tests/core/primitive-draw-contract";
+import { checkMatrixColumnDraws, checkPrimitiveDraws } from "../../../tests/core/primitive-draw-contract";
 import { describe, expect, it, vi } from "vitest";
 import { allocateContextId, GL, ExecutionResources } from "@refral/core-api";
 import type {
-  BufferHandle, Compiler, DrawingCore, ProgramHandle, SemanticHost, ShaderHandle, UniformLocationHandle,
+  BufferHandle, Compiler, DrawingCore, LinkedProgram, ProgramHandle, SemanticHost, ShaderHandle, UniformLocationHandle,
 } from "@refral/core-api";
 import { createCompilerRegistry } from "@refral/compiler";
 import { createJsDrawingCore } from "./drawing.js";
 
-function createContext() {
+function createContext(attributes: LinkedProgram['attributes'] = [
+  { name: 'a_position', type: GL.FLOAT_VEC2, size: 1, location: 0 },
+]) {
   const host = {
     limits: { maxTextureDimension2D: 4096, maxBufferSize: 4096 },
     draw: vi.fn<SemanticHost["draw"]>(), clear: vi.fn<SemanticHost["clear"]>(),
@@ -29,7 +31,7 @@ function createContext() {
         success: vertex.success && fragment.success, log: "",
         vertexWGSL: `vertex-${nextExecutable++}`, fragmentWGSL: "fragment",
         vertexEntryPoint: "main", fragmentEntryPoint: "main",
-        attributes: [{ name: "a_position", type: GL.FLOAT_VEC2, size: 1, location: 0 }],
+        attributes,
         uniforms: [{ name: "u_color", type: GL.FLOAT_VEC4, size: 1, vertexOffset: 0, fragmentOffset: 0,
           arrayStride: 0, matrixStride: 0 }], samplers: [],
         vertexUniformBufferSize: 16, fragmentUniformBufferSize: 16, driverUniformBufferSize: 32,
@@ -74,6 +76,13 @@ describe("JS DrawingCore logical boundary", () => {
     checkVertexArrayOwnership(createContext().core);
   });
 
+  it("validates every matrix column and snapshots its generic attribute state", () => {
+    const { core, host } = createContext([{ name: "matrix", type: GL.FLOAT_MAT3, size: 1, location: 1 }]);
+    try {
+      core.invoke("useProgram", [createLinkedProgram(core).program]);
+      checkMatrixColumnDraws(core, () => host.draw.mock.calls.map(([draw]) => draw));
+    } finally { core.dispose(); }
+  });
   it("plans line and fan draws with WebGL1 culling and index validation", () => {
     const { core, host } = createContext();
     try {

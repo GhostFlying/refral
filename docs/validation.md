@@ -55,7 +55,7 @@ Tracked peak buffer capacities were 17,280 bytes for uniform/state scenes and 41
 
 ## Initial profile and continued work
 
-The runtime advertises eight attribute locations, single sampling, stencil disabled, and retained drawing-buffer contents through `preserveDrawingBuffer = true`. Its actual attributes and compiler resource limits share a fixed profile. Matrix attribute reflection/link locations are verified, while matrix-attribute draws produce an explicit profile diagnostic.
+The runtime advertises eight attribute locations, single sampling, stencil disabled, and retained drawing-buffer contents through `preserveDrawingBuffer = true`. Its actual attributes and compiler resource limits share a fixed profile. Task 089 verifies matrix attribute reflection, link locations and physical column reads in actual draws.
 
 Synchronous GPU readback, mip generation, additional primitive types, complex sampler/uniform layouts, expanded context attributes, full recovery, and broader CTS coverage are follow-up capabilities. DOM image uploads and non-default pixelStore combinations have implementation paths with unverified coverage recorded in the support matrix.
 

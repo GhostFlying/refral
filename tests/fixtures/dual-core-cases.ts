@@ -3,7 +3,7 @@ import { programCaseNames } from './case-names';
 
 export const dualCoreCaseNames = [
   'float-uniform-setters', 'indexed-update-u8', 'indexed-update-u16', 'upload-view-snapshot',
-  'attribute-layout-and-constants', 'buffer-reallocation-and-delete', 'resize-attribute-size',
+  'attribute-layout-and-constants', 'matrix-attribute-columns', 'buffer-reallocation-and-delete', 'resize-attribute-size',
   'automatic-submit-and-flush', 'viewport-clear-regions', 'draw-validation-state',
   'triangle-strip-modes', 'line-and-fan-modes', 'polygon-offset-and-samples', 'point-sprites', 'integer-vertex-attributes', 'enabled-array-validation', 'location-name-validation',
   'retained-deletion-and-retirement', ...programCaseNames,
@@ -67,6 +67,7 @@ function regions(name: DrawingCaseName): PixelRegion[] {
     case 'retained-deletion-and-retirement':
       return [band(0, 32, red), band(32, 32, green)];
     case 'attribute-layout-and-constants':
+    case 'matrix-attribute-columns':
       return [band(0, 32, [255, 0, 255, 255]), band(32, 32, [0, 255, 255, 255])];
     case 'automatic-submit-and-flush':
       return [band(0, 16, red), band(16, 16, green), band(32, 32, blue)];
@@ -421,6 +422,35 @@ async function execute(name: DrawingCaseName, gl: WebGLRenderingContext, canvas:
       draw(0, 0, 1);
       break;
     }
+    case 'matrix-attribute-columns': {
+      const base = gl.getAttribLocation(program, 'a_color');
+      check('matrix base location', base, 1);
+      const active = Array.from({ length: gl.getProgramParameter(program, gl.ACTIVE_ATTRIBUTES) as number },
+        (_, index) => gl.getActiveAttrib(program, index)).find(attribute => attribute?.name === 'a_color');
+      check('matrix reflection type and size', [active?.type, active?.size], [gl.FLOAT_MAT3, 1]);
+      const columns = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, columns);
+      const bytes = new Uint8Array(6 * 8);
+      for (let vertex = 0; vertex < 6; vertex++) bytes.set([255, 0, 0, 0, 0, 255], vertex * 8 + 1);
+      gl.bufferData(gl.ARRAY_BUFFER, bytes, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(base);
+      gl.vertexAttribPointer(base, 3, gl.UNSIGNED_BYTE, true, 8, 1);
+      gl.vertexAttrib3f(base + 1, 0, 0, 0);
+      gl.enableVertexAttribArray(base + 2);
+      gl.vertexAttribPointer(base + 2, 3, gl.UNSIGNED_BYTE, true, 8, 4);
+      check('third column buffer', gl.getVertexAttrib(base + 2, gl.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) === columns, true);
+      check('third column offset', gl.getVertexAttribOffset(base + 2, gl.VERTEX_ATTRIB_ARRAY_POINTER), 4);
+      gl.viewport(0, 0, 32, 64);
+      expectError('independent buffered and constant columns', () => gl.drawArrays(gl.TRIANGLES, 0, 6), gl.NO_ERROR);
+      gl.disableVertexAttribArray(base);
+      gl.vertexAttrib3f(base, 0, 0, 0);
+      gl.vertexAttrib3f(base + 1, 0, 1, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint8Array([255, 0, 1, 2, 3, 4, 5]), gl.STATIC_DRAW);
+      gl.viewport(32, 0, 32, 64);
+      expectError('indexed draw with new column values', () => gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_BYTE, 1), gl.NO_ERROR);
+      break;
+    }
     case 'attribute-layout-and-constants': {
       const interleaved = new Float32Array(24);
       for (let index = 0; index < 6; index++) interleaved.set([90, quad[index * 2]!, quad[index * 2 + 1]!, 91], index * 4);
@@ -640,6 +670,11 @@ export async function runDrawingCase(name: DrawingCaseName, backend: DrawingBack
       else if (gl_PointCoord.y < .5) gl_FragColor = gl_PointCoord.x < .5 ? vec4(1.,0.,0.,1.) : vec4(0.,1.,0.,1.);
       else gl_FragColor = gl_PointCoord.x < .5 ? vec4(0.,0.,1.,1.) : vec4(1.,1.,0.,1.);
     }`;
+  }
+  if (name === 'matrix-attribute-columns') {
+    shaders.vertex = `attribute vec2 a_position; attribute mat3 a_color; varying vec4 v_color;
+      void main() { gl_Position = vec4(a_position, 0., 1.); v_color = vec4(a_color[0].x, a_color[1].y, a_color[2].z, 1.); }`;
+    shaders.fragment = colorsFragment;
   }
   if (name === 'float-uniform-setters') shaders.fragment = uniformsFragment;
   if (name === 'attribute-layout-and-constants' || name === 'integer-vertex-attributes') {

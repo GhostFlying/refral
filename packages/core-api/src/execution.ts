@@ -44,6 +44,7 @@ export interface TextureParameters {
   wrapT: number;
 }
 
+/** One physical vertex location. Each matrix column supplies its own vector input. */
 export interface AttributeSnapshot {
   location: number;
   shaderType: number;

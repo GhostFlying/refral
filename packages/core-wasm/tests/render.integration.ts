@@ -1484,7 +1484,7 @@ describe('CubeMap resource5 protocol', () => {
     } finally { core.dispose(); }
   });
 
-  it('rejects cube objects as 2D FBO images and diagnoses legal cube attachments without mutation', () => {
+  it('rejects cube objects as 2D FBO images and queries legal cube attachments', () => {
     const { core } = setup();
     try {
       const twoD = bind(core, GL.TEXTURE_2D);
@@ -1495,11 +1495,14 @@ describe('CubeMap resource5 protocol', () => {
       core.invoke('framebufferTexture2D', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, twoD, 0]);
       core.invoke('framebufferTexture2D', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, cube, 0]);
       expect(core.getError()).toBe(GL.INVALID_OPERATION);
-      expect(() => core.invoke('framebufferTexture2D', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, CUBE_FACES[0], cube, 0]))
-        .toThrow('cube framebuffer attachments');
-      expect(core.getError()).toBe(GL.NO_ERROR);
       expect(core.invoke('getFramebufferAttachmentParameter', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0,
         GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME])).toEqual(twoD);
+      core.invoke('framebufferTexture2D', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, CUBE_FACES[0], cube, 0]);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      expect(core.invoke('getFramebufferAttachmentParameter', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0,
+        GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME])).toEqual(cube);
+      expect(core.invoke('getFramebufferAttachmentParameter', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0,
+        GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE])).toBe(CUBE_FACES[0]);
       core.invoke('framebufferTexture2D', [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, CUBE_FACES[0], null, 0]);
       expect(core.invoke('checkFramebufferStatus', [GL.FRAMEBUFFER])).toBe(GL.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT);
     } finally { core.dispose(); }

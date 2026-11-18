@@ -329,17 +329,18 @@ describe("JS CubeMap image and sampling semantics", () => {
     expect(core.invoke("getParameter", [GL.TEXTURE_BINDING_CUBE_MAP])).toBe(replacement);
   });
 
-  it("rejects cube objects as 2D attachments and diagnoses valid cube attachments outside the profile", () => {
+  it("queries the identity and face of a valid cube attachment", () => {
     const { core } = createContext();
     const cube = defineCube(core);
     const framebuffer = core.invoke("createFramebuffer", []);
     core.invoke("bindFramebuffer", [GL.FRAMEBUFFER, framebuffer]);
     core.invoke("framebufferTexture2D", [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, cube, 0]);
     expect(core.getError()).toBe(GL.INVALID_OPERATION);
-    expect(() => core.invoke("framebufferTexture2D", [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, CUBE_FACES[0], cube, 0]))
-      .toThrow(/cube framebuffer attachment/);
+    core.invoke("framebufferTexture2D", [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, CUBE_FACES[0], cube, 0]);
     expect(core.invoke("getFramebufferAttachmentParameter", [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0,
-      GL.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE])).toBe(GL.NONE);
+      GL.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE])).toBe(GL.TEXTURE);
+    expect(core.invoke("getFramebufferAttachmentParameter", [GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0,
+      GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE])).toBe(CUBE_FACES[0]);
     expect(core.getError()).toBe(GL.NO_ERROR);
   });
 });

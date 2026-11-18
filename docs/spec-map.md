@@ -153,3 +153,7 @@ Task 043 follows GLES 2.0.25 sections 3.7.1–3.7.2, 3.7.7–3.7.10 and 3.8.2. A
 ## Ordered mipmap generation
 
 Task 044 follows GLES 2.0.25 section 3.7.11 and the pinned WebGL1 generateMipmap clause. Validate the target and binding, positive power-of-two base dimensions and cube completeness. Derive levels 1 through q from level zero with the same logical format/type and replace existing images in that range. The shared host uses box reduction. Every derived image reads its predecessor at the point of the GL command, including prior framebuffer writes. [GLES 2.0.25 mipmap generation](https://registry.khronos.org/OpenGL/specs/es/2.0/es_full_spec_2.0.pdf#page=94)
+
+## Cube face framebuffer attachments
+
+Task 045 applies GLES 2.0.25 sections 4.4.3 and 4.4.5 and WebGL1's cube map attachment completeness rule. A level-zero RGBA face is identified by its texture and cube target. All six base faces must have matching square images for the attachment to be complete. Mipmap and sampler completeness are independent. Changing the face preserves the texture reference and content outside the selected image. The query returns the attached face enum, and writes version that single canonical image. Feedback checks retain the texture object identity across cube faces. [Pinned cube map attachment rule](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#L4543-L4549) · [GLES 2.0.25](https://registry.khronos.org/OpenGL/specs/es/2.0/es_full_spec_2.0.pdf)

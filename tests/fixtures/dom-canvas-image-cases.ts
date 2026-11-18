@@ -12,6 +12,8 @@ export const domCanvasImageCaseNames = [
   'intrinsic-and-cross-realm',
   'invalid-and-security-sources',
   'icc-color-space',
+  'bitmap-options-and-lifetime',
+  'bitmap-security-and-colorspace',
 ] as const;
 export type DomCanvasImageCaseName = typeof domCanvasImageCaseNames[number];
 
@@ -24,6 +26,7 @@ export const domCanvasImageSourceReferences = {
   pixelStore: 'https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#PIXEL_STORAGE_PARAMETERS',
   originalCanvasGenerator: 'https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/sdk/tests/js/tests/tex-image-and-sub-image-2d-with-canvas.js',
   originalImageGenerator: 'https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/sdk/tests/js/tests/tex-image-and-sub-image-2d-with-image.js',
+  imageBitmap: 'https://html.spec.whatwg.org/multipage/imagebitmap-and-animations.html#imagebitmap',
 };
 
 export interface DomCanvasImageAssets {
@@ -119,7 +122,7 @@ function upload(gl: WebGLRenderingContext, source: unknown, subImage = false, ta
 
 function capture(gl: WebGLRenderingContext, result: DomCanvasImageResult, check: CheckValue,
   name: string, expected: number[] | null, width = 4, height = 2,
-  nativeExpectation: 'native-browser-colorspace' | 'native-source-alpha' = 'native-browser-colorspace'): void {
+  nativeExpectation: 'native-browser-colorspace' | 'native-source-alpha' = 'native-browser-colorspace'): number[] {
   check(`${name} preceding GL error`, gl.getError(), gl.NO_ERROR);
   const destination = new Uint8Array(width * height * 4);
   gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, destination);
@@ -128,6 +131,7 @@ function capture(gl: WebGLRenderingContext, result: DomCanvasImageResult, check:
   if (expected) check(`${name} exact bytes`, actual, expected);
   result.captures.push({ name, width, height, pixels: actual, expected: expected?.slice() ?? null,
     expectation: expected ? 'specification' : nativeExpectation });
+  return actual;
 }
 
 function exception(operation: () => unknown): string | null {
@@ -495,6 +499,110 @@ async function icc(gl: WebGLRenderingContext, assets: DomCanvasImageAssets,
   result.observations.defaultColorSpaceExpectation = 'Current browser-selected ICC conversion is compared byte-exactly with the public native backend.';
 }
 
+async function bitmapOptions(gl: WebGLRenderingContext, result: DomCanvasImageResult, check: CheckValue): Promise<void> {
+  const iframe = document.createElement('iframe');
+  document.body.append(iframe);
+  const bitmaps: ImageBitmap[] = [];
+  try {
+    const data = new ImageData(new Uint8ClampedArray(domCanvasImagePalette), 4, 2);
+    const first = await iframe.contentWindow!.createImageBitmap(data, {
+      imageOrientation: 'flipY', premultiplyAlpha: 'none', colorSpaceConversion: 'none',
+    });
+    bitmaps.push(first);
+    check('cross-realm bitmap intrinsic dimensions', [first.width, first.height], [4, 2]);
+    Object.defineProperties(first, { width: { value: 1 }, height: { value: 1 } });
+    const second = await createImageBitmap(data, { premultiplyAlpha: 'premultiply', colorSpaceConversion: 'none' });
+    bitmaps.push(second);
+    const transferred = structuredClone(second, { transfer: [second] });
+    bitmaps.push(transferred);
+    check('transferring detaches the source', [second.width, second.height], [0, 0]);
+    data.data.fill(0);
+
+    const program = rttProgram(gl, undefined, rttTextureFragment);
+    gl.uniform1i(gl.getUniformLocation(program, 'u_texture'), 0);
+    makeTexture(gl);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 8);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1);
+    upload(gl, first);
+    check('bitmap definition', gl.getError(), gl.NO_ERROR);
+    first.close();
+    gl.viewport(0, 0, 4, 2);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    for (const [name, detached] of [['closed', first], ['transferred', second]] as const) {
+      for (const subImage of [false, true]) {
+        upload(gl, detached, subImage);
+        check(`${name} bitmap subimage ${subImage}`, gl.getError(), gl.INVALID_VALUE);
+      }
+    }
+
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
+    upload(gl, transferred, true);
+    check('subimage from transferred receiver', gl.getError(), gl.NO_ERROR);
+    transferred.close();
+    gl.viewport(4, 0, 4, 2);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    capture(gl, result, check, 'ordered draws retain bitmap orientation and alpha',
+      horizontal(transform(domCanvasImagePalette, 4, 2, true, false),
+        transform(domCanvasImagePalette, 4, 2, false, true)), 8, 2);
+
+    const cropped = await createImageBitmap(new ImageData(new Uint8ClampedArray(domCanvasImagePalette), 4, 2),
+      3, 0, 1, 1, { resizeWidth: 2, resizeHeight: 1, premultiplyAlpha: 'none' });
+    bitmaps.push(cropped);
+    check('cropped and resized bitmap dimensions', [cropped.width, cropped.height], [2, 1]);
+    const texture = makeTexture(gl);
+    attach(gl, texture);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 3, 1, gl.RGBA, gl.UNSIGNED_BYTE, cropped);
+    check('bitmap subimage bounds include resized width', gl.getError(), gl.INVALID_VALUE);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 2, 1, gl.RGBA, gl.UNSIGNED_BYTE, cropped);
+    capture(gl, result, check, 'cropped bitmap upload uses destination offsets',
+      [...pixels(2, 2, [0, 0, 0, 0]), ...pixels(2, 1, [0, 0, 0, 0]),
+        ...pixels(2, 1, domCanvasImagePalette.slice(12, 16))]);
+  } finally {
+    for (const bitmap of bitmaps) bitmap.close();
+    iframe.remove();
+  }
+}
+
+async function bitmapSecurity(gl: WebGLRenderingContext, assets: DomCanvasImageAssets,
+  result: DomCanvasImageResult, check: CheckValue): Promise<void> {
+  const texture = makeTexture(gl);
+  attach(gl, texture);
+  for (const subImage of [false, true]) {
+    const fake = { width: 4, height: 2, [Symbol.toStringTag]: 'ImageBitmap' };
+    check(`forged bitmap subimage ${subImage}`, exception(() => upload(gl, fake, subImage)), 'TypeError');
+    check(`forged bitmap adds no GL error ${subImage}`, gl.getError(), gl.NO_ERROR);
+  }
+
+  const inputs = [
+    { name: 'tainted', image: await loadImage(assets.crossOriginPng) },
+    { name: 'cors', image: await loadImage(assets.corsPng, { cors: true }) },
+    { name: 'icc', image: await loadImage(assets.profilePng) },
+  ];
+  for (const { name, image } of inputs) {
+    const bitmap = await createImageBitmap(image, { premultiplyAlpha: 'none' });
+    try {
+      for (const subImage of [false, true]) {
+        if (name === 'tainted') {
+          check(`tainted bitmap subimage ${subImage}`, exception(() => upload(gl, bitmap, subImage)), 'SecurityError');
+          capture(gl, result, check, `tainted bitmap leaves destination intact ${subImage}`, pixels(4, 2, [0, 0, 0, 0]));
+        } else if (name === 'cors') {
+          upload(gl, bitmap, subImage);
+          capture(gl, result, check, `CORS bitmap subimage ${subImage}`, domCanvasImagePalette);
+        } else {
+          const [none, defaultConversion] = [gl.NONE, gl.BROWSER_DEFAULT_WEBGL].map(conversion => {
+            gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, conversion);
+            upload(gl, bitmap, subImage);
+            return capture(gl, result, check, `ICC bitmap subimage ${subImage} conversion ${conversion}`, null);
+          });
+          check(`legacy colorspace flag is ignored for bitmap subimage ${subImage}`, none, defaultConversion);
+        }
+      }
+    } finally { bitmap.close(); }
+  }
+}
+
 async function packedFormats(gl: WebGLRenderingContext, assets: DomCanvasImageAssets,
   result: DomCanvasImageResult, check: CheckValue): Promise<void> {
   const image = await loadImage(assets.palettePng);
@@ -592,6 +700,8 @@ export async function runDomCanvasImageCase(name: DomCanvasImageCaseName, backen
       case 'intrinsic-and-cross-realm': await brands(gl, assets, result, check); break;
       case 'invalid-and-security-sources': await invalid(context, assets, result, check); break;
       case 'icc-color-space': await icc(gl, assets, result, check); break;
+      case 'bitmap-options-and-lifetime': await bitmapOptions(gl, result, check); break;
+      case 'bitmap-security-and-colorspace': await bitmapSecurity(gl, assets, result, check); break;
     }
     check('no trailing GL error', gl.getError(), gl.NO_ERROR);
   } catch (error) {

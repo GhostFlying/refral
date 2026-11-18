@@ -1,6 +1,13 @@
 import type { DomTextureUploadPlan, PixelUpload } from '@refral/core-api';
 
-/** Private native upload captures decoded images and current video frames with WebGL unpack rules. */
+export type NativeUploadSource = HTMLImageElement | HTMLVideoElement | ImageBitmap;
+export interface NativeUploadExtent {
+  width: number;
+  height: number;
+  exact: boolean;
+}
+
+/** Private native upload captures decoded images, bitmaps and current frames with WebGL unpack rules. */
 export class ImageExtractor {
   private readonly gl: WebGLRenderingContext;
   private readonly texture: WebGLTexture;
@@ -59,7 +66,7 @@ export class ImageExtractor {
     return lower;
   }
 
-  capture(source: HTMLImageElement | HTMLVideoElement, guessWidth: number, guessHeight: number, plan: DomTextureUploadPlan) {
+  capture(source: NativeUploadSource, extent: NativeUploadExtent, plan: DomTextureUploadPlan) {
     const gl = this.gl;
     this.check();
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, Number(plan.flipY));
@@ -72,8 +79,8 @@ export class ImageExtractor {
     if (error === gl.INVALID_VALUE) return unavailable;
     this.check(error);
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) return unavailable;
-    const width = this.dimension(true, guessWidth);
-    const height = this.dimension(false, guessHeight);
+    const width = extent.exact ? extent.width : this.dimension(true, extent.width);
+    const height = extent.exact ? extent.height : this.dimension(false, extent.height);
     this.check();
     return { width, height, pixels: (): PixelUpload => {
       const bytes = new Uint8Array(width * height * 4);

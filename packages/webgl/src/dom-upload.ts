@@ -2,8 +2,9 @@ import { GL } from '@refral/core-api';
 import type { DomTextureUploadPlan, DomTextureUploadRequest, DrawingCore, PixelUpload } from '@refral/core-api';
 import { bufferSourceBytes } from './buffers.js';
 import { ImageExtractor } from './image-extractor.js';
+import type { NativeUploadExtent, NativeUploadSource } from './image-extractor.js';
 
-type SourceKind = 'image-data' | 'canvas' | 'offscreen-canvas' | 'image' | 'video';
+type SourceKind = 'image-data' | 'canvas' | 'offscreen-canvas' | 'image' | 'video' | 'bitmap';
 interface SourceType {
   kind: SourceKind;
   getters: Record<string, PropertyDescriptor>;
@@ -24,6 +25,7 @@ for (const [kind, prototype] of [
   ['offscreen-canvas', typeof OffscreenCanvas === 'undefined' ? null : OffscreenCanvas.prototype],
   ['image', typeof HTMLImageElement === 'undefined' ? null : HTMLImageElement.prototype],
   ['video', typeof HTMLVideoElement === 'undefined' ? null : HTMLVideoElement.prototype],
+  ['bitmap', typeof ImageBitmap === 'undefined' ? null : ImageBitmap.prototype],
 ] as const) {
   if (prototype) sourceTypes.push({ kind, getters: Object.getOwnPropertyDescriptors(prototype) });
 }
@@ -40,7 +42,7 @@ export function registerCanvasSource(canvas: HTMLCanvasElement, source: CanvasSo
 
 /** Platform getters provide the WebIDL source brand and internal dimensions across realms. */
 function inspectSource(value: unknown,
-  extract: (source: HTMLImageElement | HTMLVideoElement, width: number, height: number) => ReturnType<ImageExtractor['capture']>,
+  extract: (source: NativeUploadSource, extent: NativeUploadExtent) => ReturnType<ImageExtractor['capture']>,
   captureCanvas: (source: HTMLCanvasElement | OffscreenCanvas, width: number, height: number) => Uint8Array,
   validateCanvasOrigin: (source: HTMLCanvasElement | OffscreenCanvas) => void): SourcePixels {
   for (const type of sourceTypes) {
@@ -61,7 +63,7 @@ function inspectSource(value: unknown,
           return { bytes, viewType: 'Uint8Array', source: 'dom' };
         } };
     }
-    if (type.kind === 'image' || type.kind === 'video') {
+    if (type.kind === 'image' || type.kind === 'video' || type.kind === 'bitmap') {
       const isImage = type.kind === 'image';
       if (isImage) {
         width = type.getters.naturalWidth!.get!.call(value);
@@ -69,11 +71,10 @@ function inspectSource(value: unknown,
       }
       let captured: ReturnType<ImageExtractor['capture']>;
       const source: SourcePixels = { width, height,
-        // The decoder can retain a usable frame when HTML media readiness drops.
-        // Let the native video upload determine frame availability.
+        // Detached bitmaps report zero dimensions. Native upload checks video frame availability.
         valid: isImage ? type.getters.complete!.get!.call(value) : width > 0 && height > 0,
         prepare() {
-          captured = extract(value as HTMLImageElement | HTMLVideoElement, width, height);
+          captured = extract(value as NativeUploadSource, { width, height, exact: type.kind === 'bitmap' });
           source.width = captured.width;
           source.height = captured.height;
           source.valid = captured.width > 0 && captured.height > 0;
@@ -118,9 +119,9 @@ export function createDomTextureUploads(core: DrawingCore, captureCanvas: Canvas
       colorSpaceConversion: core.invoke('getParameter', [GL.UNPACK_COLORSPACE_CONVERSION_WEBGL]) as number,
     };
   }
-  function extract(source: HTMLImageElement | HTMLVideoElement, width: number, height: number) {
+  function extract(source: NativeUploadSource, extent: NativeUploadExtent) {
     extractor ??= new ImageExtractor();
-    return extractor.capture(source, width, height, unpackPlan());
+    return extractor.capture(source, extent, unpackPlan());
   }
   return {
     upload(parameters: Omit<DomTextureUploadRequest, 'width' | 'height' | 'sourceValid'>, value: unknown): void {

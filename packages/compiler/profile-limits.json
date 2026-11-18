@@ -1,6 +1,6 @@
 {
   "vertexAttributes": 8,
-  "vertexUniformVectors": 128,
+  "vertexUniformVectors": 256,
   "fragmentUniformVectors": 64,
   "varyingVectors": 8,
   "vertexTextureUnits": 8,

@@ -1,6 +1,7 @@
 import type { Compiler } from "../src/types.js";
 import COMPILER_LIMITS from "../profile-limits.json" with { type: "json" };
 import essl100Shader from "./essl100-shader.json" with { type: "json" };
+import vertexCapacityShaders from "./vertex-capacity-shaders.json" with { type: "json" };
 import structUniformShaders from "./struct-uniform-shaders.json" with { type: "json" };
 import varyingArrayShaders from "./varying-array-shaders.json" with { type: "json" };
 import fragmentOutputShaders from "./fragment-output-shaders.json" with { type: "json" };
@@ -143,8 +144,16 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
     .replace("float gain", "highp float gain"), "fragment");
   const opaqueStruct = compiler.compile("precision mediump float; struct S { sampler2D image; vec4 color; }; uniform S s; void main(){gl_FragColor=s.color+texture2D(s.image,vec2(0.0));}", "fragment");
   const opaqueStructProgram = compiler.link(vertex, opaqueStruct);
+  const fullVertexRows = compiler.compile(vertexCapacityShaders.vertex
+    .replace("PROFILE_ROWS", String(COMPILER_LIMITS.vertexUniformVectors)), "vertex");
+  const fullVertexProgram = compiler.link(fullVertexRows, compiler.compile(vertexCapacityShaders.fragment, "fragment"));
   return [
     ...uniformPackingCases(compiler),
+    { name: "vertex-uniform-full-rows-physical-layout", passed: fullVertexProgram.success &&
+      fullVertexProgram.uniforms.length === 4 && fullVertexProgram.uniforms.every(uniform =>
+        uniform.size === COMPILER_LIMITS.vertexUniformVectors && uniform.arrayStride === 16) &&
+      fullVertexProgram.vertexUniformBufferSize === COMPILER_LIMITS.vertexUniformVectors * 4 * 16,
+      log: fullVertexProgram.log },
     { name: "struct-array-uniform-stage-layouts", passed: structProgram.success && structProgram.uniforms.length === 7 &&
       [structProgram.vertexWGSL, structProgram.fragmentWGSL].every(source => source.includes("struct ANGLE_wrapped_vec2")) &&
       structProgram.vertexUniformBufferSize === 224 && structProgram.fragmentUniformBufferSize === 160 &&

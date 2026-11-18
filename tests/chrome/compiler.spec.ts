@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import essl100Shader from "../../packages/compiler/test/essl100-shader.json" with { type: "json" };
+import compilerLimits from "../../packages/compiler/profile-limits.json" with { type: "json" };
+import vertexCapacityShaders from "../../packages/compiler/test/vertex-capacity-shaders.json" with { type: "json" };
 import structUniformShaders from "../../packages/compiler/test/struct-uniform-shaders.json" with { type: "json" };
 import varyingArrayShaders from "../../packages/compiler/test/varying-array-shaders.json" with { type: "json" };
 import { createHash } from "node:crypto";
@@ -180,6 +182,71 @@ test("ANGLE preserves original CTS gl_FragData array outputs and main return sem
       expect(face.nativeError, `${sample.id} ${face.target}`).toBe(0);
       expect(face.native, `${sample.id} native ${face.target}`).toEqual(face.expected);
       expect(face.webgpu, `${sample.id} WebGPU ${face.target}`).toEqual(face.expected);
+    }
+  }
+});
+
+test("the vertex uniform limit renders the last element of all four packed columns", async ({ page }) => {
+  await page.goto("/packages/compiler/test/browser.html");
+  const result = await page.evaluate(async ({ rows, shaders }) => {
+    const path = "/packages/webgl/src/index.ts";
+    const { createWebGLOnWebGPU, getTestingHooks } = await import(/* @vite-ignore */ path) as typeof import("../../packages/webgl/src/index.js");
+    const reports = [];
+    for (const backend of ["native", "js", "rust"] as const) {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 4;
+      const gl = backend === "native" ? canvas.getContext("webgl", { antialias: false })! :
+        await createWebGLOnWebGPU(canvas, { version: 1, core: backend, antialias: false });
+      const hooks = backend === "native" ? undefined : getTestingHooks(gl);
+      try {
+        const program = gl.createProgram()!;
+        for (const [stage, source] of [[gl.VERTEX_SHADER, shaders.vertex.replace("PROFILE_ROWS", String(rows))],
+                                       [gl.FRAGMENT_SHADER, shaders.fragment]] as const) {
+          const shader = gl.createShader(stage)!;
+          gl.shaderSource(shader, source);
+          gl.compileShader(shader);
+          if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) ?? backend);
+          gl.attachShader(program, shader);
+        }
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? backend);
+        gl.useProgram(program);
+        const rgba = [17, 81, 190, 255];
+        for (const [channel, name] of ["red", "green", "blue", "alpha"].entries()) {
+          const location = gl.getUniformLocation(program, `${name}[${rows - 1}]`);
+          if (!location) throw new Error(`${backend} missing ${name}[${rows - 1}]`);
+          gl.uniform1f(location, rgba[channel]! / 255);
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+        const position = gl.getAttribLocation(program, "position");
+        gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(position);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        const pixel = new Uint8Array(4);
+        gl.readPixels(2, 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        reports.push({ backend, actual: hooks?.core ?? "native", pixel: [...pixel], error: gl.getError(),
+          rows: gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS), maxBindingBytes: hooks?.device.limits.maxUniformBufferBindingSize,
+          diagnostics: hooks?.errors ?? [] });
+      } finally {
+        await hooks?.dispose();
+      }
+    }
+    return reports;
+  }, { rows: compilerLimits.vertexUniformVectors, shaders: vertexCapacityShaders });
+  await mkdir("artifacts/compiler", { recursive: true });
+  await writeFile("artifacts/compiler/vertex-uniform-capacity.json", JSON.stringify(result, null, 2) + "\n");
+  for (const report of result) {
+    expect(report.actual).toBe(report.backend);
+    expect(report.rows).toBeGreaterThanOrEqual(compilerLimits.vertexUniformVectors);
+    if (report.backend !== "native") {
+      expect(report.rows).toBe(compilerLimits.vertexUniformVectors);
+      expect(report.maxBindingBytes).toBeGreaterThanOrEqual(compilerLimits.vertexUniformVectors * 4 * 16);
+    }
+    expect(report.error).toBe(0);
+    expect(report.diagnostics).toEqual([]);
+    for (const [i, expected] of [17, 81, 190, 255].entries()) {
+      expect(Math.abs(report.pixel[i]! - expected), report.backend).toBeLessThanOrEqual(1);
     }
   }
 });

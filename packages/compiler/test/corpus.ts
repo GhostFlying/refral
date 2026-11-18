@@ -1,6 +1,7 @@
 import type { Compiler } from "../src/types.js";
 import COMPILER_LIMITS from "../profile-limits.json" with { type: "json" };
 import essl100Shader from "./essl100-shader.json" with { type: "json" };
+import varyingArrayShaders from "./varying-array-shaders.json" with { type: "json" };
 import fragmentOutputShaders from "./fragment-output-shaders.json" with { type: "json" };
 
 export interface CompilerCaseResult {
@@ -76,7 +77,39 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
   const fragDataReadProgram = compiler.link(ctsCubeVertex, fragDataRead);
   const fragDataOutsideLimit = compiler.compile("precision mediump float; void main(){gl_FragData[1]=vec4(1.0);}", "fragment");
   const mixedFragColorData = compiler.compile("precision mediump float; void main(){gl_FragColor=vec4(1.0);gl_FragData[0]=vec4(1.0);}", "fragment");
+  const varyingArrays = compiler.compile(varyingArrayShaders.vertex, "vertex");
+  const varyingInputs = compiler.compile(varyingArrayShaders.fragment, "fragment");
+  const arrayInterface = compiler.link(varyingArrays, varyingInputs);
+  const scalarInstead = compiler.compile(varyingArrayShaders.fragment
+    .replace("float gain[1]", "float gain").replace("gain[0]", "gain"), "fragment");
+  const extentMismatch = compiler.compile(varyingArrayShaders.fragment
+    .replace("vec2 offsets[2]", "vec2 offsets[3]"), "fragment");
+  const mismatchedShape = compiler.link(varyingArrays, scalarInstead);
+  const mismatchedExtent = compiler.link(varyingArrays, extentMismatch);
+  const tooManyElements = compiler.compile(`varying mat2 basis[${Math.floor(COMPILER_LIMITS.varyingVectors / 2) + 1}];
+    void main() { basis[0]=mat2(1.0); gl_Position=vec4(1.0); }`, "vertex");
+  const fields = (source: string) => new Map([...source.matchAll(
+    /@location\((\d+)\) (ANGLE_varying_\w+) :/g)].map(match => [match[2], match[1]]));
+  const vertexFields = fields(arrayInterface.vertexWGSL);
+  const fragmentFields = fields(arrayInterface.fragmentWGSL);
   return [
+    { name: "varying-arrays-matching-stage-locations", passed: arrayInterface.success &&
+      vertexFields.size === 7 && fragmentFields.size === 7 && new Set(vertexFields.values()).size === 7 &&
+      [...vertexFields].every(([name, location]) => fragmentFields.get(name) === location),
+      log: arrayInterface.log },
+    { name: "varying-matrix-array-column-transfer", passed: arrayInterface.success &&
+      [0, 1].every(element => [0, 1].every(column => {
+        const field = `ANGLE_varying__ubasis_${element}_${column}`;
+        const member = `_ubasis[${element}][${column}]`;
+        return arrayInterface.vertexWGSL.includes(`ANGLE_output_annotated.${field} = ANGLE_output_global.${member};`) &&
+          arrayInterface.fragmentWGSL.includes(`ANGLE_input_global.${member} = ANGLE_input_annotated.${field};`);
+      })), log: arrayInterface.log },
+    { name: "varying-array-scalar-and-extent-mismatch", passed: scalarInstead.success && extentMismatch.success &&
+      !mismatchedShape.success && mismatchedShape.log.includes("gain") &&
+      !mismatchedExtent.success && mismatchedExtent.log.includes("offsets"),
+      log: [mismatchedShape.log, mismatchedExtent.log].join("\n") },
+    { name: "varying-array-declared-extent-limit", passed: !tooManyElements.success &&
+      tooManyElements.log.includes("MAX_VARYING_VECTORS"), log: tooManyElements.log },
     { name: "essl100-vertex", passed: vertex.success, log: vertex.log },
     { name: "essl100-fragment", passed: fragment.success, log: fragment.log },
     { name: "essl100-link", passed: linked.success && !linked.vertexWGSL.includes("@@@@@@") && !linked.fragmentWGSL.includes("@@@@@@"), log: linked.log },

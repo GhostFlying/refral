@@ -69,6 +69,7 @@ void WriteVariable(std::ostream& output, const sh::ShaderVariable& variable,
          << ",\"mappedName\":" << Quote(variable.mappedName)
          << ",\"type\":" << variable.type
          << ",\"size\":" << variable.getBasicTypeElementCount()
+         << ",\"isArray\":" << (variable.isArray() ? "true" : "false")
          << ",\"active\":" << (variable.active ? "true" : "false")
          << ",\"precision\":" << variable.precision
          << ",\"offset\":" << info.offset

@@ -1,3 +1,4 @@
+import { checkVertexArrayOwnership } from '../../../tests/core/vertex-arrays';
 import { checkPrimitiveDraws } from "../../../tests/core/primitive-draw-contract";
 import { describe, expect, it, vi } from "vitest";
 import { allocateContextId, GL, ExecutionResources } from "@refral/core-api";
@@ -63,6 +64,10 @@ function createLinkedProgram(core: DrawingCore) {
 }
 
 describe("JS DrawingCore logical boundary", () => {
+  it('retains buffer storage for an unbound vertex array and rejects stale names', () => {
+    checkVertexArrayOwnership(createContext().core);
+  });
+
   it("plans line and fan draws with WebGL1 culling and index validation", () => {
     const { core, host } = createContext();
     try {

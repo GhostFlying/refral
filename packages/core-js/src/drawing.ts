@@ -1,8 +1,8 @@
-import { GL } from "@refral/core-api";
+import { GL, VERTEX_ARRAY_BINDING_OES } from "@refral/core-api";
 import type {
   CompiledShader, Compiler, CompilerRegistry, DrawingCore, DrawingCoreOptions,
   DrawingCoreServices, LinkedProgram, LogicalHandle, ProgramHandle, ShaderHandle,
-  TargetSnapshot, UniformLocationHandle, TextureHandle, RenderbufferHandle, FramebufferHandle,
+  TargetSnapshot, VertexArrayHandle, UniformLocationHandle, TextureHandle, RenderbufferHandle, FramebufferHandle,
   ReadPixelsPlan, ReadPixelsRequest, DomTextureUploadPlan, DomTextureUploadRequest,
 } from "@refral/core-api";
 import { JsBufferCore } from "./buffers.js";
@@ -15,7 +15,7 @@ type LocationObject = NonNullable<ReturnType<SemanticContext["getUniformLocation
 type TextureObject = NonNullable<ReturnType<SemanticContext["createTexture"]>>;
 type RenderbufferObject = NonNullable<ReturnType<SemanticContext["createRenderbuffer"]>>;
 type FramebufferObject = NonNullable<ReturnType<SemanticContext["createFramebuffer"]>>;
-type DrawingHandle = ShaderHandle | ProgramHandle | UniformLocationHandle | TextureHandle | RenderbufferHandle | FramebufferHandle;
+type DrawingHandle = ShaderHandle | ProgramHandle | UniformLocationHandle | TextureHandle | RenderbufferHandle | FramebufferHandle | VertexArrayHandle;
 type ObjectKind = DrawingHandle["kind"];
 type ResourceKind = "texture" | "renderbuffer" | "framebuffer";
 
@@ -241,6 +241,20 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
       return method.apply(this, args);
     }
     if (this.isContextLost()) return this.context.invoke(operation, args);
+    if (operation === 'createVertexArrayOES') return this.wrap(this.context.createVertexArrayOES(), 'vertex-array');
+    if (operation === 'isVertexArrayOES') {
+      const array = this.resolveObject(args[0], 'vertex-array', false);
+      return !!array && this.context.invoke(operation, [array]);
+    }
+    if (operation === 'bindVertexArrayOES') {
+      const array = args[0] === null ? null : this.resolveObject(args[0], 'vertex-array');
+      return (args[0] === null || array !== null) && this.context.invoke(operation, [array]);
+    }
+    if (operation === 'deleteVertexArrayOES') {
+      const array = this.resolveDeletion(args[0], 'vertex-array');
+      if (array) { this.context.invoke(operation, [array]); this.retire(array); }
+      return;
+    }
     if (Object.hasOwn(resourceCreates, operation)) {
       return this.wrap(this.context.invoke(operation, args) as object | null, resourceCreates[operation]);
     }
@@ -341,8 +355,9 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
     }
     const result = this.context.invoke(operation, args);
     if (operation === "getParameter") {
+      if (args[0] === VERTEX_ARRAY_BINDING_OES) return this.wrap(result as object | null, 'vertex-array');
       if (args[0] === GL.CURRENT_PROGRAM) return this.wrap(result as object | null, "program");
-      if (args[0] === GL.ARRAY_BUFFER_BINDING || args[0] === GL.ELEMENT_ARRAY_BUFFER_BINDING) return this.toHandle(result);
+      if (args[0] === GL.ARRAY_BUFFER_BINDING || args[0] === GL.ELEMENT_ARRAY_BUFFER_BINDING) return this.toHandle(result, true);
       if (args[0] === GL.TEXTURE_BINDING_2D || args[0] === GL.TEXTURE_BINDING_CUBE_MAP) {
         return this.wrap(result as object | null, "texture");
       }
@@ -352,7 +367,7 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
     if (operation === "getFramebufferAttachmentParameter" && args[2] === GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME) {
       return this.wrap(result as object | null, args[1] === GL.COLOR_ATTACHMENT0 ? "texture" : "renderbuffer");
     }
-    if (operation === "getVertexAttrib" && args[1] === GL.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) return this.toHandle(result);
+    if (operation === "getVertexAttrib" && args[1] === GL.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) return this.toHandle(result, true);
     return result;
   }
 

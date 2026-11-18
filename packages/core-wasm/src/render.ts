@@ -814,6 +814,10 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       return { flipY: values[0] === 1, premultiplyAlpha: values[1] === 1, colorSpaceConversion: values[2]! };
     },
     invoke(operation: string, args: unknown[]): unknown {
+      if (operation === 'supportsVertexArrayObjects') {
+        const version = exports.rf_vertex_array_protocol_version;
+        return typeof version === 'function' && version() === 1;
+      }
       if (operation === 'flush') {
         if (!abi.rf_is_context_lost()) services.host.flush();
         return undefined;

@@ -41,7 +41,7 @@ function storage(value: unknown): { value: ArrayBufferLike; length: number; vari
   return null;
 }
 
-export function requireArguments(name: string, args: readonly unknown[], minimum: number,
+export function requireArguments(name: string, args: ArrayLike<unknown>, minimum: number,
   ErrorType: TypeErrorConstructor = TypeError): void {
   if (args.length < minimum) throw new ErrorType(`${name} requires at least ${minimum} arguments.`);
 }
@@ -100,16 +100,20 @@ function unwrap(value: unknown): BufferHandle | null {
 }
 
 export function createBufferFacade(core: BufferCore, interfaces = webglInterfaces()) {
-  const wrappers = new Map<string, WebGLBuffer>();
+  const wrappers = new Map<string, WeakRef<WebGLBuffer>>();
+  const collected = new FinalizationRegistry<string>(key => {
+    if (!wrappers.get(key)?.deref()) wrappers.delete(key);
+  });
 
   function wrap(handle: BufferHandle | null): WebGLBuffer | null {
     if (!handle) return null;
     const key = bufferHandleKey(handle);
-    let wrapper = wrappers.get(key);
+    let wrapper = wrappers.get(key)?.deref();
     if (!wrapper) {
       wrapper = Object.create(interfaces.buffer) as WebGLBuffer;
       handles.set(wrapper, handle);
-      wrappers.set(key, wrapper);
+      wrappers.set(key, new WeakRef(wrapper));
+      collected.register(wrapper, key);
     }
     return wrapper;
   }
@@ -150,9 +154,6 @@ export function createBufferFacade(core: BufferCore, interfaces = webglInterface
       requireArguments('deleteBuffer', args, 1);
       const handle = unwrap(args[0]);
       core.deleteBuffer(handle);
-      if (handle?.contextId === core.contextId && !core.isBuffer(handle)) {
-        wrappers.delete(bufferHandleKey(handle));
-      }
     },
     isBuffer: (...args) => {
       requireArguments('isBuffer', args, 1);

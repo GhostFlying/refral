@@ -1,0 +1,44 @@
+import { expect } from 'vitest';
+import { GL, VERTEX_ARRAY_BINDING_OES } from '@refral/core-api';
+import type { DrawingCore, VertexArrayHandle } from '@refral/core-api';
+
+export function checkVertexArrayOwnership(core: DrawingCore): void {
+  const binding = () => core.invoke('getParameter', [VERTEX_ARRAY_BINDING_OES]);
+  expect(binding()).toBeNull();
+  expect(core.getError()).toBe(GL.INVALID_ENUM);
+  core.invoke('enableVertexArrayObjects', []);
+  const array = core.invoke('createVertexArrayOES', []) as VertexArrayHandle;
+  expect(array.kind).toBe('vertex-array');
+  expect(core.invoke('isVertexArrayOES', [array])).toBe(false);
+  core.invoke('bindVertexArrayOES', [array]);
+  const index = core.createBuffer()!;
+  core.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, index);
+  core.bufferData(GL.ELEMENT_ARRAY_BUFFER, 2, GL.STATIC_DRAW);
+  core.invoke('bindVertexArrayOES', [null]);
+  core.deleteBuffer(index);
+  expect(core.isBuffer(index)).toBe(false);
+  expect(core.inspectBuffer(index)).toBeNull();
+  core.invoke('bindVertexArrayOES', [array]);
+  expect(core.getBinding(GL.ELEMENT_ARRAY_BUFFER_BINDING)).toEqual(index);
+  expect(core.getBufferParameter(GL.ELEMENT_ARRAY_BUFFER, GL.BUFFER_SIZE)).toBe(2);
+  core.bufferData(GL.ELEMENT_ARRAY_BUFFER, 4, GL.DYNAMIC_DRAW);
+  core.deleteBuffer(index);
+  expect(core.getBinding(GL.ELEMENT_ARRAY_BUFFER_BINDING)).toEqual(index);
+  expect(core.getBufferParameter(GL.ELEMENT_ARRAY_BUFFER, GL.BUFFER_SIZE)).toBe(4);
+  const foreign = { ...array, contextId: array.contextId + 1 };
+  expect(core.invoke('isVertexArrayOES', [foreign])).toBe(false);
+  expect(core.getError()).toBe(GL.NO_ERROR);
+  core.invoke('bindVertexArrayOES', [foreign]);
+  expect(core.getError()).toBe(GL.INVALID_OPERATION);
+  expect(binding()).toEqual(array);
+  core.invoke('deleteVertexArrayOES', [array]);
+  expect(binding()).toBeNull();
+  expect(core.getBinding(GL.ELEMENT_ARRAY_BUFFER_BINDING)).toBeNull();
+  const next = core.invoke('createVertexArrayOES', []) as VertexArrayHandle;
+  core.invoke('bindVertexArrayOES', [next]);
+  core.invoke('bindVertexArrayOES', [array]);
+  expect(core.getError()).toBe(GL.INVALID_OPERATION);
+  expect(binding()).toEqual(next);
+  core.invoke('deleteVertexArrayOES', [array]);
+  expect(core.getError()).toBe(GL.NO_ERROR);
+}

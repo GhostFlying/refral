@@ -9,12 +9,14 @@ export * from './resources.js';
 export type CoreKind = 'js' | 'rust';
 
 export interface LogicalHandle {
-  readonly kind: 'buffer' | 'shader' | 'program' | 'uniform-location' | 'texture' | 'renderbuffer' | 'framebuffer';
+  readonly kind: 'buffer' | 'shader' | 'program' | 'uniform-location' | 'texture' | 'renderbuffer' | 'framebuffer' | 'vertex-array';
   readonly contextId: number;
   readonly slot: number;
   readonly generation: number;
 }
 
+export const VERTEX_ARRAY_BINDING_OES = 0x85b5;
+export interface VertexArrayHandle extends LogicalHandle { readonly kind: 'vertex-array' }
 export interface BufferHandle extends LogicalHandle { readonly kind: 'buffer' }
 export interface ShaderHandle extends LogicalHandle { readonly kind: 'shader' }
 export interface ProgramHandle extends LogicalHandle { readonly kind: 'program' }

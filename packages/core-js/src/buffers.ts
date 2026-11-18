@@ -89,7 +89,7 @@ export class JsBufferCore implements BufferCore {
       this.core.recordError(GL.INVALID_ENUM);
       return null;
     }
-    return this.toHandle(this.core.getParameter(parameter));
+    return this.toHandle(this.core.getParameter(parameter), true);
   }
 
   deleteBuffer(handle: BufferHandle | null): void {
@@ -100,7 +100,6 @@ export class JsBufferCore implements BufferCore {
     if (handle.generation < slot.generation || slot.buffer === null) return;
     const buffer = slot.buffer;
     this.core.deleteBuffer(buffer);
-    this.handles.delete(buffer);
     slot.buffer = null;
     // Exhausted generations retire the slot, so generation zero is never issued.
     if (slot.generation < MAX_U32) this.freeSlots.push(handle.slot);
@@ -112,10 +111,10 @@ export class JsBufferCore implements BufferCore {
   }
 
   /** Converts legacy attribute/binding query results without exposing their classes. */
-  toHandle(value: unknown): BufferHandle | null {
+  toHandle(value: unknown, retainedBinding = false): BufferHandle | null {
     if (this.isContextLost() || !(value instanceof BufferObject)) return null;
     const handle = this.handles.get(value);
-    return handle && this.resolve(handle) === value ? handle : null;
+    return handle && (retainedBinding || this.resolve(handle) === value) ? handle : null;
   }
 
   getError(): number { return this.core.getError(); }

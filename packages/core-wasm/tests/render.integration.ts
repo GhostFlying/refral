@@ -1,3 +1,4 @@
+import { checkVertexArrayOwnership } from '../../../tests/core/vertex-arrays';
 import { readFile } from 'node:fs/promises';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { CUBE_FACES, GL, ExecutionResources } from '@refral/core-api';
@@ -234,6 +235,10 @@ function scene(core: DrawingCore) {
   return { vertex, fragment, program, location, buffer };
 }
 describe('actual Rust drawing Wasm', () => {
+  it('retains buffer storage for an unbound vertex array and rejects stale names', () => {
+    checkVertexArrayOwnership(setup().core);
+  });
+
   it('plans line and fan draws with WebGL1 culling and index validation', () => {
     const { core, draws } = setup();
     try {

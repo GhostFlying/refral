@@ -530,7 +530,7 @@
             "chrome-macos-arm64",
             "chrome158-macos-arm64"
           ],
-          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels.",
+          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels. LINES, LINE_STRIP, LINE_LOOP and TRIANGLE_FAN are implemented for both draw calls. All four original topology and range files and the three-way line/fan pixel differential passed (task 058).",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update",
@@ -566,13 +566,13 @@
             "drawElements_UNSIGNED_BYTE": "differential-verified"
           },
           "limits": [
-            "Other valid primitive modes raise NotSupportedError",
+            "POINTS raises NotSupportedError",
             "UNSIGNED_INT indices report INVALID_ENUM with no index extension advertised"
           ]
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels.",
+          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels. LINES, LINE_STRIP, LINE_LOOP and TRIANGLE_FAN are implemented for both draw calls. All four original topology and range files and the three-way line/fan pixel differential passed (task 058).",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
@@ -2462,7 +2462,7 @@
     },
     {
       "id": "additional-rendering-capabilities",
-      "api": "enabled compressed texture formats, other primitive modes beyond triangle lists and strips, and polygon offset",
+      "api": "enabled compressed texture formats, point drawing, and polygon offset",
       "cores": {
         "js": {
           "status": "unimplemented",

@@ -17,6 +17,7 @@ import type {
 } from '@refral/core-api';
 import { createRustDrawingCoreFromModule } from '../src/render';
 import { checkHintAndLineWidth } from '../../../tests/core/raster-queries';
+import { checkPrimitiveDraws } from '../../../tests/core/primitive-draw-contract';
 import { runBufferCoreContract } from '../../../tests/core/buffer-contract';
 
 let module: WebAssembly.Module;
@@ -184,6 +185,15 @@ function scene(core: DrawingCore) {
   return { vertex, fragment, program, location, buffer };
 }
 describe('actual Rust drawing Wasm', () => {
+  it('plans line and fan draws with WebGL1 culling and index validation', () => {
+    const { core, draws } = setup();
+    try {
+      scene(core);
+      checkPrimitiveDraws(core, () => draws);
+    } finally {
+      core.dispose();
+    }
+  });
   it('preserves the complete shared Buffer contract in the rendering context', async () => {
     const result = await runBufferCoreContract(
       (options) => setup(options.contextId, options.maxBufferBytes).core,

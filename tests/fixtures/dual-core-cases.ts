@@ -5,7 +5,7 @@ export const dualCoreCaseNames = [
   'float-uniform-setters', 'indexed-update-u8', 'indexed-update-u16', 'upload-view-snapshot',
   'attribute-layout-and-constants', 'buffer-reallocation-and-delete', 'resize-attribute-size',
   'automatic-submit-and-flush', 'viewport-clear-regions', 'draw-validation-state',
-  'triangle-strip-modes', 'integer-vertex-attributes', 'enabled-array-validation', 'location-name-validation',
+  'triangle-strip-modes', 'line-and-fan-modes', 'integer-vertex-attributes', 'enabled-array-validation', 'location-name-validation',
   'retained-deletion-and-retirement', ...programCaseNames,
 ] as const;
 export type DrawingCaseName = typeof dualCoreCaseNames[number];
@@ -77,6 +77,9 @@ function regions(name: DrawingCaseName): PixelRegion[] {
         { x: 32, y: 32, width: 32, height: 32, color: green }];
     case 'resize-attribute-size': return [band(0, 96, blue, 32)];
     case 'draw-validation-state': return [band(0, 64, [255, 255, 0, 255])];
+    case 'line-and-fan-modes':
+      return [band(0, 64, black), band(0, 16, red), band(16, 16, green),
+        ...[8, 16, 24].map(y => ({ x: 32, y, width: 32, height: 1, color: blue }))];
     case 'triangle-strip-modes':
       return [red, green, blue, [255, 255, 0, 255]].map((color, index) => band(index * 16, 16, color));
     case 'integer-vertex-attributes':
@@ -179,6 +182,36 @@ async function execute(name: DrawingCaseName, gl: WebGLRenderingContext, canvas:
       color = gl.getUniformLocation(program, 'u_color');
       draw(0, 1, 0);
       gl.deleteProgram(unlinked);
+      break;
+    }
+    case 'line-and-fan-modes': {
+      const vertices = (values: number[]) => gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(values), gl.STATIC_DRAW);
+      vertices([0, 0, -1, -1, 1, -1, 1, 1, -1, 1]);
+      gl.enable(gl.CULL_FACE);
+      gl.viewport(0, 0, 16, 64);
+      gl.uniform4f(color, 1, 0, 0, 1);
+      expectError('array fan offset and winding', () => gl.drawArrays(gl.TRIANGLE_FAN, 1, 4), gl.NO_ERROR);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint8Array([99, 1, 2, 3, 4]), gl.STATIC_DRAW);
+      gl.viewport(16, 0, 16, 64);
+      gl.uniform4f(color, 0, 1, 0, 1);
+      expectError('indexed fan offset and winding', () => gl.drawElements(gl.TRIANGLE_FAN, 4, gl.UNSIGNED_BYTE, 1), gl.NO_ERROR);
+      gl.viewport(0, 0, 64, 64);
+      gl.enable(gl.SCISSOR_TEST);
+      gl.scissor(32, 0, 32, 64);
+      gl.cullFace(gl.FRONT_AND_BACK);
+      gl.uniform4f(color, 0, 0, 1, 1);
+      const row = (y: number) => (y + 0.5) / 32 - 1;
+      vertices([0, 0, -2, row(8), 2, row(8), 0, 1]);
+      expectError('line pair with trailing vertex', () => gl.drawArrays(gl.LINES, 1, 3), gl.NO_ERROR);
+      vertices([-2, row(16), 0.5, row(16), 2, row(16)]);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([99, 0, 1, 2]), gl.STATIC_DRAW);
+      expectError('indexed line strip', () => gl.drawElements(gl.LINE_STRIP, 3, gl.UNSIGNED_SHORT, 2), gl.NO_ERROR);
+      vertices([-2, row(24), -2, 2, 2, 2, 2, row(24)]);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint8Array([99, 0, 1, 2, 3]), gl.STATIC_DRAW);
+      expectError('loop closure under culling', () => gl.drawElements(gl.LINE_LOOP, 4, gl.UNSIGNED_BYTE, 1), gl.NO_ERROR);
+      expectError('zero elements past storage', () => gl.drawElements(gl.LINE_LOOP, 0, gl.UNSIGNED_SHORT, 8), gl.NO_ERROR);
+      expectError('nonempty elements past storage', () => gl.drawElements(gl.LINE_LOOP, 1, gl.UNSIGNED_SHORT, 8), gl.INVALID_OPERATION);
       break;
     }
     case 'triangle-strip-modes': {

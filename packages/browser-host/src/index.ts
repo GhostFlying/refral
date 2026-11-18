@@ -1,4 +1,5 @@
 import { GL, componentCount, stencilReference, vertexComponentBytes } from "@refral/core-api";
+import { primitiveIndexBatches } from './primitive-indices.js';
 import { CanvasReadback } from './canvas-readback.js';
 import type {
   AttributeSnapshot, RasterState, StencilFaceState, TargetSnapshot, TextureCopy, TextureParameters, TextureStorage,
@@ -660,8 +661,12 @@ export class BrowserHost implements SemanticHost {
     const [x, y, width, height] = state.viewport;
     if (!width || !height || x >= operation.target.width || y >= operation.target.height
       || x + width <= 0 || y + height <= 0 || !operation.target.width || !operation.target.height) return;
-    const strip = operation.mode === GL.TRIANGLE_STRIP;
-    const topology = strip ? 'triangle-strip' : 'triangle-list';
+    const mode = operation.mode;
+    const strip = mode === GL.TRIANGLE_STRIP || mode === GL.LINE_STRIP;
+    const needsIndexExpansion = mode === GL.LINE_LOOP || mode === GL.TRIANGLE_FAN;
+    const line = mode < GL.TRIANGLES;
+    const topology: GPUPrimitiveTopology = line
+      ? (strip ? 'line-strip' : 'line-list') : (strip ? 'triangle-strip' : 'triangle-list');
     // WebGL1 index 65535 remains a vertex index. WebGPU uint16 strips reserve it for restart.
     const wideIndices = strip && indices?.type === GL.UNSIGNED_SHORT && operation.vertexCount === 65536;
     const indexFormat = wideIndices ? 'uint32' : 'uint16';
@@ -697,7 +702,7 @@ export class BrowserHost implements SemanticHost {
             writeMask: colorWriteMask(state.colorMask) & (target.opaque ? 7 : 15), blend }] },
         primitive: { topology, stripIndexFormat,
           frontFace: state.frontFace === GL.CCW ? "cw" : "ccw",
-          cullMode: !state.cull ? "none" : state.cullFace === GL.FRONT ? "front" : "back" },
+          cullMode: line || !state.cull ? "none" : state.cullFace === GL.FRONT ? "front" : "back" },
         depthStencil: target.depth ? { format: target.depth.format,
           ...stencil,
           ...(target.depth.format === "stencil8" ? {} : {
@@ -757,7 +762,7 @@ export class BrowserHost implements SemanticHost {
         widened[index] = view.getUint16(indices.offset + index * 2, true);
       }
       indexBuffer = this.createBuffer(new Uint8Array(widened.buffer), GPUBufferUsage.INDEX, true);
-    } else if (indices) {
+    } else if (indices && !needsIndexExpansion) {
       const cachedIndices = this.indexCache.get(indices.data);
       indexBuffer = cachedIndices?.get(indices.type) ?? null;
       if (!indexBuffer) {
@@ -788,7 +793,13 @@ export class BrowserHost implements SemanticHost {
     pass.setBindGroup(1, textureGroup);
     pass.setBindGroup(2, driverGroup);
     vertexBuffers.forEach((buffer, index) => pass.setVertexBuffer(index, buffer));
-    if (indexBuffer && indices) {
+    if (needsIndexExpansion) {
+      for (const batch of primitiveIndexBatches(mode, operation.first, operation.count, indices)) {
+        const buffer = this.createBuffer(new Uint8Array(batch.buffer), GPUBufferUsage.INDEX, true);
+        pass.setIndexBuffer(buffer, 'uint32');
+        pass.drawIndexed(batch.length);
+      }
+    } else if (indexBuffer && indices) {
       pass.setIndexBuffer(indexBuffer, indexFormat);
       const size = vertexComponentBytes(indices.type);
       pass.drawIndexed(operation.count, 1, wideIndices ? 0 : indices.offset / size);

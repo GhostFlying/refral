@@ -33,3 +33,27 @@ export function checkPrimitiveDraws(core: DrawingCore, draws: () => DrawOperatio
   expect(core.getError()).toBe(GL.INVALID_OPERATION);
   expect(draws()).toHaveLength(9);
 }
+
+export function checkMatrixColumnDraws(core: DrawingCore, draws: () => DrawOperation[]) {
+  core.invoke('vertexAttrib3f', [2, 1, 2, 3]);
+  core.bindBuffer(GL.ARRAY_BUFFER, core.createBuffer());
+  core.invoke('vertexAttribPointer', [3, 3, GL.FLOAT, false, 0, 0]);
+  core.invoke('enableVertexAttribArray', [3]);
+  core.bufferData(GL.ARRAY_BUFFER, new Uint8Array(35), GL.STATIC_DRAW);
+  core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+  expect(core.getError()).toBe(GL.INVALID_OPERATION);
+  core.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, core.createBuffer());
+  core.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint8Array([0, 1, 2]), GL.STATIC_DRAW);
+  core.invoke('drawElements', [GL.TRIANGLES, 3, GL.UNSIGNED_BYTE, 0]);
+  expect(core.getError()).toBe(GL.INVALID_OPERATION);
+  expect(draws()).toHaveLength(0);
+  core.bufferData(GL.ARRAY_BUFFER, new Uint8Array(36), GL.STATIC_DRAW);
+  core.invoke('drawElements', [GL.TRIANGLES, 3, GL.UNSIGNED_BYTE, 0]);
+  expect(core.getError()).toBe(GL.NO_ERROR);
+  const columns = draws()[0]!.attributes;
+  expect(columns.map(({ location, shaderType }) => [location, shaderType])).toEqual([
+    [1, GL.FLOAT_VEC3], [2, GL.FLOAT_VEC3], [3, GL.FLOAT_VEC3],
+  ]);
+  expect(columns.map(column => column.data?.byteLength ?? null)).toEqual([null, null, 36]);
+  expect(columns[1]!.constant).toEqual([1, 2, 3, 1]);
+}

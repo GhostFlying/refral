@@ -461,6 +461,7 @@
           ],
           "coverage": "FLOAT, BYTE, UNSIGNED_BYTE, SHORT and UNSIGNED_SHORT arrays with sizes 1–4, type-aligned byte offsets and strides, numeric and normalized conversion, and constant attributes. Tests cover format and normalization cache identity and all enabled-array bindings.",
           "tests": [
+            "sdk/tests/deqp/data/gles2/shaders/functions.html",
             "sdk/tests/conformance/attribs/gl-enable-vertex-attrib.html",
             "sdk/tests/conformance/attribs/gl-vertexattribpointer.html",
             "sdk/tests/conformance/attribs/gl-vertexattribpointer-offsets.html",
@@ -486,20 +487,21 @@
           "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "limits": [
             "Maximum 8 attribute locations, matching the initial host buffer slots",
-            "Matrix attributes support compilation/linking/reflection; drawing them raises NotSupportedError in the initial runtime profile."
+            "Matrix attributes use two to four consecutive locations. Each column has independent array or current-value state."
           ],
           "overloadStates": {
             "vertexAttribPointer_FLOAT_vec2": "differential-verified",
             "integerVertexAttributes": "differential-verified",
             "vertexAttribPointer_FLOAT_otherSizes": "implemented-unverified",
             "constantVertexAttributes": "implemented-unverified",
-            "matrixAttributeDrawing": "unimplemented"
+            "matrixAttributeDrawing": "differential-verified"
           }
         },
         "rust": {
           "status": "cts-verified",
-          "coverage": "FLOAT, BYTE, UNSIGNED_BYTE, SHORT and UNSIGNED_SHORT arrays with sizes 1–4, type-aligned byte offsets and strides, numeric and normalized conversion, and constant attributes. Rust ABI4 carries component type and normalization through owned draw snapshots.",
+          "coverage": "FLOAT, BYTE, UNSIGNED_BYTE, SHORT and UNSIGNED_SHORT arrays with sizes 1–4, type-aligned byte offsets and strides, numeric and normalized conversion, and constant attributes. mat2, mat3 and mat4 inputs use per-column vector snapshots with independent pointer state and bounds checks.",
           "tests": [
+            "sdk/tests/deqp/data/gles2/shaders/functions.html",
             "sdk/tests/conformance/attribs/gl-enable-vertex-attrib.html",
             "sdk/tests/conformance/attribs/gl-vertexattribpointer.html",
             "sdk/tests/conformance/attribs/gl-vertexattribpointer-offsets.html",

@@ -252,6 +252,7 @@ struct Shader {
 struct Executable {
     id: u32,
     layout: ProgramLayout,
+    vertex_inputs: Vec<(u32, u32)>,
     values: Vec<Vec<u32>>,
     vertex: Vec<u8>,
     fragment: Vec<u8>,
@@ -731,15 +732,47 @@ impl ContextCore {
     }
     fn make_executable(&mut self, id: u32, layout: ProgramLayout) -> Option<Executable> {
         if id == 0
-            || layout
-                .attributes
-                .iter()
-                .any(|attribute| attribute.location as usize >= self.render.attribute_limit)
             || layout.vertex_bytes as u64 > self.max_buffer_bytes
             || layout.fragment_bytes as u64 > self.max_buffer_bytes
         {
             self.record_error(INVALID_OPERATION);
             return None;
+        }
+        let mut vertex_inputs = Vec::new();
+        if vertex_inputs
+            .try_reserve_exact(self.render.attribute_limit)
+            .is_err()
+        {
+            self.record_error(OUT_OF_MEMORY);
+            return None;
+        }
+        let mut occupied = 0u32;
+        for attribute in &layout.attributes {
+            let (columns, column_type) = match attribute.active.ty {
+                0x8b5a => (2, FLOAT_VEC2),
+                0x8b5b => (3, FLOAT_VEC3),
+                0x8b5c => (4, FLOAT_VEC4),
+                ty @ (FLOAT | FLOAT_VEC2 | FLOAT_VEC3 | FLOAT_VEC4) => (1, ty),
+                _ => {
+                    self.record_error(INVALID_OPERATION);
+                    return None;
+                }
+            };
+            let start = attribute.location;
+            let limit = self.render.attribute_limit as u32;
+            if start >= limit || columns > limit - start {
+                self.record_error(INVALID_OPERATION);
+                return None;
+            }
+            for location in start..start + columns {
+                let bit = 1 << location;
+                if occupied & bit != 0 {
+                    self.record_error(INVALID_OPERATION);
+                    return None;
+                }
+                occupied |= bit;
+                vertex_inputs.push((location, column_type));
+            }
         }
         let mut values = Vec::new();
         if values
@@ -783,6 +816,7 @@ impl ContextCore {
         Some(Executable {
             id,
             layout,
+            vertex_inputs,
             values,
             vertex,
             fragment,
@@ -1674,20 +1708,14 @@ impl ContextCore {
         }
         let mut attributes = Vec::new();
         if attributes
-            .try_reserve_exact(executable.layout.attributes.len())
+            .try_reserve_exact(executable.vertex_inputs.len())
             .is_err()
         {
             self.record_error(OUT_OF_MEMORY);
             return Reply::Null;
         }
-        for active in &executable.layout.attributes {
-            if !matches!(
-                active.active.ty,
-                FLOAT | FLOAT_VEC2 | FLOAT_VEC3 | FLOAT_VEC4
-            ) {
-                return Reply::Unsupported("matrix vertex attributes");
-            }
-            let attribute = &self.render.arrays.current().attributes[active.location as usize];
+        for &(location, shader_type) in &executable.vertex_inputs {
+            let attribute = &self.render.arrays.current().attributes[location as usize];
             let data = if attribute.enabled {
                 let Some(handle) = attribute.buffer else {
                     self.record_error(INVALID_OPERATION);
@@ -1727,15 +1755,15 @@ impl ContextCore {
                 None
             };
             attributes.push(AttributeDraw {
-                location: active.location,
-                shader_type: active.active.ty,
+                location,
+                shader_type,
                 size: attribute.size,
                 ty: attribute.ty,
                 normalized: attribute.normalized,
                 stride: attribute.stride,
                 offset: attribute.offset,
                 data,
-                constant: self.render.constants[active.location as usize],
+                constant: self.render.constants[location as usize],
             });
         }
         if count == 0.0

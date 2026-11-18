@@ -37,6 +37,7 @@ class ProgramObject extends LogicalObject {
   shaders: ShaderObject[] = [];
   attributeLocations: Record<string, number> = Object.create(null);
   executable: LinkedProgram | null = null;
+  vertexInputs: Array<{ location: number; type: number }> = [];
   linkStatus = false;
   validateStatus = false;
   log = "";
@@ -419,6 +420,14 @@ export class SemanticContext {
     }
     const previous = program.executable;
     program.executable = executable;
+    program.vertexInputs = executable.attributes.flatMap(({ location, type }) => {
+      switch (type) {
+        case GL.FLOAT_MAT2: return Array.from({ length: 2 }, (_, i) => ({ location: location + i, type: GL.FLOAT_VEC2 }));
+        case GL.FLOAT_MAT3: return Array.from({ length: 3 }, (_, i) => ({ location: location + i, type: GL.FLOAT_VEC3 }));
+        case GL.FLOAT_MAT4: return Array.from({ length: 4 }, (_, i) => ({ location: location + i, type: GL.FLOAT_VEC4 }));
+        default: return [{ location, type }];
+      }
+    });
     if (previous) this.compiler.releaseProgram?.(previous);
     program.vertexUniforms = new Uint8Array(Math.max(16, executable.vertexUniformBufferSize));
     program.fragmentUniforms = new Uint8Array(Math.max(16, executable.fragmentUniformBufferSize));
@@ -740,10 +749,7 @@ export class SemanticContext {
       vertices = maximum + 1;
     }
     const attributes: AttributeSnapshot[] = [];
-    for (const active of this.program.executable.attributes) {
-      if (active.type === GL.FLOAT_MAT2 || active.type === GL.FLOAT_MAT3 || active.type === GL.FLOAT_MAT4) {
-        return unsupported("matrix vertex attribute drawing");
-      }
+    for (const active of this.program.vertexInputs) {
       const attribute = this.attributes[active.location]!;
       if (attribute.enabled) {
         if (!attribute.buffer) return this.error(GL.INVALID_OPERATION);

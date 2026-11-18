@@ -19,7 +19,7 @@ import type {
 } from '@refral/core-api';
 import { createRustDrawingCoreFromModule, prepareRustDrawingCores } from '../src/render';
 import { checkHintAndLineWidth, checkOffsetAndSampleState } from '../../../tests/core/raster-queries';
-import { checkPrimitiveDraws } from '../../../tests/core/primitive-draw-contract';
+import { checkMatrixColumnDraws, checkPrimitiveDraws } from '../../../tests/core/primitive-draw-contract';
 import { runBufferCoreContract } from '../../../tests/core/buffer-contract';
 
 let module: WebAssembly.Module;
@@ -245,6 +245,14 @@ describe('actual Rust drawing Wasm', () => {
     checkVertexArrayOwnership(setup().core);
   });
 
+  it('validates every matrix column and snapshots its generic attribute state', () => {
+    const { core, draws, setLayout } = setup();
+    try {
+      setLayout({ attributes: [{ name: 'matrix', type: GL.FLOAT_MAT3, size: 1, location: 1 }] });
+      scene(core);
+      checkMatrixColumnDraws(core, () => draws);
+    } finally { core.dispose(); }
+  });
   it('plans line and fan draws with WebGL1 culling and index validation', () => {
     const { core, draws } = setup();
     try {

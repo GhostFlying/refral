@@ -1,4 +1,4 @@
-import { createRasterState, GL, vertexComponentBytes } from '@refral/core-api';
+import { createRasterState, GL, isDrawMode, vertexComponentBytes } from '@refral/core-api';
 import type {
   BufferHandle,
   BufferSnapshot,
@@ -513,7 +513,7 @@ export function createRustDrawingCoreFromModule(
     const drawTarget = readTarget(reader);
     const state = readRaster(reader, drawTarget.width, drawTarget.height);
     const mode = reader.u32();
-    if (mode !== GL.TRIANGLES && mode !== GL.TRIANGLE_STRIP) throw new Error('Invalid Rust draw mode.');
+    if (!isDrawMode(mode)) throw new Error('Invalid Rust draw mode.');
     const vertexCount = reader.u32();
     const first = reader.u32();
     const count = reader.u32();

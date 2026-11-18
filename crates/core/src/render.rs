@@ -26,7 +26,7 @@ pub const FLOAT_VEC2: u32 = 0x8b50;
 pub const FLOAT_VEC3: u32 = 0x8b51;
 pub const FLOAT_VEC4: u32 = 0x8b52;
 pub const TRIANGLES: u32 = 4;
-pub const TRIANGLE_STRIP: u32 = 5;
+const TRIANGLE_FAN: u32 = 6;
 
 fn vertex_component_bytes(ty: u32) -> Option<usize> {
     match ty {
@@ -1523,7 +1523,7 @@ impl ContextCore {
     fn draw_snapshot(&mut self, operation: &str, args: &[Argument]) -> Reply {
         let number = |index: usize| args.get(index).map_or(0.0, Argument::number);
         let mode = number(0) as u32;
-        if mode > 6 {
+        if mode > TRIANGLE_FAN {
             self.record_error(INVALID_ENUM);
             return Reply::Null;
         }
@@ -1557,8 +1557,8 @@ impl ContextCore {
         } else {
             None
         };
-        if !matches!(mode, TRIANGLES | TRIANGLE_STRIP) {
-            return Reply::Unsupported("drawing mode other than TRIANGLES or TRIANGLE_STRIP");
+        if mode == 0 {
+            return Reply::Unsupported("point drawing");
         }
         let Some(program_index) = self.program_index(self.render.current) else {
             return Reply::Null;
@@ -1591,7 +1591,7 @@ impl ContextCore {
         }
         let mut indices = None;
         let mut vertex_count = first as usize + count as usize;
-        if let Some((ty, bytes, offset)) = index_format {
+        if let Some((ty, bytes, offset)) = index_format.filter(|_| count != 0.0) {
             let Some(index) = self.bound_index(ELEMENT_ARRAY_BUFFER) else {
                 return Reply::Null;
             };
@@ -1710,7 +1710,7 @@ impl ContextCore {
         if count == 0.0
             || target.width == 0
             || target.height == 0
-            || self.render.raster.cull && self.render.raster.cull_face == 0x408
+            || mode >= TRIANGLES && self.render.raster.cull && self.render.raster.cull_face == 0x408
         {
             return Reply::Null;
         }

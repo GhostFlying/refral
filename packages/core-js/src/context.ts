@@ -1,6 +1,6 @@
 import {
   CUBE_FACES, GL, createRasterState, snapshotRaster, componentCount, vertexComponentBytes, isColorRenderbufferFormat,
-  isStencilRenderbufferFormat, stencilReference,
+  isStencilRenderbufferFormat, stencilReference, isDrawMode,
 } from "@refral/core-api";
 import type {
   AttributeSnapshot, RasterState, StencilFaceState, TargetSnapshot, TextureBinding, TextureCopy,
@@ -666,7 +666,7 @@ export class SemanticContext {
   private draw(mode: number, first: number, count: number,
     elements: { type: number; offset: number } | null): void {
     if (this.lost) return;
-    if (mode < GL.POINTS || mode > GL.TRIANGLE_FAN) return this.error(GL.INVALID_ENUM);
+    if (!Number.isInteger(mode) || mode < GL.POINTS || mode > GL.TRIANGLE_FAN) return this.error(GL.INVALID_ENUM);
     if (first < 0 || count < 0 || !Number.isInteger(first) || !Number.isInteger(count)) return this.error(GL.INVALID_VALUE);
     let indices: DrawOperation['indices'] = null;
     if (elements) {
@@ -678,9 +678,7 @@ export class SemanticContext {
       }
       indices = { data: this.elementBuffer.data, type, offset };
     }
-    if (mode !== GL.TRIANGLES && mode !== GL.TRIANGLE_STRIP) {
-      return unsupported("drawing mode other than TRIANGLES or TRIANGLE_STRIP");
-    }
+    if (!isDrawMode(mode)) return unsupported("point drawing");
     if (!this.program?.linkStatus || !this.program.executable) return this.error(GL.INVALID_OPERATION);
     if (this.attributes.some(attribute => attribute.enabled && !attribute.buffer)) return this.error(GL.INVALID_OPERATION);
     if (this.samplerTypeConflict(this.program)) return this.error(GL.INVALID_OPERATION);
@@ -691,7 +689,7 @@ export class SemanticContext {
         || stencilReference(front.reference) !== stencilReference(back.reference)) return this.error(GL.INVALID_OPERATION);
     }
     let vertices = first + count;
-    if (indices) {
+    if (indices && count) {
       const bytes = indices.type === GL.UNSIGNED_BYTE ? 1 : 2;
       if (indices.offset + count * bytes > indices.data.byteLength) return this.error(GL.INVALID_OPERATION);
       const view = new DataView(indices.data.buffer, indices.data.byteOffset, indices.data.byteLength);
@@ -744,7 +742,7 @@ export class SemanticContext {
       } else textures.push({ storage: levels ? texture!.storage : null, parameters });
     }
     if (!count || !target.width || !target.height ||
-        (this.state.cull && this.state.cullFace === GL.FRONT_AND_BACK)) return;
+        (mode >= GL.TRIANGLES && this.state.cull && this.state.cullFace === GL.FRONT_AND_BACK)) return;
     this.host.draw({ program: this.program.executable, mode, target, state: snapshotRaster(this.state),
       attributes, vertexCount: vertices, first, count, indices,
       vertexUniforms: this.program.vertexUniforms.slice(), fragmentUniforms: this.program.fragmentUniforms.slice(),

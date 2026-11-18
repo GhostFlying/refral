@@ -167,9 +167,16 @@ export interface TextureBinding {
   mipImages?: readonly TextureStorage[];
 }
 
+export type DrawMode = typeof GL.LINES | typeof GL.LINE_LOOP | typeof GL.LINE_STRIP
+  | typeof GL.TRIANGLES | typeof GL.TRIANGLE_STRIP | typeof GL.TRIANGLE_FAN;
+
+export function isDrawMode(mode: number): mode is DrawMode {
+  return Number.isInteger(mode) && mode >= GL.LINES && mode <= GL.TRIANGLE_FAN;
+}
+
 export interface DrawOperation {
   program: LinkedProgram;
-  mode: typeof GL.TRIANGLES | typeof GL.TRIANGLE_STRIP;
+  mode: DrawMode;
   target: TargetSnapshot;
   state: RasterState;
   attributes: AttributeSnapshot[];

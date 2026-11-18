@@ -1,3 +1,4 @@
+import { checkPrimitiveDraws } from "../../../tests/core/primitive-draw-contract";
 import { describe, expect, it, vi } from "vitest";
 import { allocateContextId, GL, ExecutionResources } from "@refral/core-api";
 import type {
@@ -62,6 +63,15 @@ function createLinkedProgram(core: DrawingCore) {
 }
 
 describe("JS DrawingCore logical boundary", () => {
+  it("plans line and fan draws with WebGL1 culling and index validation", () => {
+    const { core, host } = createContext();
+    try {
+      core.invoke("useProgram", [createLinkedProgram(core).program]);
+      checkPrimitiveDraws(core, () => host.draw.mock.calls.map(([draw]) => draw));
+    } finally {
+      core.dispose();
+    }
+  });
   it.each([1, 2, 3, 4])("rejects short vertexAttrib%dfv inputs without changing the current value", (components) => {
     const { core } = createContext();
     core.invoke("vertexAttrib4f", [0, 0.25, 0.5, 0.75, 1]);

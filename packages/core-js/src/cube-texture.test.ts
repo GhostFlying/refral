@@ -190,8 +190,10 @@ describe("JS CubeMap image and sampling semantics", () => {
     expect(core.getError()).toBe(GL.NO_ERROR);
     expect(resources.texture(version(cube, CUBE_FACES[0]))).toBe(original);
     expect(apply).toHaveBeenCalledTimes(1);
-    expect(() => core.invoke("texImage2D", [CUBE_FACES[0], 1, GL.RGBA, 1, 1, 0,
-      GL.RGBA, GL.UNSIGNED_BYTE, null])).toThrow(/mip levels/);
+    core.invoke("texImage2D", [CUBE_FACES[0], 1, GL.RGBA, 1, 1, 0, GL.RGBA, GL.UNSIGNED_BYTE, null]);
+    expect(core.getError()).toBe(GL.NO_ERROR);
+    expect(resources.texture({ ...version(cube, CUBE_FACES[0]), level: 1 }).data).toEqual(new Uint8Array(4));
+    expect(resources.texture(version(cube, CUBE_FACES[0]))).toBe(original);
   });
 
   it.each([

@@ -5,6 +5,7 @@ export const uniformRttCases = ['uniform-matrix-arrays', 'uniform-int-bool-array
 export const textureRttCases = ['texture-format-rgba', 'texture-format-rgb', 'texture-format-alpha',
   'texture-format-luminance', 'texture-format-luminance-alpha', 'texture-unpack-snapshot',
   'texture-packed-565', 'texture-packed-4444', 'texture-packed-5551', 'texture-packed-cube',
+  'texture-manual-mip-2d', 'texture-manual-mip-cube',
   'texture-updates-reallocation', 'texture-npot-completeness', 'texture-sampler-units', 'texture-invalid-state'] as const;
 export const framebufferRttCases = ['fbo-depth-render-sample', 'fbo-attachment-resize',
   'fbo-deletion-bound-unbound', 'fbo-feedback-loop', 'raster-masks-depth-blend-cull',
@@ -205,6 +206,61 @@ async function executeRtt(result: RttResult, context: Awaited<ReturnType<typeof 
     region(32, 32, 16, 32, [0, 0, 255, 255]);
     band(48, 16, [0, 0, 0, format === gl.RGB ? 255 : 0]);
   } else switch (name) {
+    case 'texture-manual-mip-2d':
+    case 'texture-manual-mip-cube': {
+      const cube = name === 'texture-manual-mip-cube';
+      const binding = cube ? gl.TEXTURE_CUBE_MAP : gl.TEXTURE_2D;
+      const target = cube ? gl.TEXTURE_CUBE_MAP_POSITIVE_X : gl.TEXTURE_2D;
+      const width = cube ? 128 : 32;
+      const height = 128;
+      const texture = gl.createTexture()!;
+      gl.bindTexture(binding, texture);
+      gl.texParameteri(binding, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_NEAREST);
+      gl.texParameteri(binding, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(binding, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(binding, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      const colors = (w: number, h: number, channel: number) => {
+        const data = new Uint8Array(w * h * 4);
+        for (let i = 0; i < data.length; i += 4) { data[i + channel] = 255; data[i + 3] = 255; }
+        return data;
+      };
+      const define = (face: number, level: number, channel: number) => {
+        const w = Math.max(1, width >> level), h = Math.max(1, height >> level);
+        gl.texImage2D(face, level, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, colors(w, h, channel));
+      };
+      // Defining higher levels first is legal and leaves the chain incomplete until level zero exists.
+      for (let level = 7; level >= 0; level--) {
+        for (let face = 0; face < (cube ? 6 : 1); face++) {
+          define(target + face, level, level === 1 && face === 0 ? 0 : 2);
+        }
+      }
+      check('out-of-order mip definitions succeed', gl.getError(), gl.NO_ERROR);
+      const fs = cube ? 'precision mediump float; varying vec2 v_uv; uniform samplerCube u_texture; void main(){gl_FragColor=textureCube(u_texture,vec3(1.0,(v_uv.y-0.5)*2.0,(v_uv.x-0.5)*0.5));}' : rttTextureFragment;
+      const p = program(fs);
+      gl.uniform1i(gl.getUniformLocation(p, 'u_texture'), 0);
+      gl.viewport(0, 0, 16, 64);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      const pixels = colors(width / 2, height / 2, 1);
+      error('nonzero-level update', () => gl.texSubImage2D(target, 1, 0, 0, width / 2, height / 2,
+        gl.RGBA, gl.UNSIGNED_BYTE, pixels), gl.NO_ERROR);
+      pixels.fill(0);
+      error('out-of-bounds mip update', () => gl.texSubImage2D(target, 1, width / 2, height / 2, 1, 1,
+        gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)), gl.INVALID_VALUE);
+      gl.viewport(16, 0, 16, 64);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      error('mismatched dimensions define an incomplete chain', () =>
+        gl.texImage2D(target, 2, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null), gl.NO_ERROR);
+      gl.viewport(32, 0, 16, 64);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.texParameteri(binding, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.viewport(48, 0, 16, 64);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      band(0, 16, [255, 0, 0, 255]);
+      band(16, 16, [0, 255, 0, 255]);
+      band(32, 16, [0, 0, 0, 255]);
+      band(48, 16, [0, 0, 255, 255]);
+      break;
+    }
     case 'texture-packed-cube': {
       const cube = gl.createTexture()!;
       gl.bindTexture(gl.TEXTURE_CUBE_MAP, cube);

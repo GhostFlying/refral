@@ -57,6 +57,10 @@ Draw replies start with the RFD4 magic and version 4. They contain executable an
 
 Automatic microtask submission and explicit flush use the same host. The testing capture target is the current default framebuffer. ABI v4 covers triangle lists and strips with typed vertex input alongside the existing uniforms, raster and resource state. The selected original CTS can still inspect matrix attribute reflection and call unsupported uniform setters with null locations.
 
+## Mip image chains
+
+Resource capability 4 encodes the number of sampled levels per binding. Zero selects an incomplete texture, and positive counts carry one 2D image or six cube faces per level. The decoder verifies the image target, level and shared texture identity for the complete chain.
+
 ## Readback capability v1
 
 The full drawing adapter additionally requires rf_readback_protocol_version() equal to one. Initialization reports stale modules with pnpm rust:build guidance before allocating context state. The prepareReadPixels command receives normalized coordinates, dimensions, enums, nullable view brand and destination byte length. Caller storage remains outside Wasm.

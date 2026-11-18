@@ -2,8 +2,8 @@ use crate::render::u32_value;
 use refral_core::{ResourceOperation, TextureParameters, TextureVersion};
 
 pub(super) const VERSION_BYTES: usize = 36;
-// A single texture deletion can retire all six images before returning.
-pub(super) const MAX_OPERATION_HEADERS: usize = 8 + 6 * (4 + VERSION_BYTES);
+// One deletion can retire six faces at every level of a u32-sized texture.
+pub(super) const MAX_OPERATION_HEADERS: usize = 8 + 6 * u32::BITS as usize * (4 + VERSION_BYTES);
 
 pub(super) fn capacity(operations: &[ResourceOperation]) -> Option<usize> {
     let mut length = 4_usize;
@@ -140,9 +140,9 @@ mod tests {
     use refral_core::{ObjectHandle, ObjectKind};
 
     #[test]
-    fn six_face_retirement_fits_preexecution_capacity_and_keeps_image_identity() {
-        let operations: Vec<_> = (0..6)
-            .map(|face| ResourceOperation::RetireTexture {
+    fn cube_chain_retirement_fits_preexecution_capacity_and_keeps_image_identity() {
+        let operations: Vec<_> = (0..6 * u32::BITS)
+            .map(|image| ResourceOperation::RetireTexture {
                 version: TextureVersion {
                     texture: ObjectHandle {
                         kind: ObjectKind::Texture,
@@ -152,8 +152,8 @@ mod tests {
                     },
                     storage_generation: 9,
                     content_version: 13,
-                    image_target: 0x8515 + face,
-                    level: 0,
+                    image_target: 0x8515 + image % 6,
+                    level: image / 6,
                 },
             })
             .collect();
@@ -163,19 +163,19 @@ mod tests {
         encode(&mut encoded, &[]);
         assert_eq!(encoded.len(), expected + 4);
         assert_eq!(encoded.len(), MAX_OPERATION_HEADERS);
-        for face in 0..6 {
-            let start = 4 + face * 40;
+        for image in 0..operations.len() {
+            let start = 4 + image * 40;
             assert_eq!(
                 u32::from_le_bytes(encoded[start..start + 4].try_into().unwrap()),
                 4
             );
             assert_eq!(
                 u32::from_le_bytes(encoded[start + 32..start + 36].try_into().unwrap()),
-                0x8515 + face as u32
+                0x8515 + image as u32 % 6
             );
             assert_eq!(
                 u32::from_le_bytes(encoded[start + 36..start + 40].try_into().unwrap()),
-                0
+                image as u32 / 6
             );
         }
     }

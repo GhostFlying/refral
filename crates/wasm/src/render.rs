@@ -10,7 +10,7 @@ const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
 
 #[no_mangle]
 pub extern "C" fn rf_resource_protocol_version() -> u32 {
-    3
+    4
 }
 
 #[no_mangle]
@@ -485,6 +485,7 @@ fn reply_capacity(value: &Reply) -> Option<usize> {
                             0
                         }
                     }
+                    TextureImages::MipChain { images, .. } => images.len(),
                 };
                 total = total
                     .checked_add(24)?
@@ -645,6 +646,17 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
                             }
                         }
                     }
+                    TextureImages::MipChain {
+                        cube,
+                        levels,
+                        images,
+                    } => {
+                        u32_value(output, u32::from(cube));
+                        u32_value(output, levels as u32);
+                        for version in images {
+                            crate::resources::version(output, version);
+                        }
+                    }
                 }
                 crate::resources::parameters(output, binding.parameters);
             }
@@ -734,7 +746,7 @@ mod tests {
 
     #[test]
     fn command_transport_preserves_utf16_and_owns_output() {
-        assert_eq!(rf_resource_protocol_version(), 3);
+        assert_eq!(rf_resource_protocol_version(), 4);
         assert_eq!(rf_readback_protocol_version(), 1);
         assert_eq!(rf_dom_upload_protocol_version(), 2);
         assert_eq!(rf_init(7, 4096.0), 1);

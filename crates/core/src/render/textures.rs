@@ -47,20 +47,6 @@ fn unpack_word(word: u16, ty: u32) -> (u8, u8, u8, u8) {
     }
 }
 
-enum TextureUploadError {
-    Invalid,
-    Unsupported(&'static str),
-}
-
-impl TextureUploadError {
-    fn reply(self) -> Reply {
-        match self {
-            Self::Invalid => Reply::Null,
-            Self::Unsupported(operation) => Reply::Unsupported(operation),
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TextureVersion {
     pub texture: ObjectHandle,
@@ -90,10 +76,15 @@ pub struct TextureBinding {
     pub images: TextureImages,
     pub parameters: TextureParameters,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TextureImages {
     Texture2D(Option<TextureVersion>),
     Cube(Option<[TextureVersion; 6]>),
+    MipChain {
+        cube: bool,
+        levels: usize,
+        images: Vec<TextureVersion>,
+    },
 }
 pub enum ResourceOperation {
     DefineTexture {
@@ -142,7 +133,46 @@ pub(super) struct Texture {
     pub(super) target: u32,
     // The first image is 2D. The following six are +X,-X,+Y,-Y,+Z,-Z.
     pub(super) images: [TextureImage; 7],
+    mips: Vec<[TextureImage; 7]>,
     parameters: TextureParameters,
+}
+impl Texture {
+    fn image(&self, face: usize, level: usize) -> Option<&TextureImage> {
+        if level == 0 {
+            self.images.get(face)
+        } else {
+            self.mips.get(level - 1)?.get(face)
+        }
+    }
+
+    fn image_mut(&mut self, face: usize, level: usize) -> &mut TextureImage {
+        if level == 0 {
+            &mut self.images[face]
+        } else {
+            &mut self.mips[level - 1][face]
+        }
+    }
+
+    fn ensure_level(&mut self, level: usize) -> bool {
+        if level > self.mips.len() {
+            if self.mips.try_reserve(level - self.mips.len()).is_err() {
+                return false;
+            }
+            self.mips.resize(level, [TextureImage::default(); 7]);
+        }
+        true
+    }
+
+    fn levels(&self) -> impl Iterator<Item = &[TextureImage; 7]> {
+        std::iter::once(&self.images).chain(&self.mips)
+    }
+
+    fn defined_image_count(&self) -> usize {
+        self.levels()
+            .flatten()
+            .filter(|image| image.storage.is_some())
+            .count()
+    }
 }
 pub(super) struct TextureState {
     pub(super) slots: Vec<RenderSlot<Texture>>,
@@ -215,12 +245,13 @@ impl ContextCore {
                     self.context_id,
                 ) {
                     let image = image_index(version.image_target).unwrap();
-                    if self.texture_image_version(index, image) == *version {
+                    if self.texture_image_version(index, image, version.level as usize) == *version
+                    {
                         self.render.textures.slots[index]
                             .value
                             .as_mut()
                             .unwrap()
-                            .images[image]
+                            .image_mut(image, version.level as usize)
                             .content_version = previous.content_version;
                     }
                 }
@@ -283,11 +314,11 @@ impl ContextCore {
             .map(|index| (index, image))
     }
     pub(super) fn texture_version(&self, index: usize) -> TextureVersion {
-        self.texture_image_version(index, 0)
+        self.texture_image_version(index, 0, 0)
     }
-    fn texture_image_version(&self, index: usize, image: usize) -> TextureVersion {
+    fn texture_image_version(&self, index: usize, image: usize, level: usize) -> TextureVersion {
         let slot = &self.render.textures.slots[index];
-        let texture = slot.value.as_ref().unwrap();
+        let storage = slot.value.as_ref().unwrap().image(image, level).unwrap();
         TextureVersion {
             texture: ObjectHandle {
                 kind: ObjectKind::Texture,
@@ -295,10 +326,10 @@ impl ContextCore {
                 slot: index as u32 + 1,
                 generation: slot.generation,
             },
-            storage_generation: texture.images[image].storage_generation,
-            content_version: texture.images[image].content_version,
+            storage_generation: storage.storage_generation,
+            content_version: storage.content_version,
             image_target: image_target(image),
-            level: 0,
+            level: level as u32,
         }
     }
     fn reserve_texture_operation(&mut self) -> bool {
@@ -316,29 +347,20 @@ impl ContextCore {
         if !texture.deleted || texture.references != 0 {
             return;
         }
-        let count = texture
-            .images
-            .iter()
-            .filter(|image| image.storage.is_some())
-            .count();
+        let count = texture.defined_image_count();
         if self.render.textures.before.try_reserve(count).is_err() {
             self.record_error(OUT_OF_MEMORY);
             return;
         }
-        for image in 0..7 {
-            if self.render.textures.slots[index]
-                .value
-                .as_ref()
-                .unwrap()
-                .images[image]
-                .storage
-                .is_some()
-            {
-                let version = self.texture_image_version(index, image);
-                self.render
-                    .textures
-                    .before
-                    .push(ResourceOperation::RetireTexture { version });
+        for (level, images) in texture.levels().enumerate() {
+            for (face, image) in images.iter().enumerate() {
+                if image.storage.is_some() {
+                    let version = self.texture_image_version(index, face, level);
+                    self.render
+                        .textures
+                        .before
+                        .push(ResourceOperation::RetireTexture { version });
+                }
             }
         }
         self.render.textures.slots[index].value = None;
@@ -372,6 +394,7 @@ impl ContextCore {
                     references: 0,
                     target: 0,
                     images: [TextureImage::default(); 7],
+                    mips: Vec::new(),
                     parameters: TextureParameters::default(),
                 };
                 let result = insert(
@@ -483,10 +506,7 @@ impl ContextCore {
                     .value
                     .as_ref()
                     .unwrap()
-                    .images
-                    .iter()
-                    .filter(|image| image.storage.is_some())
-                    .count();
+                    .defined_image_count();
                 if self.render.textures.before.try_reserve(count).is_err() {
                     self.record_error(OUT_OF_MEMORY);
                     return Some(Reply::Null);
@@ -591,12 +611,19 @@ impl ContextCore {
         }
         true
     }
+    fn level_limit(&self, level: f64) -> u32 {
+        if !(0.0..32.0).contains(&level) || level.fract() != 0.0 {
+            return 0;
+        }
+        self.render.texture_dimension_limit >> level as u32
+    }
     fn image_dimensions(&mut self, level: f64, width: f64, height: f64, border: f64) -> bool {
-        if level < 0.0
-            || width < 0.0
-            || height < 0.0
-            || width > self.render.texture_dimension_limit as f64
-            || height > self.render.texture_dimension_limit as f64
+        let limit = self.level_limit(level);
+        if limit == 0
+            || !(0.0..=limit as f64).contains(&width)
+            || !(0.0..=limit as f64).contains(&height)
+            || width.fract() != 0.0
+            || height.fract() != 0.0
             || border != 0.0
         {
             self.record_error(INVALID_VALUE);
@@ -620,71 +647,68 @@ impl ContextCore {
         }
         true
     }
-    fn validate_texture_definition(
-        &mut self,
-        args: &[Argument],
-    ) -> Result<(usize, usize), TextureUploadError> {
+    fn validate_texture_definition(&mut self, args: &[Argument]) -> Option<(usize, usize)> {
         let number = |index: usize| args[index].number();
-        let Some((index, image)) = self.bound_texture_image(number(0) as u32) else {
-            return Err(TextureUploadError::Invalid);
-        };
+        let (index, image) = self.bound_texture_image(number(0) as u32)?;
         let level = number(1);
         let format = number(6) as u32;
         let ty = number(7) as u32;
         if !self.image_dimensions(level, number(3), number(4), number(5))
             || !self.validate_texture_format(format, ty)
         {
-            return Err(TextureUploadError::Invalid);
+            return None;
         }
         if image != 0 && number(3) != number(4) {
             self.record_error(INVALID_VALUE);
-            return Err(TextureUploadError::Invalid);
+            return None;
         }
         if level > 0.0
             && (!(number(3) as u32).is_power_of_two() || !(number(4) as u32).is_power_of_two())
         {
             self.record_error(INVALID_VALUE);
-            return Err(TextureUploadError::Invalid);
+            return None;
         }
         if number(2) as u32 != format {
             self.record_error(INVALID_OPERATION);
-            return Err(TextureUploadError::Invalid);
+            return None;
         }
-        if level != 0.0 {
-            return Err(TextureUploadError::Unsupported("texture mip levels"));
-        }
-        let image_state = &self.render.textures.slots[index]
+        if self.render.textures.slots[index]
             .value
             .as_ref()
             .unwrap()
-            .images[image];
-        if image_state.storage_generation == MAX_SAFE_VERSION
-            || image_state.content_version == MAX_SAFE_VERSION
+            .image(image, level as usize)
+            .is_some_and(|image| {
+                image.storage_generation == MAX_SAFE_VERSION
+                    || image.content_version == MAX_SAFE_VERSION
+            })
         {
             self.record_error(OUT_OF_MEMORY);
-            return Err(TextureUploadError::Invalid);
+            return None;
         }
-        Ok((index, image))
+        Some((index, image))
     }
-    fn validate_texture_update(
-        &mut self,
-        args: &[Argument],
-    ) -> Result<(usize, usize), TextureUploadError> {
+    fn validate_texture_update(&mut self, args: &[Argument]) -> Option<(usize, usize)> {
         let number = |index: usize| args[index].number();
-        let Some((index, image)) = self.bound_texture_image(number(0) as u32) else {
-            return Err(TextureUploadError::Invalid);
-        };
-        let Some(storage) = self.render.textures.slots[index]
+        let (index, image) = self.bound_texture_image(number(0) as u32)?;
+        let level = number(1);
+        if self.level_limit(level) == 0 {
+            self.record_error(INVALID_VALUE);
+            return None;
+        }
+        let Some(image_state) = self.render.textures.slots[index]
             .value
             .as_ref()
             .unwrap()
-            .images[image]
-            .storage
+            .image(image, level as usize)
+            .copied()
         else {
             self.record_error(INVALID_OPERATION);
-            return Err(TextureUploadError::Invalid);
+            return None;
         };
-        let level = number(1);
+        let Some(storage) = image_state.storage else {
+            self.record_error(INVALID_OPERATION);
+            return None;
+        };
         let x = number(2);
         let y = number(3);
         let width = number(4);
@@ -698,30 +722,20 @@ impl ContextCore {
             || y + height > storage.height as f64
         {
             self.record_error(INVALID_VALUE);
-            return Err(TextureUploadError::Invalid);
+            return None;
         }
         if !self.validate_texture_format(format, ty) {
-            return Err(TextureUploadError::Invalid);
+            return None;
         }
         if format != storage.format || ty != storage.ty {
             self.record_error(INVALID_OPERATION);
-            return Err(TextureUploadError::Invalid);
+            return None;
         }
-        if level != 0.0 {
-            return Err(TextureUploadError::Unsupported("texture mip levels"));
-        }
-        if self.render.textures.slots[index]
-            .value
-            .as_ref()
-            .unwrap()
-            .images[image]
-            .content_version
-            == MAX_SAFE_VERSION
-        {
+        if image_state.content_version == MAX_SAFE_VERSION {
             self.record_error(OUT_OF_MEMORY);
-            return Err(TextureUploadError::Invalid);
+            return None;
         }
-        Ok((index, image))
+        Some((index, image))
     }
     fn prepare_dom_texture_upload(&mut self, args: &[Argument]) -> Reply {
         if !(11..=12).contains(&args.len()) || !matches!(args[0], Argument::Boolean(_)) {
@@ -767,8 +781,8 @@ impl ContextCore {
         } else {
             self.validate_texture_definition(&parameters)
         };
-        if let Err(error) = validated {
-            return error.reply();
+        if validated.is_none() {
+            return Reply::Null;
         }
         let state = &self.render.textures;
         Reply::Ints(vec![
@@ -969,9 +983,8 @@ impl ContextCore {
         if dom && !self.validate_dom_source(args[3].number(), args[4].number(), true) {
             return Reply::Null;
         }
-        let (index, image) = match self.validate_texture_definition(args) {
-            Ok(index) => index,
-            Err(error) => return error.reply(),
+        let Some((index, image)) = self.validate_texture_definition(args) else {
+            return Reply::Null;
         };
         let number = |index: usize| args[index].number();
         let width = number(3);
@@ -986,11 +999,13 @@ impl ContextCore {
         if !self.reserve_texture_operation() {
             return Reply::Null;
         }
-        let image_state = &mut self.render.textures.slots[index]
-            .value
-            .as_mut()
-            .unwrap()
-            .images[image];
+        let level = number(1) as usize;
+        let texture = self.render.textures.slots[index].value.as_mut().unwrap();
+        if !texture.ensure_level(level) {
+            self.record_error(OUT_OF_MEMORY);
+            return Reply::Null;
+        }
+        let image_state = texture.image_mut(image, level);
         image_state.storage_generation += 1;
         image_state.content_version += 1;
         image_state.storage = Some(TextureStorage {
@@ -999,7 +1014,7 @@ impl ContextCore {
             format,
             ty,
         });
-        let version = self.texture_image_version(index, image);
+        let version = self.texture_image_version(index, image, level);
         self.render
             .textures
             .before
@@ -1019,9 +1034,8 @@ impl ContextCore {
         if dom && !self.validate_dom_source(args[4].number(), args[5].number(), true) {
             return Reply::Null;
         }
-        let (index, image) = match self.validate_texture_update(args) {
-            Ok(index) => index,
-            Err(error) => return error.reply(),
+        let Some((index, image)) = self.validate_texture_update(args) else {
+            return Reply::Null;
         };
         let number = |index: usize| args[index].number();
         let x = number(2);
@@ -1041,14 +1055,15 @@ impl ContextCore {
         if !self.reserve_texture_operation() {
             return Reply::Null;
         }
-        let previous = self.texture_image_version(index, image);
+        let level = number(1) as usize;
+        let previous = self.texture_image_version(index, image, level);
         self.render.textures.slots[index]
             .value
             .as_mut()
             .unwrap()
-            .images[image]
+            .image_mut(image, level)
             .content_version += 1;
-        let version = self.texture_image_version(index, image);
+        let version = self.texture_image_version(index, image, level);
         self.render
             .textures
             .before
@@ -1110,21 +1125,36 @@ impl ContextCore {
                 });
             let texture =
                 texture_index.and_then(|index| self.render.textures.slots[index].value.as_ref());
-            let complete = texture.is_some_and(texture_complete);
-            let images = if target == TEXTURE_CUBE_MAP {
-                TextureImages::Cube(if complete {
-                    Some(std::array::from_fn(|face| {
-                        self.texture_image_version(texture_index.unwrap(), face + 1)
-                    }))
-                } else {
-                    None
-                })
+            let levels = texture.map_or(0, texture_sampling_level_count);
+            let cube = target == TEXTURE_CUBE_MAP;
+            let images = if levels > 1 {
+                let faces = if cube { 1..7 } else { 0..1 };
+                let mut images = Vec::new();
+                images.try_reserve_exact(levels * faces.len()).ok()?;
+                for level in 0..levels {
+                    for face in faces.clone() {
+                        images.push(self.texture_image_version(
+                            texture_index.unwrap(),
+                            face,
+                            level,
+                        ));
+                    }
+                }
+                TextureImages::MipChain {
+                    cube,
+                    levels,
+                    images,
+                }
+            } else if cube {
+                TextureImages::Cube((levels == 1).then(|| {
+                    std::array::from_fn(|face| {
+                        self.texture_image_version(texture_index.unwrap(), face + 1, 0)
+                    })
+                }))
             } else {
-                TextureImages::Texture2D(if complete {
-                    Some(self.texture_version(texture_index.unwrap()))
-                } else {
-                    None
-                })
+                TextureImages::Texture2D(
+                    (levels == 1).then(|| self.texture_version(texture_index.unwrap())),
+                )
             };
             bindings.push(TextureBinding {
                 images,
@@ -1143,38 +1173,71 @@ impl ContextCore {
     }
 }
 
-pub(super) fn texture_complete(texture: &Texture) -> bool {
-    let image = if texture.target == TEXTURE_CUBE_MAP {
-        1
-    } else {
-        0
-    };
-    let Some(storage) = texture.images[image].storage else {
-        return false;
-    };
-    if storage.width == 0 || storage.height == 0 {
-        return false;
+impl Texture {
+    fn faces(&self) -> std::ops::Range<usize> {
+        if self.target == TEXTURE_CUBE_MAP {
+            1..7
+        } else {
+            0..1
+        }
     }
-    if texture.target == TEXTURE_CUBE_MAP
-        && texture.images[1..].iter().any(|face| {
-            face.storage.is_none_or(|other| {
-                other.width != storage.width
-                    || other.height != storage.height
-                    || other.format != storage.format
-                    || other.ty != storage.ty
-                    || other.width != other.height
+
+    fn complete_base(&self) -> Option<TextureStorage> {
+        let faces = self.faces();
+        let base = self.images[faces.start].storage?;
+        if base.width == 0
+            || base.height == 0
+            || (self.target == TEXTURE_CUBE_MAP && base.width != base.height)
+            || faces.clone().any(|face| {
+                !self.images[face].storage.is_some_and(|image| {
+                    image.width == base.width
+                        && image.height == base.height
+                        && image.format == base.format
+                        && image.ty == base.ty
+                })
             })
-        })
-    {
-        return false;
+        {
+            return None;
+        }
+        Some(base)
     }
+}
+
+fn texture_sampling_level_count(texture: &Texture) -> usize {
+    let Some(base) = texture.complete_base() else {
+        return 0;
+    };
     let parameters = texture.parameters;
     let non_mip = matches!(parameters.min_filter, 0x2600 | 0x2601);
-    if !non_mip && (storage.width != 1 || storage.height != 1) {
-        return false;
+    if !base.width.is_power_of_two() || !base.height.is_power_of_two() {
+        return usize::from(non_mip && parameters.wrap_s == 0x812f && parameters.wrap_t == 0x812f);
     }
-    if !storage.width.is_power_of_two() || !storage.height.is_power_of_two() {
-        return non_mip && parameters.wrap_s == 0x812f && parameters.wrap_t == 0x812f;
+    if non_mip {
+        return 1;
     }
-    true
+    let levels = base.width.max(base.height).ilog2() as usize + 1;
+    for level in 1..levels {
+        let width = (base.width >> level).max(1);
+        let height = (base.height >> level).max(1);
+        for face in texture.faces() {
+            if !texture
+                .image(face, level)
+                .and_then(|image| image.storage)
+                .is_some_and(|image| {
+                    image.width == width
+                        && image.height == height
+                        && image.format == base.format
+                        && image.ty == base.ty
+                })
+            {
+                return 0;
+            }
+        }
+    }
+    levels
+}
+
+#[cfg(test)]
+pub(super) fn texture_complete(texture: &Texture) -> bool {
+    texture_sampling_level_count(texture) > 0
 }

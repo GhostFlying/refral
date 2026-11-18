@@ -52,6 +52,8 @@ Task 041 adds typed/null 565, 4444 and 5551 texture uploads to both cores. Share
 
 Task 042 adds packed ImageData, Canvas and decoded image uploads to both cores. Fourteen original mixed and packed DOM files pass, including both mixed format-conversion originals. [Packed DOM results](tasks/042-packed-dom-texture-uploads.md)
 
+Task 043 accepts explicit texture mip levels for Texture2D and CubeMap. The original texture size and subimage cases pass through both cores. [Manual mip results](tasks/043-texture-mip-levels.md)
+
 The completed milestones and subsequent compatibility dependencies follow.
 
 1. Task 025 establishes synchronous readback feasibility using actual JS/Rust cores and an independent GPU worker. Task 027 adds a main-thread Canvas2D candidate, byte-exact shared rendering corpus and matched latency/process CPU comparison. Task028 implements the user-selected Canvas2D path through both public cores, including destination ownership, packing, clipping, ordering and loss handling. The original program-handling, feedback-loop and read-pixels-pack-alignment files execute unchanged through a recorded iframe prototype adapter. ADR 007 records the accepted backend.

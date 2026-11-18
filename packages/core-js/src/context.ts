@@ -10,7 +10,7 @@ import type {
 } from "@refral/core-api";
 import {
   LogicalObject, BufferObject, TextureObject, RenderbufferObject, FramebufferObject,
-  ErrorState, isTextureComplete,
+  ErrorState, isPowerOfTwo, textureSamplingLevelCount, textureTargets,
 } from "./resources.js";
 import type { TextureImage, VertexAttribute } from "./resources.js";
 
@@ -195,12 +195,12 @@ export class SemanticContext {
       width: storage.width, height: storage.height, isDefault: false };
   }
 
-  private textureVersion(texture: TextureObject, imageTarget: number = GL.TEXTURE_2D): TextureVersion {
+  private textureVersion(texture: TextureObject, imageTarget: number = GL.TEXTURE_2D, level = 0): TextureVersion {
     if (!texture.handle) throw new Error("Texture has no logical resource handle.");
-    const image = texture.image(imageTarget);
+    const image = texture.image(imageTarget, level);
     if (!image) throw new Error("Texture image has no defined resource version.");
     const version = { texture: texture.handle, storageGeneration: image.generation, contentVersion: image.version };
-    return imageTarget === GL.TEXTURE_2D ? version : { ...version, imageTarget, level: 0 };
+    return imageTarget === GL.TEXTURE_2D && level === 0 ? version : { ...version, imageTarget, level };
   }
 
   private wroteColorTarget(): void {
@@ -699,14 +699,20 @@ export class SemanticContext {
       if (!cube && sampler.type !== GL.SAMPLER_2D) return unsupported("sampler type");
       const texture = cube ? binding.cubeMap : binding.texture2D;
       if (texture && this.framebuffer?.color === texture) return this.error(GL.INVALID_OPERATION);
-      const complete = texture !== null && isTextureComplete(texture);
+      const levels = texture ? textureSamplingLevelCount(texture) : 0;
       const parameters = texture ? { ...texture.parameters } :
         { minFilter: GL.NEAREST, magFilter: GL.NEAREST, wrapS: GL.CLAMP_TO_EDGE, wrapT: GL.CLAMP_TO_EDGE };
-      if (cube) {
+      if (levels > 1 && texture) {
+        const mipImages = [];
+        for (let level = 0; level < levels; level++) {
+          for (const target of textureTargets(texture)) mipImages.push(texture.image(target, level)!.storage!);
+        }
+        textures.push({ dimension: cube ? "cube" : "2d", storage: null, parameters, mipImages });
+      } else if (cube) {
         const snapshot: TextureBinding = { dimension: "cube", storage: null, parameters };
-        if (complete) snapshot.cubeFaces = CUBE_FACES.map(face => texture!.image(face)!.storage!);
+        if (levels) snapshot.cubeFaces = CUBE_FACES.map(face => texture!.image(face)!.storage!);
         textures.push(snapshot);
-      } else textures.push({ storage: complete ? texture!.storage : null, parameters });
+      } else textures.push({ storage: levels ? texture!.storage : null, parameters });
     }
     if (!count || !target.width || !target.height ||
         (this.state.cull && this.state.cullFace === GL.FRONT_AND_BACK)) return;
@@ -878,12 +884,13 @@ export class SemanticContext {
     const texture = this.boundImageTexture(target);
     if (texture === undefined) return null;
     if (!texture) { this.error(GL.INVALID_OPERATION); return null; }
-    if (level < 0 || width < 0 || height < 0 || !Number.isInteger(width) || !Number.isInteger(height) ||
-        width > this.host.limits.maxTextureDimension2D || height > this.host.limits.maxTextureDimension2D || border !== 0 ||
-        (target !== GL.TEXTURE_2D && width !== height)) {
+    const levelLimit = Math.floor(this.host.limits.maxTextureDimension2D / 2 ** level);
+    if (!Number.isInteger(level) || level < 0 || !levelLimit || width < 0 || height < 0
+        || !Number.isInteger(width) || !Number.isInteger(height) || width > levelLimit || height > levelLimit
+        || border !== 0 || (target !== GL.TEXTURE_2D && width !== height)
+        || (level > 0 && (!isPowerOfTwo(width) || !isPowerOfTwo(height)))) {
       this.error(GL.INVALID_VALUE); return null;
     }
-    if (level !== 0) return unsupported("texture mip levels");
     if (!this.validateTextureFormat(format, type)) return null;
     if (internalFormat !== format) { this.error(GL.INVALID_OPERATION); return null; }
     return texture;
@@ -892,10 +899,11 @@ export class SemanticContext {
     width: number, height: number, format: number, type: number): TextureObject | null {
     const texture = this.boundImageTexture(target);
     if (texture === undefined) return null;
-    const image = texture?.image(target);
+    if (!Number.isInteger(level) || level < 0 || 2 ** level > this.host.limits.maxTextureDimension2D) {
+      this.error(GL.INVALID_VALUE); return null;
+    }
+    const image = texture?.image(target, level);
     if (!image?.storage) { this.error(GL.INVALID_OPERATION); return null; }
-    if (level < 0) { this.error(GL.INVALID_VALUE); return null; }
-    if (level !== 0) return unsupported("texture mip levels");
     if (x < 0 || y < 0 || width < 0 || height < 0 || !Number.isInteger(width) || !Number.isInteger(height) ||
         x + width > image.storage.width || y + height > image.storage.height) {
       this.error(GL.INVALID_VALUE); return null;
@@ -931,12 +939,12 @@ export class SemanticContext {
     const texture = this.validateTextureImage(target!, level!, internalFormat!, width, height, border, format, type);
     if (!texture) return;
     const data = this.pixelData(width, height, format, type, source); if (!data) return;
-    const image: TextureImage = texture.image(target!) ?? { storage: null, generation: 0, version: 0, format, type };
+    const image: TextureImage = texture.image(target!, level!) ?? { storage: null, generation: 0, version: 0, format, type };
     const previous = image.storage;
     image.generation++; image.version++; image.format = format; image.type = type;
-    if (target !== GL.TEXTURE_2D) texture.cubeImages.set(target!, image);
+    texture.setImage(target!, level!, image);
     if (this.resources) {
-      const version = this.textureVersion(texture, target!);
+      const version = this.textureVersion(texture, target!, level!);
       this.resources.apply({ kind: "define-texture", version, width, height, data });
       image.storage = this.resources.texture(version);
     } else {
@@ -962,12 +970,12 @@ export class SemanticContext {
     if (source === null) return this.error(GL.INVALID_VALUE);
     const data = this.pixelData(width, height, format, type, source); if (!data) return;
     if (width === 0 || height === 0) return;
-    const image = texture.image(target!)!;
+    const image = texture.image(target!, level!)!;
     const previous = image.storage!;
-    const previousVersion = this.resources ? this.textureVersion(texture, target!) : null;
+    const previousVersion = this.resources ? this.textureVersion(texture, target!, level!) : null;
     image.version++;
     if (this.resources) {
-      const version = this.textureVersion(texture, target!);
+      const version = this.textureVersion(texture, target!, level!);
       this.resources.apply({ kind: "update-texture", version, previous: previousVersion!,
         x: x!, y: y!, width, height, data });
       image.storage = this.resources.texture(version);
@@ -996,15 +1004,18 @@ export class SemanticContext {
     const retained = [...this.objects].some(object => object instanceof FramebufferObject && object.color === texture);
     if (!retained) {
       texture.retired = true;
-      const targets = texture.target === GL.TEXTURE_CUBE_MAP ? CUBE_FACES : [GL.TEXTURE_2D];
-      for (const imageTarget of targets) {
-        const image = texture.image(imageTarget);
-        if (!image?.storage) continue;
-        if (this.resources) this.resources.apply({ kind: "retire-texture", version: this.textureVersion(texture, imageTarget) });
+      const retire = (imageTarget: number, level: number, image: TextureImage) => {
+        if (!image.storage) return;
+        if (this.resources) this.resources.apply({ kind: "retire-texture",
+          version: this.textureVersion(texture, imageTarget, level) });
         else this.host.retireStorage(image.storage);
         image.storage = null;
+      };
+      retire(GL.TEXTURE_2D, 0, texture);
+      for (const [level, images] of texture.imageLevels) {
+        for (const [target, image] of images) retire(target, level, image);
       }
-      texture.cubeImages.clear();
+      texture.imageLevels.clear();
       this.schedule();
     }
   }
@@ -1351,7 +1362,7 @@ export class SemanticContext {
       } else if (object instanceof BufferObject) object.data = new Uint8Array(0);
       else if (object instanceof TextureObject) {
         object.storage = null;
-        object.cubeImages.clear();
+        object.imageLevels.clear();
       }
       else if (object instanceof FramebufferObject) {
         object.color = null;

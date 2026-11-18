@@ -152,6 +152,21 @@ test('retained failure messages and truncation are counted separately from faile
   assert.equal(build(inputs).summary.complete, false);
 });
 
+test('case captures are included without changing assertion results', () => {
+  const inputs = runs(['conformance/textures/capture.html']);
+  const screenshot = { kind: 'case-page', file: 'native/screenshots/0000.png', width: 800, height: 500,
+    canvas: { id: 'example', x: 0, y: 0, width: 32, height: 32 } };
+  const unavailable = { kind: 'unavailable', message: 'Capture timed out' };
+  inputs.native.results[0].screenshot = screenshot;
+  Object.assign(inputs.js.results[0], { status: 'fail', failed: 1, screenshot: unavailable });
+  const { summary } = build(inputs);
+  assert.equal(summary.complete, true);
+  assert.deepEqual(summary.files[0].screenshot, screenshot);
+  assert.deepEqual(summary.files[1].screenshot, unavailable);
+  assert.equal(summary.files[1].effectiveStatus, 'fail');
+  assert.equal(summary.files[2].screenshot, undefined);
+});
+
 test('official skipped failures overlap raw counters and do not inflate distinct assertion totals or effective failures', () => {
   const inputs = runs(['conformance/state/skipped.html']);
   Object.assign(inputs.js.results[0], { passed: 5, failed: 2, skipped: 3,

@@ -104,9 +104,11 @@ function intersectClip(first, second) {
 async function captureCasePage(page, url) {
   const runnerUrl = `${origin}/third_party/cts/sdk/tests/webgl-conformance-tests.html`;
   const runner = page.frames().find(frame => frame.url().split('?')[0] === runnerUrl);
-  const expectedPath = new URL(url, runnerUrl).pathname;
-  const frame = page.frames().find(candidate =>
-    candidate.parentFrame() === runner && new URL(candidate.url()).pathname === expectedPath);
+  const expected = new URL(url, runnerUrl);
+  const frame = runner?.childFrames().find(candidate => {
+    const current = new URL(candidate.url());
+    return current.origin === expected.origin && current.pathname === expected.pathname;
+  });
   if (!frame) return { kind: 'runner-page', bytes: await page.screenshot({ timeout: 3000 }) };
 
   const panel = runner.locator('#iframe-container');
@@ -320,7 +322,7 @@ try {
       try {
         if (values.screenshots) {
           await page.exposeFunction('__refralConformanceCapture', ({ index, url }) => {
-            if (inventory?.[index] !== url || activeIndex !== index) {
+            if (!batch?.includes(index) || inventory?.[index] !== url) {
               throw new Error('Conformance screenshot identity mismatch.');
             }
             return saveCaseScreenshot(page, backend, index, url);

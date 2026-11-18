@@ -22,3 +22,9 @@ pnpm conformance:run --backend js --screenshots --timeout-ms 5000 --output artif
 pnpm conformance:run --backend rust --screenshots --timeout-ms 5000 --output artifacts/conformance/case-screenshots
 pnpm conformance:report --input artifacts/conformance/case-screenshots
 ```
+
+## Run and capture recovery
+
+Chrome 158.0.8127.36 ran all 971 original files on each backend. Chrome native passed 968, JS passed 850 and Rust/Wasm passed 853. JS and Rust each reported a Chrome shutdown timeout after persisting the last file. The aggregate contained all 2,913 results with zero input issues.
+
+Six screenshot requests encountered an identity check against an asynchronously polled progress index. The runner now validates each request against the selected batch, pinned inventory and original child frame. Single-file replays provide the missing images. Check their backend, file, completion, assertion counters, browser configuration and rendering source hashes before associating them with the original results. The recovery record and complete gallery evidence live under `artifacts/conformance/case-screenshots/`.

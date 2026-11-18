@@ -36,6 +36,10 @@ These three URLs remain failed in each applicable raw result and stay in the den
 
 Chrome's other two native baseline failures occur in `offscreencanvas/methods.html` and `methods-worker.html`. The method census found every expected method plus one enumerable browser method, `texElementSubImage2D`, in each realm. Both originals rejected that extra method. See `artifacts/conformance/campaign/dedicated-workers/chrome-methods-audit.json` for the installed browser and renderer.
 
+## Accepted undefined observation
+
+Original #48 uses an opaque HTML canvas with preserveDrawingBuffer false. All three paths immediately copied red and continued displaying red after composition. A later Canvas2D drawImage copied opaque black on Chrome WebGL and transparent black on both Refral cores. The pinned WebGL specification lists this particular cross-frame read as potentially undefined. The owner accepted the observed difference. The original remains 4/0 on Chrome and 3/1 on JS and Rust. Keep both failing records in every total and continue testing the separate required drawing-buffer behavior. [Specification, screenshots and history](../tasks/093-opaque-webgpu-canvas-discard.md)
+
 ## Host capability blocker
 
 For synchronous finish, both cores return immediately once every earlier submission is known to have completed. The original uninitialized-test issues a 2 MiB upload immediately before finish. Each selected core reached one pass/one failure at that call. Chrome finished 39/0. The two quickCheck files passed. The owner accepted this host capability boundary and retained the original failing count. Reopen when a host can synchronously demonstrate completion of all preceding GL effects. The pinned original, two CDP call stacks and separate queue/Canvas2D measurements are recorded in [task 079](../tasks/079-synchronous-queue-completion.md).

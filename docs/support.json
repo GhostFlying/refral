@@ -59,6 +59,21 @@
     {
       "id": "context-webgl1",
       "api": "createWebGLOnWebGPU(canvas, {version:1}) and getContextAttributes",
+      "acceptedDifferences": [
+        {
+          "url": "conformance/context/context-attribute-preserve-drawing-buffer.html",
+          "assertion": "Did not render ok with preserveDrawingBuffer false.",
+          "cores": [
+            "js",
+            "rust"
+          ],
+          "classification": "undefined-post-composite-source-read",
+          "scope": "After composition, Canvas2D drawImage samples an opaque HTML canvas with preserveDrawingBuffer false. Same-task source reads and cleared attachment semantics retain their ordinary requirements.",
+          "observed": "Chrome WebGL copied opaque black; direct WebGPU on both cores copied transparent black. Each source remained red on screen.",
+          "accepted": "2026-11-19",
+          "reference": "docs/tasks/093-opaque-webgpu-canvas-discard.md"
+        }
+      ],
       "cores": {
         "js": {
           "status": "differential-verified",
@@ -91,7 +106,7 @@
             "WebGL-like structural context identity",
             "Antialias is reported false",
             "Stencil context requests raise NotSupportedError",
-            "Preserved drawing buffer is the implemented presentation profile"
+            "preserveDrawingBuffer defaults to false; post-composite DOM source observations are documented under acceptedDifferences."
           ]
         },
         "rust": {

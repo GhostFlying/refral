@@ -33,7 +33,7 @@ export interface PreparedHostFactory {
   dispose(): void;
 }
 
-interface HostContextAttributes { alpha: boolean; depth: boolean; stencil?: boolean | undefined; premultipliedAlpha?: boolean | undefined }
+interface HostContextAttributes { alpha: boolean; depth: boolean; stencil?: boolean | undefined; premultipliedAlpha?: boolean | undefined; errors?: string[] }
 
 interface Target {
   presentationGroup?: GPUBindGroup;
@@ -129,7 +129,6 @@ export class BrowserHost implements SemanticHost {
     pipelines: 0, bindGroups: 0, allocatedBufferBytes: 0, allocatedTextureBytes: 0,
     peakAllocatedBufferBytes: 0, peakAllocatedTextureBytes: 0,
   };
-  readonly errors: string[] = [];
   readonly environment: Record<string, unknown>;
   readonly limits: GPUSupportedLimits;
   readonly surface: DrawingSurface;
@@ -169,7 +168,7 @@ export class BrowserHost implements SemanticHost {
   private blackCubeTexture: GPUTexture | null = null;
   private disposed = false;
   private canvasReadback: CanvasReadback | null = null;
-  private readonly handleError = errorListener(this.errors);
+  private readonly handleError: (event: Event) => void;
 
   private constructor(
     readonly canvas: HTMLCanvasElement | OffscreenCanvas,
@@ -182,7 +181,9 @@ export class BrowserHost implements SemanticHost {
     readonly hasStencil: boolean,
     private readonly premultipliedAlpha: boolean,
     private readonly ownsDevice = true,
+    readonly errors: string[] = [],
   ) {
+    this.handleError = errorListener(errors);
     this.limits = device.limits;
     const dimensionLimit = this.limits.maxTextureDimension2D;
     this.surface = {
@@ -224,12 +225,14 @@ export class BrowserHost implements SemanticHost {
     if (!adapter) throw new DOMException("No WebGPU adapter is available", "NotSupportedError");
     const device = await adapter.requestDevice();
     const format = navigator.gpu.getPreferredCanvasFormat();
+    const surfaces = new WeakMap<HTMLCanvasElement | OffscreenCanvas, GPUCanvasContext>();
     const factory: PreparedHostFactory = (canvas, attributes, ownsDevice = false) => {
-      const context = canvas.getContext("webgpu");
+      const context = surfaces.get(canvas) ?? canvas.getContext("webgpu");
       if (!context) throw new DOMException("Canvas is already bound to another context", "InvalidStateError");
+      surfaces.set(canvas, context);
       const presentationFormat = attributes.alpha && attributes.premultipliedAlpha === false ? "rgba16float" : format;
       return new BrowserHost(canvas, device, context, presentationFormat, adapter, attributes.alpha, attributes.depth,
-        attributes.stencil ?? false, attributes.premultipliedAlpha ?? true, ownsDevice);
+        attributes.stencil ?? false, attributes.premultipliedAlpha ?? true, ownsDevice, attributes.errors);
     };
     factory.dispose = () => device.destroy();
     return factory;

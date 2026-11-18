@@ -87,8 +87,18 @@ export function createProgramFacade(core: DrawingCore, interfaces = webglInterfa
   const location = (value: unknown, nullable = true) => unwrap(value, 'uniform-location', nullable);
   const wrapResult = (value: unknown) => wrap(value as LogicalHandle | null);
 
-  method('createShader', 1, args => [toEnum(args[0])], wrapResult);
-  method('createProgram', 0, () => [], wrapResult);
+  function invalidated(kind: 'program' | 'shader') {
+    const wrapper: object = Object.create(interfaces[kind]);
+    objects.set(wrapper, { kind, contextId: core.contextId, slot: 0, generation: 0 });
+    return wrapper;
+  }
+  methods.createShader = (...args) => {
+    requireArguments('createShader', args, 1);
+    const type = toEnum(args[0]);
+    if (core.isContextLost()) return type === GL.VERTEX_SHADER || type === GL.FRAGMENT_SHADER ? invalidated('shader') : null;
+    return wrapResult(core.invoke('createShader', [type]));
+  };
+  methods.createProgram = () => core.isContextLost() ? invalidated('program') : wrapResult(core.invoke('createProgram', []));
   for (const name of ['compileShader', 'getShaderInfoLog', 'getShaderSource']) {
     method(name, 1, args => [shader(args[0])]);
   }

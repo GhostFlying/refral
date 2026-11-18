@@ -808,12 +808,16 @@ impl ContextCore {
         Some(name)
     }
     pub fn render_invoke(&mut self, operation: &str, args: &[Argument]) -> Reply {
+        // WEBGL_lose_context may generate INVALID_OPERATION even on a lost context.
+        if operation == "recordContextLossError" {
+            self.enqueue_error(INVALID_OPERATION);
+            return Reply::Null;
+        }
         let arg = |index: usize| args.get(index).unwrap_or(&Argument::Null);
         if self.lost {
             return match operation {
-                "isShader" | "isProgram" | "isTexture" | "isFramebuffer" | "isRenderbuffer" => {
-                    Reply::Boolean(false)
-                }
+                "isEnabled" | "isShader" | "isProgram" | "isTexture" | "isFramebuffer"
+                | "isRenderbuffer" => Reply::Boolean(false),
                 "checkFramebufferStatus" => Reply::Number(0x8cdd as f64),
                 "getAttribLocation" => Reply::Number(-1.0),
                 "getVertexAttribOffset" => Reply::Number(0.0),

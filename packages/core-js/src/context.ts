@@ -121,6 +121,8 @@ export class SemanticContext {
 
   /** Central public-call dispatch keeps context-loss behavior consistent across the facade. */
   invoke(method: string, arguments_: unknown[]): unknown {
+    // WEBGL_lose_context may generate INVALID_OPERATION even on a lost context.
+    if (method === "recordContextLossError") { this.errors.set(GL.INVALID_OPERATION); return; }
     if (this.lost && method !== "getError" && method !== "isContextLost") {
       if (method === "getAttribLocation") return -1;
       if (method === "getVertexAttribOffset") return 0;

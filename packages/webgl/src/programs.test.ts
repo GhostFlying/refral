@@ -17,7 +17,7 @@ function setup(contextId = 1) {
     if (operation === 'getAttachedShaders') return [shader];
     return undefined;
   });
-  const facade = createProgramFacade({ invoke } as unknown as DrawingCore);
+  const facade = createProgramFacade({ invoke, contextId, isContextLost: () => false } as unknown as DrawingCore);
   return { ...facade, invoke, shader, program, location };
 }
 

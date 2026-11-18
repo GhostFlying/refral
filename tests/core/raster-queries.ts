@@ -34,3 +34,31 @@ export function checkHintAndLineWidth(core: Pick<DrawingCore, 'invoke' | 'getErr
     expect(get(GL.LINE_WIDTH)).toBe(4.5);
   }
 }
+
+export function checkOffsetAndSampleState(core: Pick<DrawingCore, 'invoke' | 'getError'>): void {
+  const get = (parameter: number) => core.invoke('getParameter', [parameter]);
+  expect(get(GL.SUBPIXEL_BITS)).toBe(4);
+  expect(get(GL.POLYGON_OFFSET_FACTOR)).toBe(0);
+  expect(get(GL.POLYGON_OFFSET_UNITS)).toBe(0);
+  expect(get(GL.SAMPLE_COVERAGE_VALUE)).toBe(1);
+  expect(get(GL.SAMPLE_COVERAGE_INVERT)).toBe(false);
+  for (const cap of [GL.POLYGON_OFFSET_FILL, GL.SAMPLE_COVERAGE, GL.SAMPLE_ALPHA_TO_COVERAGE]) {
+    expect(get(cap)).toBe(false);
+    core.invoke('enable', [cap]);
+    expect(get(cap)).toBe(true);
+    expect(core.invoke('isEnabled', [cap])).toBe(true);
+    core.invoke('disable', [cap]);
+    expect(core.invoke('isEnabled', [cap])).toBe(false);
+  }
+  for (const [factor, units] of [[-0.25, 1.75], [0.125, -4294967296], [1, 4294967296]]) {
+    core.invoke('polygonOffset', [factor, units]);
+    expect(get(GL.POLYGON_OFFSET_FACTOR)).toBe(factor);
+    expect(get(GL.POLYGON_OFFSET_UNITS)).toBe(units);
+  }
+  for (const [input, value, invert] of [[-1, 0, true], [0.5, 0.5, false], [2, 1, true]] as const) {
+    core.invoke('sampleCoverage', [input, invert]);
+    expect(get(GL.SAMPLE_COVERAGE_VALUE)).toBe(value);
+    expect(get(GL.SAMPLE_COVERAGE_INVERT)).toBe(invert);
+  }
+  expect(core.getError()).toBe(GL.NO_ERROR);
+}

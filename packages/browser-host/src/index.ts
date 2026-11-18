@@ -676,6 +676,14 @@ export class BrowserHost implements SemanticHost {
     const indexFormat = wideIndices ? 'uint32' : 'uint16';
     const stripIndexFormat = strip && indices ? indexFormat : undefined;
     const target = this.resolveTarget(operation.target);
+    const biasEnabled = state.polygonOffsetFill && !line && !!target.depth && target.depth.format !== "stencil8";
+    // WebGPU takes a signed integer constant bias and a finite GLfloat slope.
+    const units = state.polygonOffsetUnits || 0;
+    const depthBias = biasEnabled ? Math.max(-2147483648, Math.min(2147483647,
+      Math.sign(units) * Math.round(Math.abs(units)))) : 0;
+    const maxFloat = 3.4028234663852886e38;
+    const depthBiasSlopeScale = biasEnabled
+      ? Math.max(-maxFloat, Math.min(maxFloat, state.polygonOffsetFactor || 0)) : 0;
     const resources = this.programResources(program);
     const stencil = state.stencilTest && targetHasStencil(target) ? {
       stencilFront: stencilFace(state.stencilFront), stencilBack: stencilFace(state.stencilBack),
@@ -688,7 +696,7 @@ export class BrowserHost implements SemanticHost {
         attributes: [{ shaderLocation: attribute.location, offset: 0, format }] };
     });
     const key = JSON.stringify([topology, stripIndexFormat, layouts, target.depth?.format, target.opaque, state.depthTest, state.depthMask,
-      state.depthFunc, state.colorMask, state.blend, state.blendSrcRGB, state.blendDstRGB,
+      state.depthFunc, depthBias, depthBiasSlopeScale, state.colorMask, state.blend, state.blendSrcRGB, state.blendDstRGB,
       state.blendSrcAlpha, state.blendDstAlpha, state.blendEquationRGB, state.blendEquationAlpha,
       state.cull, state.cullFace, state.frontFace, stencil]);
     let pipeline = resources.pipelines.get(key);
@@ -710,6 +718,7 @@ export class BrowserHost implements SemanticHost {
         depthStencil: target.depth ? { format: target.depth.format,
           ...stencil,
           ...(target.depth.format === "stencil8" ? {} : {
+            depthBias, depthBiasSlopeScale,
             depthWriteEnabled: state.depthTest && state.depthMask,
             depthCompare: state.depthTest ? compareFunction(state.depthFunc) : "always",
           }) } : undefined,

@@ -252,12 +252,12 @@ export function createRustDrawingCoreFromModule(
     required.some((name) => typeof exports[name] !== 'function')
   ) {
     throw new Error(
-      'Rust drawing module requires ABI5/resource8/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
+      'Rust drawing module requires ABI6/resource8/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
     );
   }
   const abi = exports as unknown as ABI;
-  if (abi.rf_abi_version() !== 5)
-    throw new Error('Rust drawing ABI version mismatch; expected 5. Rebuild with pnpm rust:build.');
+  if (abi.rf_abi_version() !== 6)
+    throw new Error('Rust drawing ABI version mismatch; expected 6. Rebuild with pnpm rust:build.');
   if (abi.rf_resource_protocol_version() !== 8)
     throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_readback_protocol_version() !== 1)
@@ -506,12 +506,15 @@ export function createRustDrawingCoreFromModule(
   }
   function executeDraw(bytes: Uint8Array): void {
     const reader = new Reader(bytes);
-    if (reader.u32() !== 0x35444652 || reader.u32() !== 5)
+    if (reader.u32() !== 0x36444652 || reader.u32() !== 6)
       throw new Error('Invalid Rust draw snapshot version.');
     const program = services.compiler.executable(reader.u32());
     reader.skip(12 + 8);
     const drawTarget = readTarget(reader);
     const state = readRaster(reader, drawTarget.width, drawTarget.height);
+    state.polygonOffsetFill = reader.u32() !== 0;
+    state.polygonOffsetFactor = reader.f32();
+    state.polygonOffsetUnits = reader.f32();
     const mode = reader.u32();
     if (!isDrawMode(mode)) throw new Error('Invalid Rust draw mode.');
     const vertexCount = reader.u32();

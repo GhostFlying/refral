@@ -5,7 +5,7 @@ export const dualCoreCaseNames = [
   'float-uniform-setters', 'indexed-update-u8', 'indexed-update-u16', 'upload-view-snapshot',
   'attribute-layout-and-constants', 'buffer-reallocation-and-delete', 'resize-attribute-size',
   'automatic-submit-and-flush', 'viewport-clear-regions', 'draw-validation-state',
-  'triangle-strip-modes', 'line-and-fan-modes', 'integer-vertex-attributes', 'enabled-array-validation', 'location-name-validation',
+  'triangle-strip-modes', 'line-and-fan-modes', 'polygon-offset-and-samples', 'integer-vertex-attributes', 'enabled-array-validation', 'location-name-validation',
   'retained-deletion-and-retirement', ...programCaseNames,
 ] as const;
 export type DrawingCaseName = typeof dualCoreCaseNames[number];
@@ -77,6 +77,7 @@ function regions(name: DrawingCaseName): PixelRegion[] {
         { x: 32, y: 32, width: 32, height: 32, color: green }];
     case 'resize-attribute-size': return [band(0, 96, blue, 32)];
     case 'draw-validation-state': return [band(0, 64, [255, 255, 0, 255])];
+    case 'polygon-offset-and-samples': return [band(0, 64, green)];
     case 'line-and-fan-modes':
       return [band(0, 64, black), band(0, 16, red), band(16, 16, green),
         ...[8, 16, 24].map(y => ({ x: 32, y, width: 32, height: 1, color: blue }))];
@@ -182,6 +183,54 @@ async function execute(name: DrawingCaseName, gl: WebGLRenderingContext, canvas:
       color = gl.getUniformLocation(program, 'u_color');
       draw(0, 1, 0);
       gl.deleteProgram(unlinked);
+      break;
+    }
+    case 'polygon-offset-and-samples': {
+      gl.enable(gl.DEPTH_TEST);
+      gl.vertexAttribPointer(position, 3, gl.FLOAT, false, 0, 0);
+      const plane = (tilt: number) => {
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+          -1, -1, -tilt, 1, -1, tilt, -1, 1, -tilt, 1, 1, tilt,
+        ]), gl.STATIC_DRAW);
+      };
+      const paint = (green: boolean) => {
+        gl.uniform4f(color, green ? 0 : 1, green ? 1 : 0, 0, 1);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      };
+      // The second copy of the same plane is red when its bias must reject it.
+      const cases = [
+        { enabled: false, tilt: 0, factor: 2, units: 2, closer: false },
+        { enabled: true, tilt: 0, factor: 0, units: 1.75, closer: false },
+        { enabled: true, tilt: 0, factor: 0, units: -1.75, closer: true },
+        { enabled: true, tilt: 0, factor: 0, units: 2 ** 34, closer: false },
+        { enabled: true, tilt: 0, factor: 0, units: -(2 ** 34), closer: true },
+        { enabled: true, tilt: -0.5, factor: 0.125, units: 0, closer: false },
+        { enabled: true, tilt: 0.5, factor: -0.125, units: 0, closer: true },
+      ];
+      for (const [i, item] of cases.entries()) {
+        gl.viewport(i * 8, 0, 8, 64);
+        gl.disable(gl.POLYGON_OFFSET_FILL);
+        gl.depthFunc(gl.LEQUAL);
+        plane(item.tilt);
+        paint(item.enabled && !item.closer);
+        gl.polygonOffset(item.factor, item.units);
+        check(`stored factor ${i}`, gl.getParameter(gl.POLYGON_OFFSET_FACTOR), item.factor);
+        check(`stored units ${i}`, gl.getParameter(gl.POLYGON_OFFSET_UNITS), item.units);
+        if (item.enabled) gl.enable(gl.POLYGON_OFFSET_FILL);
+        if (item.closer) gl.depthFunc(gl.LESS);
+        paint(!item.enabled || item.closer);
+      }
+      gl.viewport(56, 0, 8, 64);
+      gl.disable(gl.POLYGON_OFFSET_FILL);
+      gl.disable(gl.DEPTH_TEST);
+      gl.enable(gl.SAMPLE_COVERAGE);
+      gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
+      gl.sampleCoverage(0, false);
+      check('single-sample context', gl.getParameter(gl.SAMPLE_BUFFERS), 0);
+      plane(0);
+      gl.uniform4f(color, 0, 1, 0, 0);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      check('single-sample drawing error', gl.getError(), gl.NO_ERROR);
       break;
     }
     case 'line-and-fan-modes': {

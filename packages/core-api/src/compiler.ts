@@ -5,6 +5,7 @@ export interface ShaderVariable {
   mappedName: string;
   type: number;
   size: number;
+  isArray: boolean;
   active: boolean;
   precision: number;
   offset: number;

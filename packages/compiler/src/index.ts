@@ -34,7 +34,7 @@ function active(variables: ShaderVariable[]): ShaderVariable[] {
 }
 
 function sameType(left: ShaderVariable, right: ShaderVariable): boolean {
-  return left.type === right.type && left.size === right.size &&
+  return left.type === right.type && left.size === right.size && left.isArray === right.isArray &&
     left.fields.length === right.fields.length && left.fields.every((field, index) => {
       const other = right.fields[index];
       return other !== undefined && field.name === other.name && sameType(field, other);
@@ -156,7 +156,16 @@ export function linkShaders(vertex: CompiledShader, fragment: CompiledShader,
   let varyingLocation = 0;
   for (const varying of vertexVaryings) {
     const columns = matrixColumns(varying.type);
-    if (varying.size !== 1) return failedProgram(`Varying array ${varying.name} is unsupported by this ANGLE backend.`);
+    if (varying.isArray) {
+      for (let element = 0; element < varying.size; element++) {
+        for (let column = 0; column < columns; column++) {
+          const member = `ANGLE_varying__u${varying.name}_${element}_${column}`;
+          locations.set(member, varyingLocation);
+          fragmentLocations.set(member, varyingLocation++);
+        }
+      }
+      continue;
+    }
     for (const name of names(varying)) {
       if (columns === 1) {
         locations.set(name, varyingLocation);

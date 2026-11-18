@@ -300,7 +300,7 @@
             "sdk/tests/conformance/programs/gl-get-active-attribute.html"
           ],
           "limits": [
-            "Struct uniforms, sampler arrays, attribute arrays, and varying arrays return explicit link diagnostics",
+            "Struct uniforms, sampler arrays and attribute arrays return explicit link diagnostics. ESSL100 scalar/vector/matrix varying arrays occupy distinct WGSL locations per element and column. Independent varyings do not share a physical location.",
             "Uniform and stage resource caps come from packages/compiler/profile-limits.json"
           ],
           "ctsEvidence": {

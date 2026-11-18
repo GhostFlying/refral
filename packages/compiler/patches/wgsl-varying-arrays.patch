@@ -1,0 +1,51 @@
+--- a/src/compiler/translator/wgsl/RewritePipelineVariables.cpp
++++ b/src/compiler/translator/wgsl/RewritePipelineVariables.cpp
+@@ -434,4 +434,44 @@
+-                // TODO(anglebug.com/42267100): need to support arrays (of scalars, vectors, and
+-                // matrices, maybe structs).
+-                ANGLE_LOG(ERR) << "Shader in/out variables of array type currently not supported.";
+-                return false;
++                const TType& array_type = astVar->getType();
++                const bool varying = compiler.getShaderType() == GL_VERTEX_SHADER
++                                         ? ioType == IOType::Output
++                                         : ioType == IOType::Input;
++                if (!varying || compiler.getShaderVersion() != 100 ||
++                    array_type.isArrayOfArrays() || array_type.getBasicType() != EbtFloat) {
++                  compiler.getInfoSink().info << "Unsupported WGSL pipeline array type.";
++                  return false;
++                }
++
++                // WGSL locations accept scalars and vectors. Keep the ESSL array
++                // in private storage and transfer one element/column at a time.
++                TType field_type = array_type;
++                field_type.toArrayElementType();
++                const bool matrix = field_type.isMatrix();
++                const unsigned int columns = matrix ? field_type.getCols() : 1;
++                if (matrix) {
++                  field_type.toMatrixColumnType();
++                }
++                const unsigned int count = array_type.getOutermostArraySize();
++                if (count > static_cast<unsigned int>(compiler.getResources().MaxVaryingVectors) /
++                                columns) {
++                  compiler.getInfoSink().info << "Varying array exceeds MAX_VARYING_VECTORS.";
++                  return false;
++                }
++                TStringStream field_type_stream;
++                WriteWgslType(field_type_stream, field_type, {});
++                for (unsigned int element = 0; element < count; ++element) {
++                  for (unsigned int column = 0; column < columns; ++column) {
++                    ImmutableString field = BuildConcatenatedImmutableString(
++                        "ANGLE_varying_", userVarNameStr.c_str(), "_", element, "_", column);
++                    ImmutableString access = BuildConcatenatedImmutableString(
++                        userVarNameStr.c_str(), "[", element, "]");
++                    if (matrix) {
++                      access = BuildConcatenatedImmutableString(access, "[", column, "]");
++                    }
++                    ioblock->angleAnnotatedMembers.push_back(BuildConcatenatedImmutableString(
++                        "@location(@@@@@@) ", field, " : ", field_type_stream.str().c_str(), ","));
++                    const bool input = ioType == IOType::Input;
++                    ioblock->angleConversionFuncs.push_back(BuildConcatenatedImmutableString(
++                        toStruct, ".", input ? access : field, " = ", fromStruct, ".",
++                        input ? field : access, ";"));
++                  }
++                }

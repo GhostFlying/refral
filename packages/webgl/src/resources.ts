@@ -147,6 +147,8 @@ export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCap
   for (const name of ['enable', 'disable', 'isEnabled', 'depthFunc', 'frontFace', 'cullFace', 'blendEquation']) {
     method(name, 1, args => [toEnum(args[0])]);
   }
+  method('hint', 2, args => [toEnum(args[0]), toEnum(args[1])]);
+  method('lineWidth', 1, args => [float(args[0])]);
   method('depthMask', 1, args => [Boolean(args[0])]);
   method('clearStencil', 1, args => [integer(args[0])]);
   method('stencilMask', 1, args => [toEnum(args[0])]);

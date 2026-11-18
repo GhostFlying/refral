@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { checkHintAndLineWidth } from "../../../tests/core/raster-queries.js";
 import { GL, SemanticContext } from "./index.js";
 import type { Compiler, SemanticHost } from "@refral/core-api";
 
@@ -18,6 +19,9 @@ function createContext() {
 }
 
 describe("JS raster state semantics", () => {
+  it("preserves hint and requested line width through invalid mutations", () => {
+    checkHintAndLineWidth(createContext().core);
+  });
   it("clamps viewport dimensions to advertised limits and preserves state after invalid dimensions", () => {
     const { core } = createContext();
     core.viewport(-10, 20, 4097, 8192);

@@ -117,6 +117,9 @@ impl ContextCore {
         Some(match parameter {
             0x0ba2 => Reply::Ints(state.viewport.to_vec()),
             0x0c10 => Reply::Ints(state.scissor.to_vec()),
+            0x0b21 => Reply::Number(self.render.requested_line_width as f64),
+            0x846e => Reply::Floats(vec![1.0, 1.0]),
+            0x8192 => Reply::Number(self.render.mipmap_hint as f64),
             0x0c22 => Reply::Floats(self.render.clear_color.to_vec()),
             0x0b73 => Reply::Number(self.render.clear_depth as f64),
             0x0c23 => Reply::Booleans(state.color_mask.to_vec()),
@@ -170,6 +173,23 @@ impl ContextCore {
         let number = |index: usize| args.get(index).map_or(0.0, Argument::number);
         let boolean = |index: usize| args.get(index).is_some_and(Argument::boolean);
         match operation {
+            "lineWidth" => {
+                let width = number(0) as f32;
+                if width > 0.0 {
+                    self.render.requested_line_width = width;
+                } else {
+                    self.record_error(INVALID_VALUE);
+                }
+            }
+            "hint" => {
+                let target = number(0) as u32;
+                let mode = number(1) as u32;
+                if target == 0x8192 && matches!(mode, 0x1100..=0x1102) {
+                    self.render.mipmap_hint = mode;
+                } else {
+                    self.record_error(INVALID_ENUM);
+                }
+            }
             "enable" | "disable" => {
                 let capability = number(0) as u32;
                 let enabled = operation == "enable";

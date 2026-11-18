@@ -96,6 +96,8 @@ export class SemanticContext {
   private scheduled = false;
   private lost = false;
   private dither = true;
+  private requestedLineWidth = 1;
+  private mipmapHint: number = GL.DONT_CARE;
   private maxBufferBytes: number;
 
   constructor(readonly canvas: DrawingSurface, private readonly host: SemanticHost,
@@ -1320,6 +1322,16 @@ export class SemanticContext {
     return !this.lost && renderbuffer instanceof RenderbufferObject && renderbuffer.owner === this.owner && renderbuffer.initialized && !renderbuffer.deleted;
   }
 
+  lineWidth(width: number): void {
+    if (!(width > 0)) return this.error(GL.INVALID_VALUE);
+    this.requestedLineWidth = width;
+  }
+  hint(target: number, mode: number): void {
+    if (target !== GL.GENERATE_MIPMAP_HINT || (mode !== GL.DONT_CARE && mode !== GL.FASTEST && mode !== GL.NICEST)) {
+      return this.error(GL.INVALID_ENUM);
+    }
+    this.mipmapHint = mode;
+  }
   enable(capability: number): void { this.setCapability(capability, true); }
   disable(capability: number): void { this.setCapability(capability, false); }
   private setCapability(capability: number, enabled: boolean): void {
@@ -1422,6 +1434,7 @@ export class SemanticContext {
   getParameter(parameter: number): unknown {
     if (this.lost) return null;
     if (parameter === GL.COMPRESSED_TEXTURE_FORMATS) return new Uint32Array(0);
+    if (parameter === GL.ALIASED_LINE_WIDTH_RANGE) return new Float32Array([1, 1]);
     if (parameter === GL.IMPLEMENTATION_COLOR_READ_FORMAT || parameter === GL.IMPLEMENTATION_COLOR_READ_TYPE) {
       if (this.checkFramebufferStatus(GL.FRAMEBUFFER) !== GL.FRAMEBUFFER_COMPLETE) {
         this.error(GL.INVALID_OPERATION);
@@ -1452,6 +1465,7 @@ export class SemanticContext {
       [GL.TEXTURE_BINDING_2D]: this.textureUnits[this.activeUnit]!.texture2D,
       [GL.TEXTURE_BINDING_CUBE_MAP]: this.textureUnits[this.activeUnit]!.cubeMap,
       [GL.VIEWPORT]: new Int32Array(this.state.viewport), [GL.SCISSOR_BOX]: new Int32Array(this.state.scissor),
+      [GL.LINE_WIDTH]: this.requestedLineWidth, [GL.GENERATE_MIPMAP_HINT]: this.mipmapHint,
       [GL.COLOR_CLEAR_VALUE]: new Float32Array(this.clearColorValue), [GL.DEPTH_CLEAR_VALUE]: this.clearDepthValue,
       [GL.COLOR_WRITEMASK]: [...this.state.colorMask], [GL.DEPTH_WRITEMASK]: this.state.depthMask,
       [GL.DEPTH_FUNC]: this.state.depthFunc, [GL.DEPTH_RANGE]: new Float32Array(this.state.depthRange),

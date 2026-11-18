@@ -1549,6 +1549,50 @@
       }
     },
     {
+      "id": "hint-and-line-width",
+      "api": "hint, lineWidth, getParameter(GENERATE_MIPMAP_HINT/LINE_WIDTH/ALIASED_LINE_WIDTH_RANGE)",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "coverage": "GENERATE_MIPMAP_HINT defaults to DONT_CARE and accepts FASTEST, NICEST or DONT_CARE. LINE_WIDTH returns the positive unclamped GLfloat request and ALIASED_LINE_WIDTH_RANGE returns a fresh Float32Array containing [1, 1].",
+          "tests": [
+            "tests/core/raster-queries.ts",
+            "packages/core-js/src/raster.test.ts",
+            "conformance/misc/hint.html",
+            "conformance/limits/gl-line-width.html",
+            "conformance/state/gl-enum-tests.html"
+          ],
+          "evidence": [
+            "docs/tasks/057-raster-state-queries.md",
+            "artifacts/conformance/campaign/raster-queries/js/results.json"
+          ],
+          "unsupportedBehavior": "Invalid hint target or mode generates INVALID_ENUM. Nonpositive and NaN line widths generate INVALID_VALUE and preserve the previous state.",
+          "limits": [
+            "Fragment derivative hint requires the optional OES_standard_derivatives extension. Line primitive drawing is a separate capability."
+          ]
+        },
+        "rust": {
+          "status": "cts-verified",
+          "coverage": "GENERATE_MIPMAP_HINT defaults to DONT_CARE and accepts FASTEST, NICEST or DONT_CARE. LINE_WIDTH returns the positive unclamped GLfloat request and ALIASED_LINE_WIDTH_RANGE returns a fresh Float32Array containing [1, 1].",
+          "tests": [
+            "tests/core/raster-queries.ts",
+            "packages/core-wasm/tests/render.integration.ts",
+            "conformance/misc/hint.html",
+            "conformance/limits/gl-line-width.html",
+            "conformance/state/gl-enum-tests.html"
+          ],
+          "evidence": [
+            "docs/tasks/057-raster-state-queries.md",
+            "artifacts/conformance/campaign/raster-queries/rust/results.json"
+          ],
+          "unsupportedBehavior": "Invalid hint target or mode generates INVALID_ENUM. Nonpositive and NaN line widths generate INVALID_VALUE and preserve the previous state.",
+          "limits": [
+            "Fragment derivative hint requires the optional OES_standard_derivatives extension. Line primitive drawing is a separate capability."
+          ]
+        }
+      }
+    },
+    {
       "id": "blend-state",
       "api": "BLEND, blendFunc, blendFuncSeparate, blendEquation, blendColor",
       "cores": {

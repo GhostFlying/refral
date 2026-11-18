@@ -33,3 +33,5 @@ Tasks031–033 record intrinsic/cross-realm brands, source readiness, origin err
 DOM upload performance includes source extraction, helper dimension probes, snapshots, core processing, bridge, encoding and submission. Source preparation and GPU completion have separate measurements. Native helper GPU allocation/copy counters remain unavailable. WebGPU host counters cover the external-canvas copy, opaque encoding and destination upload.
 
 Later host adapters require their own decoded-image input boundary. VideoFrame, explicit upload color-space selection, additional source encodings, context restoration and broader formats retain explicit compatibility tasks.
+
+Task 077 reuses the video extraction path for WebCodecs VideoFrame. Platform getters establish the source brand and current display extent. The helper recovers the actual uploaded texture dimensions and returns an owned snapshot. Closed frames reach the selected core’s GL validation before extraction. [Frame upload verification](../tasks/077-video-frame-texture-upload.md)

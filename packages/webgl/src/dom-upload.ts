@@ -4,30 +4,34 @@ import { bufferSourceBytes } from './buffers.js';
 import { ImageExtractor } from './image-extractor.js';
 import type { NativeUploadExtent, NativeUploadSource } from './image-extractor.js';
 
-type SourceKind = 'image-data' | 'canvas' | 'offscreen-canvas' | 'image' | 'video' | 'bitmap';
+type SourceKind = 'image-data' | 'canvas' | 'offscreen-canvas' | 'image' | 'video' | 'video-frame' | 'bitmap';
 interface SourceType {
   kind: SourceKind;
   getters: Record<string, PropertyDescriptor>;
+  width: string;
+  height: string;
 }
 interface SourcePixels {
   width: number;
   height: number;
   valid: boolean;
   contextLost?: boolean;
+  closedVideoFrame?: boolean;
   prepare?(): void;
   pixels(): PixelUpload;
 }
 
 const sourceTypes: SourceType[] = [];
-for (const [kind, prototype] of [
+for (const [kind, prototype, width, height] of [
   ['image-data', typeof ImageData === 'undefined' ? null : ImageData.prototype],
   ['canvas', typeof HTMLCanvasElement === 'undefined' ? null : HTMLCanvasElement.prototype],
   ['offscreen-canvas', typeof OffscreenCanvas === 'undefined' ? null : OffscreenCanvas.prototype],
   ['image', typeof HTMLImageElement === 'undefined' ? null : HTMLImageElement.prototype],
-  ['video', typeof HTMLVideoElement === 'undefined' ? null : HTMLVideoElement.prototype],
+  ['video', typeof HTMLVideoElement === 'undefined' ? null : HTMLVideoElement.prototype, 'videoWidth', 'videoHeight'],
+  ['video-frame', typeof VideoFrame === 'undefined' ? null : VideoFrame.prototype, 'displayWidth', 'displayHeight'],
   ['bitmap', typeof ImageBitmap === 'undefined' ? null : ImageBitmap.prototype],
 ] as const) {
-  if (prototype) sourceTypes.push({ kind, getters: Object.getOwnPropertyDescriptors(prototype) });
+  if (prototype) sourceTypes.push({ kind, width: width ?? 'width', height: height ?? 'height', getters: Object.getOwnPropertyDescriptors(prototype) });
 }
 
 interface CanvasSource { prepare(): void; isLost(): boolean }
@@ -47,9 +51,9 @@ function inspectSource(value: unknown,
   validateCanvasOrigin: (source: HTMLCanvasElement | OffscreenCanvas) => void): SourcePixels {
   for (const type of sourceTypes) {
     let width: number;
-    try { width = type.getters[type.kind === 'video' ? 'videoWidth' : 'width']!.get!.call(value); }
+    try { width = type.getters[type.width]!.get!.call(value); }
     catch { continue; }
-    let height = type.getters[type.kind === 'video' ? 'videoHeight' : 'height']!.get!.call(value) as number;
+    let height = type.getters[type.height]!.get!.call(value) as number;
     if (type.kind === 'image-data') {
       const data = type.getters.data!.get!.call(value) as ArrayBufferView;
       const bytes = bufferSourceBytes(data, true);
@@ -63,7 +67,7 @@ function inspectSource(value: unknown,
           return { bytes, viewType: 'Uint8Array', source: 'dom' };
         } };
     }
-    if (type.kind === 'image' || type.kind === 'video' || type.kind === 'bitmap') {
+    if (type.kind === 'image' || type.kind === 'video' || type.kind === 'video-frame' || type.kind === 'bitmap') {
       const isImage = type.kind === 'image';
       if (isImage) {
         width = type.getters.naturalWidth!.get!.call(value);
@@ -71,6 +75,7 @@ function inspectSource(value: unknown,
       }
       let captured: ReturnType<ImageExtractor['capture']>;
       const source: SourcePixels = { width, height,
+        closedVideoFrame: type.kind === 'video-frame' && (width === 0 || height === 0),
         // Detached bitmaps report zero dimensions. Native upload checks video frame availability.
         valid: isImage ? type.getters.complete!.get!.call(value) : width > 0 && height > 0,
         prepare() {
@@ -130,7 +135,7 @@ export function createDomTextureUploads(core: DrawingCore, captureCanvas: Canvas
       if (core.isContextLost()) return;
       if (source.valid) source.prepare?.();
       const request: DomTextureUploadRequest = { ...parameters,
-        width: source.width, height: source.height, sourceValid: source.valid, sourceContextLost: source.contextLost };
+        width: source.width, height: source.height, sourceValid: source.valid, sourceContextLost: source.contextLost, closedVideoFrame: source.closedVideoFrame };
       if (!core.prepareDomTextureUpload(request)) return;
       const pixels = source.pixels();
       const { target, level, internalFormat, x, y, width, height, format, type } = request;

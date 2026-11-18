@@ -159,7 +159,7 @@ fn component_queries_follow_context_attributes_and_rgba_attachments() {
 }
 
 #[test]
-fn component_queries_handle_absent_images_and_unsupported_rgb_targets_without_errors() {
+fn component_queries_handle_absent_images_and_rgb_targets_without_errors() {
     let mut core = context();
     create_framebuffer(&mut core);
     assert_eq!(component_bits(&core), [0; 6]);
@@ -170,7 +170,7 @@ fn component_queries_handle_absent_images_and_unsupported_rgb_targets_without_er
     let color = create_texture(&mut core, 2, 2, RGB);
     attach_color(&mut core, Some(color));
     assert_eq!(component_bits(&core), [8, 8, 8, 0, 24, 0]);
-    assert_eq!(status(&mut core), UNSUPPORTED);
+    assert_eq!(status(&mut core), COMPLETE);
     invoke(&mut core, "deleteRenderbuffer", &[Argument::Handle(depth)]);
     assert_eq!(component_bits(&core), [8, 8, 8, 0, 0, 0]);
     assert_eq!(core.get_error(), NO_ERROR);
@@ -341,7 +341,7 @@ fn completeness_distinguishes_missing_undefined_dimensions_and_profile_targets()
     assert_eq!(status(&mut core), UNSUPPORTED);
     attach_color(&mut core, Some(texture));
     texture_image(&mut core, 2, 2, RGB);
-    assert_eq!(status(&mut core), UNSUPPORTED);
+    assert_eq!(status(&mut core), COMPLETE);
     assert_eq!(core.get_error(), NO_ERROR);
 }
 

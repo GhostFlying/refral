@@ -462,7 +462,8 @@ export class BrowserHost implements SemanticHost {
     }
     let target = this.targetCache.get(color);
     if (!target || target.depth !== depth) {
-      target = { color, depth, width: snapshot.width, height: snapshot.height, opaque: !!snapshot.color!.opaque };
+      target = { color, depth, width: snapshot.width, height: snapshot.height,
+        opaque: snapshot.colorOpaque ?? !!snapshot.color!.opaque };
       this.targetCache.set(color, target);
     }
     return target;

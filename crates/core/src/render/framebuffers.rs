@@ -48,6 +48,7 @@ pub struct TargetSnapshot {
     pub height: u32,
     pub is_default: bool,
     pub color: Option<TextureVersion>,
+    pub color_texture_opaque: bool,
     pub color_renderbuffer: Option<ColorRenderbufferAttachment>,
     pub depth: Option<DepthAttachment>,
 }
@@ -405,7 +406,7 @@ impl ContextCore {
             if storage.format != RGBA && storage.format != RGB {
                 return INCOMPLETE_ATTACHMENT;
             }
-            Some((storage.width, storage.height, storage.format))
+            Some((storage.width, storage.height))
         } else if let Some(handle) = framebuffer.color {
             let Some(storage) = self.renderbuffer_value(handle) else {
                 return INCOMPLETE_ATTACHMENT;
@@ -413,7 +414,7 @@ impl ContextCore {
             if !is_color_format(storage.format) || storage.width == 0 || storage.height == 0 {
                 return INCOMPLETE_ATTACHMENT;
             }
-            Some((storage.width, storage.height, storage.format))
+            Some((storage.width, storage.height))
         } else {
             None
         };
@@ -432,12 +433,12 @@ impl ContextCore {
                 return UNSUPPORTED;
             }
         }
-        if let (Some((width, height, _)), Some(storage)) = (color, auxiliary) {
+        if let (Some((width, height)), Some(storage)) = (color, auxiliary) {
             if width != storage.width || height != storage.height {
                 return INCOMPLETE_DIMENSIONS;
             }
         }
-        if color.is_none_or(|(_, _, format)| format != RGBA && !is_color_format(format)) {
+        if color.is_none() {
             return UNSUPPORTED;
         }
         COMPLETE
@@ -456,6 +457,7 @@ impl ContextCore {
                 height: self.render.surface[1],
                 is_default: true,
                 color: None,
+                color_texture_opaque: false,
                 color_renderbuffer: None,
                 depth: None,
             });
@@ -471,7 +473,7 @@ impl ContextCore {
             .as_ref()
             .unwrap();
         let color_handle = framebuffer.color?;
-        let (width, height, color, color_renderbuffer) =
+        let (width, height, color, color_renderbuffer, color_texture_opaque) =
             if color_handle.kind == ObjectKind::Renderbuffer {
                 let storage = self.renderbuffer_value(color_handle)?;
                 (
@@ -483,6 +485,7 @@ impl ContextCore {
                         storage_generation: storage.storage_generation,
                         format: storage.format,
                     }),
+                    false,
                 )
             } else {
                 let color_index = slot_index(
@@ -501,6 +504,7 @@ impl ContextCore {
                     storage.height,
                     Some(self.texture_image_version(color_index, framebuffer.color_face, 0)),
                     None,
+                    storage.format == RGB,
                 )
             };
         let depth = framebuffer
@@ -520,6 +524,7 @@ impl ContextCore {
             height,
             is_default: false,
             color,
+            color_texture_opaque,
             color_renderbuffer,
             depth,
         })
@@ -529,7 +534,11 @@ impl ContextCore {
         if let Some(color) = target.color_renderbuffer {
             return color.format != RGB565;
         }
-        !target.is_default || self.render.context_alpha
+        if target.is_default {
+            self.render.context_alpha
+        } else {
+            !target.color_texture_opaque
+        }
     }
 
     pub(super) fn target_has_stencil(&self, target: &TargetSnapshot) -> bool {

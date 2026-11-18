@@ -1540,7 +1540,7 @@
             }
           ],
           "limits": [
-            "This entry covers RGBA texture color with optional DEPTH_COMPONENT16. Depth-only and RGB texture targets return FRAMEBUFFER_UNSUPPORTED. See framebuffer-color-renderbuffer for color renderbuffer targets."
+            "This entry covers RGBA texture color with optional DEPTH_COMPONENT16. Depth-only targets return FRAMEBUFFER_UNSUPPORTED. See framebuffer-rgb-texture and framebuffer-color-renderbuffer for additional color targets."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Missing, undefined and dimension-mismatched attachments have distinct completeness statuses. Unsupported legal target combinations return FRAMEBUFFER_UNSUPPORTED."
         },
@@ -1570,7 +1570,7 @@
             }
           ],
           "limits": [
-            "This entry covers RGBA texture color with optional DEPTH_COMPONENT16. Depth-only and RGB texture targets return FRAMEBUFFER_UNSUPPORTED. See framebuffer-color-renderbuffer for color renderbuffer targets."
+            "This entry covers RGBA texture color with optional DEPTH_COMPONENT16. Depth-only targets return FRAMEBUFFER_UNSUPPORTED. See framebuffer-rgb-texture and framebuffer-color-renderbuffer for additional color targets."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Missing, undefined and dimension-mismatched attachments have distinct completeness statuses. Unsupported legal target combinations return FRAMEBUFFER_UNSUPPORTED."
         }
@@ -1697,7 +1697,7 @@
             "artifacts/rtt/fbo-color-renderbuffer-copy/result.json"
           ],
           "limits": [
-            "The framebuffer copy format file conditionally skips the RGB texture attachment branch under this profile."
+            "The original copy format file includes RGB and RGBA texture attachment sources."
           ],
           "unsupportedBehavior": "Incompatible source channels or an exact-image feedback loop produces INVALID_OPERATION. An incomplete framebuffer produces INVALID_FRAMEBUFFER_OPERATION."
         },
@@ -1720,9 +1720,55 @@
             "artifacts/rtt/fbo-color-renderbuffer-copy/result.json"
           ],
           "limits": [
-            "The framebuffer copy format file conditionally skips the RGB texture attachment branch under this profile."
+            "The original copy format file includes RGB and RGBA texture attachment sources."
           ],
           "unsupportedBehavior": "Incompatible source channels or an exact-image feedback loop produces INVALID_OPERATION. An incomplete framebuffer produces INVALID_FRAMEBUFFER_OPERATION."
+        }
+      }
+    },
+    {
+      "id": "framebuffer-rgb-texture",
+      "api": "framebufferTexture2D RGB color target and RGB framebuffer copy/readback",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Level-zero RGB texture targets keep opaque alpha across clears, drawing, destination-alpha blend, reads and copies. Both unsigned-byte and 565 uploads use canonical RGBA8 storage.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT fbo-rgb-texture",
+            "sdk/tests/conformance/textures/misc/copy-tex-image-2d-formats.html",
+            "sdk/tests/conformance/textures/misc/texture-attachment-formats.html"
+          ],
+          "evidence": [
+            "artifacts/rgb-framebuffer/official",
+            "artifacts/rtt/fbo-rgb-texture/result.json"
+          ],
+          "limits": [
+            "The declared color texture attachments cover RGB or RGBA at level zero."
+          ],
+          "unsupportedBehavior": "RGB sources can supply RGB or LUMINANCE copies and reject copies requiring alpha with INVALID_OPERATION."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Level-zero RGB texture targets keep opaque alpha across clears, drawing, destination-alpha blend, reads and copies. Both unsigned-byte and 565 uploads use canonical RGBA8 storage.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT fbo-rgb-texture",
+            "sdk/tests/conformance/textures/misc/copy-tex-image-2d-formats.html",
+            "sdk/tests/conformance/textures/misc/texture-attachment-formats.html"
+          ],
+          "evidence": [
+            "artifacts/rgb-framebuffer/official",
+            "artifacts/rtt/fbo-rgb-texture/result.json"
+          ],
+          "limits": [
+            "The declared color texture attachments cover RGB or RGBA at level zero."
+          ],
+          "unsupportedBehavior": "RGB sources can supply RGB or LUMINANCE copies and reject copies requiring alpha with INVALID_OPERATION."
         }
       }
     },
@@ -1852,7 +1898,7 @@
             }
           ],
           "limits": [
-            "This entry covers RGBA texture color with optional DEPTH_COMPONENT16. Depth-only and RGB texture targets return FRAMEBUFFER_UNSUPPORTED. See framebuffer-color-renderbuffer for color renderbuffer targets."
+            "This entry covers RGBA texture color with optional DEPTH_COMPONENT16. Depth-only targets return FRAMEBUFFER_UNSUPPORTED. See framebuffer-rgb-texture and framebuffer-color-renderbuffer for additional color targets."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Missing, undefined and dimension-mismatched attachments have distinct completeness statuses. Unsupported legal target combinations return FRAMEBUFFER_UNSUPPORTED."
         },
@@ -1882,7 +1928,7 @@
             }
           ],
           "limits": [
-            "This entry covers RGBA texture color with optional DEPTH_COMPONENT16. Depth-only and RGB texture targets return FRAMEBUFFER_UNSUPPORTED. See framebuffer-color-renderbuffer for color renderbuffer targets."
+            "This entry covers RGBA texture color with optional DEPTH_COMPONENT16. Depth-only targets return FRAMEBUFFER_UNSUPPORTED. See framebuffer-rgb-texture and framebuffer-color-renderbuffer for additional color targets."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Missing, undefined and dimension-mismatched attachments have distinct completeness statuses. Unsupported legal target combinations return FRAMEBUFFER_UNSUPPORTED."
         }

@@ -67,7 +67,7 @@ pub(super) fn target(output: &mut Vec<u8>, target: refral_core::TargetSnapshot) 
     u32_value(output, target.height);
     u32_value(output, u32::from(target.is_default));
     if let Some(color) = target.color {
-        u32_value(output, 1);
+        u32_value(output, if target.color_texture_opaque { 3 } else { 1 });
         version(output, color);
     } else if let Some(color) = target.color_renderbuffer {
         u32_value(output, 2);

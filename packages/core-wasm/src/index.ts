@@ -180,4 +180,4 @@ export async function createRustBufferCore(
     dispose: () => abi.rf_dispose(),
   });
 }
-export { createRustDrawingCore, createRustDrawingCoreFromModule, prepareRustModule } from './render.js';
+export { createRustDrawingCore, createRustDrawingCoreFromModule, prepareRustDrawingCores, prepareRustModule } from './render.js';

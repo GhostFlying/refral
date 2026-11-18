@@ -2,7 +2,7 @@ import { webglInterfaces } from './interfaces.js';
 import { GL, allocateContextId, ExecutionResources } from "@refral/core-api";
 import type { BufferHandle, BufferSnapshot, CoreKind, DrawingCore } from "@refral/core-api";
 import { createJsDrawingCore } from "@refral/core-js";
-import { createRustDrawingCore, createRustDrawingCoreFromModule, prepareRustModule } from "@refral/core-wasm";
+import { createRustDrawingCore, prepareRustDrawingCores, prepareRustModule } from "@refral/core-wasm";
 import { BrowserHost } from "@refral/browser-host";
 import type { CapturedPixels } from "@refral/browser-host";
 import { createCompiler, createCompilerRegistry, COMPILER_LIMITS } from "@refral/compiler";
@@ -229,7 +229,7 @@ export async function prepareContextFactory(
     || moduleResult.status !== 'fulfilled') throw new Error('Context preparation failed.');
   const compiler = compilerResult.value;
   const makeHost = hostResult.value;
-  const module = moduleResult.value;
+  const makeCore = moduleResult.value ? prepareRustDrawingCores(moduleResult.value) : createJsDrawingCore;
   const contexts = new Set<WeakRef<WebGL1PrototypeContext>>();
   const factory: PreparedContextFactory = (canvas, requested = {}) => {
     const attributes = actualAttributes(requested);
@@ -243,9 +243,7 @@ export async function prepareContextFactory(
     };
     const services = { compiler: registry, host, resources };
     try {
-      const core = kind === 'rust'
-        ? createRustDrawingCoreFromModule(module!, coreOptions, services)
-        : createJsDrawingCore(coreOptions, services);
+      const core = makeCore(coreOptions, services);
       const context = wrapContext(canvas, host, attributes, core, () => { resources.dispose(); registry.dispose(); });
       contexts.add(new WeakRef(context));
       return context;

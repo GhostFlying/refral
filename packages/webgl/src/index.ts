@@ -35,7 +35,7 @@ export interface TestingHooks {
 }
 
 export interface PreparedContextFactory {
-  (canvas: HTMLCanvasElement, attributes?: WebGLContextAttributes): WebGL1PrototypeContext;
+  (canvas: HTMLCanvasElement | OffscreenCanvas, attributes?: WebGLContextAttributes): WebGL1PrototypeContext;
   dispose(): Promise<void>;
 }
 
@@ -58,7 +58,7 @@ function actualAttributes(requested: WebGLContextAttributes): WebGLContextAttrib
   return { ...defaults, alpha: requested.alpha ?? true, depth: requested.depth ?? true, stencil: requested.stencil ?? false };
 }
 
-function wrapContext(canvas: HTMLCanvasElement, host: BrowserHost,
+function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, host: BrowserHost,
   attributes: WebGLContextAttributes, core: DrawingCore,
   disposeCompiler: () => void): WebGL1PrototypeContext {
   const bufferFacade = createBufferFacade(core);
@@ -145,7 +145,7 @@ function wrapContext(canvas: HTMLCanvasElement, host: BrowserHost,
   return proxy as unknown as WebGL1PrototypeContext;
 }
 
-export async function createWebGLOnWebGPU(canvas: HTMLCanvasElement,
+export async function createWebGLOnWebGPU(canvas: HTMLCanvasElement | OffscreenCanvas,
   options: ContextOptions = { version: 1 }): Promise<WebGL1PrototypeContext> {
   if (options.version !== 1) return unsupported("WebGL version");
   const kind = options.core ?? 'js';

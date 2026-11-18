@@ -208,7 +208,7 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "ANGLE Wasm handles ESSL100 vertex/fragment compilation and real diagnostics. Differential verifies a missing identifier fails with a nonempty log.",
+          "coverage": "ANGLE Wasm handles ESSL100 vertex/fragment compilation, including user identifiers containing consecutive underscores, and reports real diagnostics. Differential verifies a missing identifier fails with a nonempty log.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential relink-and-errors",
             "tests/chrome/compiler.spec.ts::ANGLE Wasm compiles ESSL corpus and WebGPU accepts linked WGSL",

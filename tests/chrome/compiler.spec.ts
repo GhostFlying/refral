@@ -25,6 +25,9 @@ test("ANGLE Wasm compiles ESSL corpus and WebGPU accepts linked WGSL", async ({ 
     const pairs = [
       { version: 1 as const, matrix: false, ...essl100Shader },
       { version: 1 as const, matrix: false, ...varyingArrayShaders },
+      { version: 1 as const, matrix: false, positionName: 'foo__bar',
+        vertex: 'attribute vec4 foo__bar; void main(){gl_Position=foo__bar;}',
+        fragment: 'precision mediump float; uniform vec4 __color; void main(){gl_FragColor=__color;}' },
       {
         version: 1 as const,
         matrix: false,
@@ -52,7 +55,7 @@ test("ANGLE Wasm compiles ESSL corpus and WebGPU accepts linked WGSL", async ({ 
     ];
     const validation: Array<{ version: number; matrix: boolean; messages: Array<{ type: string; message: string }>; pipeline: boolean }> = [];
     for (const pair of pairs) {
-      const bindings: Record<string, number> = pair.matrix ? { transform: 2, position: 0 } : { position: 3 };
+      const bindings: Record<string, number> = pair.matrix ? { transform: 2, position: 0 } : { [pair.positionName ?? 'position']: 3 };
       const linked = compiler.link(compiler.compile(pair.vertex, "vertex", pair.version),
         compiler.compile(pair.fragment, "fragment", pair.version), bindings);
       if (!linked.success) throw new Error(linked.log);

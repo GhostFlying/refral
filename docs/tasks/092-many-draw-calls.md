@@ -41,3 +41,16 @@ The reports keep each timeout policy separate. Only a finished upstream file cou
 `pnpm check` passed all 240 Vitest checks, 76 native Rust checks, tool tests and the support matrix. Real Wasm passed 52 integration checks. The new Canvas2D and readPixels tests and the existing ordered-uniform tests passed on native, JS and Rust. Two lifecycle assertions outside these changes still expected the pre-VAO extension list at this baseline. Task 096 owns their updated expectation.
 
 Integration retained the existing HTML visibility check before reading the current swap texture. Acquiring a new WebGPU texture marks the canvas dirty and replaces the prior backing. An invisible connected canvas must keep the existing backing when a read observes its canonical buffer. The timings above identify the feature candidate on which they were measured.
+
+### Integration retest on November 19, 2026
+
+The integration candidate `3da3a418519ab2c55574d3a62e2db0166b366ab5` restored the visibility-first check when resolving HTML canvas targets. The compiler Wasm SHA-256 was `70c16657373e9265ed7dc6a40cfc70eac0f96b2055d9c66cbef283c756950c06` and the Rust core Wasm SHA-256 was `e6095830f652136494b8ca6fa851f8de58a9e027a178e2b48bf6547a7e4057b1`. A single headless Chrome 158 GPU worker ran each backend separately. The pinned original and its browser fixture remained unchanged. This diagnostic fixed both the idle and page-health windows at 120 seconds, retained the 600-second hard deadline and logged the loopback server response separately from Chrome's response event.
+
+| Backend | Original completion | Elapsed (ms) | Screenshot |
+| --- | --- | ---: | --- |
+| JS | Finished, 12 passed, 0 failed | 85,235.1 | Final case page |
+| Rust | Page-health timeout on both attempts, 10 passed and 0 failed observed per attempt | 125,635 and 125,823 | Second attempt in progress, requested 16 ms after start |
+
+All three attempts requested the original 1,293-byte js-test-post.js after the draw loop. The local server completed each HTTP 200 response in 1 ms. Chrome reported the JS response 63.122 seconds after the request. Its successfullyParsed assertion and upstream completion then arrived. The Rust runner received neither epilogue completion before its page-health deadline. The late assertions and screenshot timing remain distinct from GPU execution and from the earlier 5- and 20-second results.
+
+The complete records are under `artifacts/conformance/campaign/many-draw-092/js-extended-final/` and `rust-extended-final/`. Each contains the original result, screenshot metadata and PNG, page events, server timings and the observation script. `integrated-build.json` records source and artifact hashes. These observations do not change the historical or upstream watchdog classification.

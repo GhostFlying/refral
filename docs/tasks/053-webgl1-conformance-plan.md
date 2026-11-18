@@ -77,4 +77,6 @@ done
 
 锁定版本的 `shader-with-double-underscore.html` 期望一条含有 `attribute vec4` 且没有浮点精度声明的片元着色器成功编译。修复合法的双下划线标识符后，JS、Rust 各仅剩这条失败。按用户确认的口径，该 URL 保留在 971 分母中、保留原始失败并单列上游阻塞。其余 970 个文件继续按原断言推进。一旦上游修正且项目接受新 revision，重新执行该原始 URL 和完整清单。[规范、最小对照与三路结果](067-shader-double-underscores.md)
 
+第二个已接受的原始差异为 `tex-image-svg-image-no-natural-width-and-height.html`。在 Chrome 158 的实际元素尺寸下，原始子图分支先分配了 150×150 的纹理，随后依赖一次失败的上传把它缩为 0×0。两套核心保留失败前的尺寸和像素。Chrome 原始 13/0，JS 和 Rust 各 11/2。该文件仍计入 971 的分母。两个上游项之外的 969 个文件继续验收。[原始脚本、Chrome 实现与状态回归](076-zero-size-svg-uploads.md)
+
 本计划维护范围是本文件和路线图入口。各实现任务拥有自己的代码、验证和结果记录。计划检查使用 `pnpm ci:check`，首批选择器应在每个后端恰好选中上述三个 URL。

@@ -779,6 +779,14 @@ gl_FragColor=vec4(u_i[0].x==16777217?1.:0.,u_i[1].w==(-2147483647-1)&&u_b[1].z&&
       const t = target(32, 32);
       gl.viewport(0, 0, 32, 32); gl.clearColor(1, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
       error('active texture feedback rejected', () => sample(t.texture), gl.INVALID_OPERATION);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_NEAREST);
+      error('incomplete sampler uses fallback', () => sample(t.texture), gl.NO_ERROR);
+      const fallback = new Uint8Array(4);
+      gl.readPixels(16, 16, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, fallback);
+      check('incomplete sampler draws opaque black', Array.from(fallback).join(','), '0,0,0,255');
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      error('restoring completeness restores feedback', () => sample(t.texture), gl.INVALID_OPERATION);
+      gl.clear(gl.COLOR_BUFFER_BIT);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, 32, 64); sample(t.texture);
       gl.bindFramebuffer(gl.FRAMEBUFFER, t.framebuffer); gl.viewport(0, 0, 32, 32);
       gl.activeTexture(gl.TEXTURE0); rttTexture(gl, 1, 1, new Uint8Array([0, 255, 0, 255]));

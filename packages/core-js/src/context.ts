@@ -727,8 +727,8 @@ export class SemanticContext {
       const cube = sampler.type === GL.SAMPLER_CUBE;
       if (!cube && sampler.type !== GL.SAMPLER_2D) return unsupported("sampler type");
       const texture = cube ? binding.cubeMap : binding.texture2D;
-      if (texture && this.framebuffer?.color === texture) return this.error(GL.INVALID_OPERATION);
       const levels = texture ? textureSamplingLevelCount(texture) : 0;
+      if (levels && this.framebuffer?.color === texture) return this.error(GL.INVALID_OPERATION);
       const parameters = texture ? { ...texture.parameters } :
         { minFilter: GL.NEAREST, magFilter: GL.NEAREST, wrapS: GL.CLAMP_TO_EDGE, wrapT: GL.CLAMP_TO_EDGE };
       if (levels > 1 && texture) {

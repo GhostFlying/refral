@@ -121,7 +121,7 @@ Implementation proceeds from these pinned requirements. Task records distinguish
 | Pixel storage | WebGL PIXEL_STORAGE_PARAMETERS and texture upload APIs define alignment, flip and premultiplication. Mutable source bytes are consumed synchronously. | Five-format, row alignment, alpha, zero initialization and source mutation scenes |
 | Sampling completeness | GLES 3.7 and WebGL NPOT restrictions define texture completeness and incomplete sampling behavior. Sampler uniforms select texture units. | NPOT/filter/wrap, multiple units and draw-separated update scenes |
 | Framebuffer relations | GLES 4.4 and WebGL framebuffer APIs define attachment identities, dimensions, completeness, deletion and storage replacement. | Bound/unbound attachment, resize, deleted references and error-state regressions |
-| Feedback | WebGL Feedback Loops Between Textures and the Framebuffer requires INVALID_OPERATION for a sampled rendering feedback loop. | Explicit error and unchanged output checks |
+| Feedback | WebGL Feedback Loops Between Textures and the Framebuffer requires INVALID_OPERATION for a sampled rendering feedback loop. An incomplete sampler supplies the GLES opaque-black fallback, so it does not read the attachment. | Explicit error and unchanged output checks |
 | Raster state | GLES 3.5, 4.1 and WebGL raster APIs define culling, depth, blend, masks, scissor and clear. | Shared state/error queries and deterministic pixel regions |
 
 The resource bridge's define/update/write/retire sequence is an implementation contract for ordered GL behavior. GPU-write versions alias the rendered allocation. CPU subimage updates encode a copy from that allocation before its retirement. This preserves FBO-produced content and earlier encoded operations.

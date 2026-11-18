@@ -87,6 +87,18 @@ pub enum TextureImages {
     },
 }
 
+impl TextureImages {
+    /// Every image of a complete binding belongs to the same logical texture.
+    pub(super) fn texture(&self) -> Option<ObjectHandle> {
+        match self {
+            Self::Texture2D(image) => image.as_ref(),
+            Self::Cube(images) => images.as_ref().map(|faces| &faces[0]),
+            Self::MipChain { images, .. } => images.first(),
+        }
+        .map(|image| image.texture)
+    }
+}
+
 pub struct TextureCopy {
     pub source: TargetSnapshot,
     pub source_x: i32,

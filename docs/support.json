@@ -1341,7 +1341,7 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Scalar sampler2D and samplerCube select independent per-unit bindings with query/type/range validation and mixed-type unit conflicts. NPOT filter/wrap restrictions and incomplete opaque-black sampling follow the shared profile. Six matching 1x1 cube faces satisfy the full mip chain.",
+          "coverage": "Scalar sampler2D and samplerCube select independent per-unit bindings with query/type/range validation and mixed-type unit conflicts. NPOT filter/wrap restrictions and incomplete opaque-black sampling follow the shared profile. Rendering feedback depends on the images actually sampled. Six matching 1x1 cube faces satisfy the full mip chain.",
           "tests": [
             "tests/chrome/rtt.spec.ts::RTT texture-npot-completeness",
             "tests/chrome/rtt.spec.ts::RTT texture-sampler-units",
@@ -1371,7 +1371,7 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Scalar sampler2D and samplerCube select independent per-unit bindings with query/type/range validation and mixed-type unit conflicts. NPOT filter/wrap restrictions and incomplete opaque-black sampling follow the shared profile. Six matching 1x1 cube faces satisfy the full mip chain.",
+          "coverage": "Scalar sampler2D and samplerCube select independent per-unit bindings with query/type/range validation and mixed-type unit conflicts. NPOT filter/wrap restrictions and incomplete opaque-black sampling follow the shared profile. Rendering feedback depends on the images actually sampled. Six matching 1x1 cube faces satisfy the full mip chain.",
           "tests": [
             "tests/chrome/rtt.spec.ts::RTT texture-npot-completeness",
             "tests/chrome/rtt.spec.ts::RTT texture-sampler-units",
@@ -1673,7 +1673,8 @@
           "tests": [
             "tests/chrome/rtt.spec.ts::RTT fbo-depth-render-sample",
             "tests/chrome/rtt.spec.ts::RTT fbo-attachment-resize",
-            "tests/chrome/rtt.spec.ts::RTT fbo-feedback-loop"
+            "tests/chrome/rtt.spec.ts::RTT fbo-feedback-loop",
+            "sdk/tests/conformance/rendering/rendering-sampling-feedback-loop.html"
           ],
           "evidence": [
             {
@@ -1703,7 +1704,8 @@
           "tests": [
             "tests/chrome/rtt.spec.ts::RTT fbo-depth-render-sample",
             "tests/chrome/rtt.spec.ts::RTT fbo-attachment-resize",
-            "tests/chrome/rtt.spec.ts::RTT fbo-feedback-loop"
+            "tests/chrome/rtt.spec.ts::RTT fbo-feedback-loop",
+            "sdk/tests/conformance/rendering/rendering-sampling-feedback-loop.html"
           ],
           "evidence": [
             {

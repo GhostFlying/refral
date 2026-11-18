@@ -399,6 +399,7 @@ impl ContextCore {
     pub(super) fn texture_query(&self, parameter: u32) -> Option<Reply> {
         let state = &self.render.textures;
         Some(match parameter {
+            0x86a3 => Reply::Ints(Vec::new()), // COMPRESSED_TEXTURE_FORMATS, GLenum words
             0x84e0 => Reply::Number((TEXTURE0 + state.active as u32) as f64),
             TEXTURE_2D => return None,
             0x8069 => state.units[state.active]
@@ -615,6 +616,11 @@ impl ContextCore {
                 }
             }
             "generateMipmap" => return Some(self.generate_mipmap(arg(0).number() as u32)),
+            "compressedTexImage2D" | "compressedTexSubImage2D" => {
+                if self.bound_texture_image(arg(0).number() as u32).is_some() {
+                    self.record_error(INVALID_ENUM);
+                }
+            }
             "texImage2D" => return Some(self.define_texture(args)),
             "texSubImage2D" => return Some(self.update_texture(args)),
             "copyTexImage2D" | "copyTexSubImage2D" => {

@@ -2286,29 +2286,37 @@
     },
     {
       "id": "extension-discovery",
-      "api": "getSupportedExtensions and getExtension",
+      "api": "getSupportedExtensions, getExtension and compressed texture queries and uploads with no enabled format",
       "cores": {
         "js": {
-          "status": "implemented-unverified",
+          "status": "cts-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "The facade/core expose an empty supported-extension list and null extension results for the current profile. Extension implementations require separate acceptance.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The initial getSupportedExtensions list is empty and getExtension returns null for unadvertised extensions.",
+          "coverage": "Empty supported-extension list, null extension results and a fresh empty Uint32Array for COMPRESSED_TEXTURE_FORMATS. Both compressed uploads validate the required WebGL1 view, target and binding before rejecting unavailable formats.",
+          "tests": [
+            "packages/webgl/src/resources.test.ts",
+            "tests/chrome/compressed-texture.spec.ts",
+            "sdk/tests/conformance/textures/misc/compressed-tex-image.html"
+          ],
+          "evidence": ["docs/tasks/055-compressed-texture-validation.md", "artifacts/conformance/campaign/compressed/verified/js/results.json", "artifacts/conformance/campaign/compressed/public.log"],
+          "unsupportedBehavior": "Unavailable formats on a bound texture produce INVALID_ENUM. A missing texture binding produces INVALID_OPERATION. Rejected uploads preserve image contents.",
           "limits": [
-            "Extension-specific API behavior is future coverage"
+            "Compressed texture extensions and successful compressed uploads require separate implementation and verification."
           ]
         },
         "rust": {
-          "status": "implemented-unverified",
-          "coverage": "The facade/core expose an empty supported-extension list and null extension results for the current profile. Extension implementations require separate acceptance.",
-          "tests": [],
-          "evidence": [],
-          "unsupportedBehavior": "The selected Rust context reports NotSupportedError for unsupported operations.",
+          "status": "cts-verified",
+          "coverage": "Empty supported-extension list, null extension results and a fresh empty Uint32Array for COMPRESSED_TEXTURE_FORMATS. Both compressed uploads validate the required WebGL1 view, target and binding before rejecting unavailable formats.",
+          "tests": [
+            "packages/webgl/src/resources.test.ts",
+            "tests/chrome/compressed-texture.spec.ts",
+            "sdk/tests/conformance/textures/misc/compressed-tex-image.html"
+          ],
+          "evidence": ["docs/tasks/055-compressed-texture-validation.md", "artifacts/conformance/campaign/compressed/verified/rust/results.json", "artifacts/conformance/campaign/compressed/public.log"],
+          "unsupportedBehavior": "Unavailable formats on a bound texture produce INVALID_ENUM. A missing texture binding produces INVALID_OPERATION. Rejected uploads preserve image contents.",
           "limits": [
-            "See buffer-lifecycle-contract for the independently verified common Buffer scope."
+            "Compressed texture extensions and successful compressed uploads require separate implementation and verification."
           ]
         }
       }
@@ -2396,7 +2404,7 @@
     },
     {
       "id": "additional-rendering-capabilities",
-      "api": "compressed textures, other primitive modes beyond triangle lists and strips, and polygon offset",
+      "api": "enabled compressed texture formats, other primitive modes beyond triangle lists and strips, and polygon offset",
       "cores": {
         "js": {
           "status": "unimplemented",

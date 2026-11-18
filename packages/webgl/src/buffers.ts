@@ -41,8 +41,9 @@ function storage(value: unknown): { value: ArrayBufferLike; length: number; vari
   return null;
 }
 
-export function requireArguments(name: string, args: readonly unknown[], minimum: number): void {
-  if (args.length < minimum) throw new TypeError(`${name} requires at least ${minimum} arguments.`);
+export function requireArguments(name: string, args: readonly unknown[], minimum: number,
+  ErrorType: TypeErrorConstructor = TypeError): void {
+  if (args.length < minimum) throw new ErrorType(`${name} requires at least ${minimum} arguments.`);
 }
 
 export function toEnum(value: unknown): number {
@@ -56,13 +57,14 @@ export function toSize(value: unknown): number {
   return Number.isSafeInteger(integer) ? integer : Number(BigInt.asIntN(64, BigInt(integer)));
 }
 
-export function bufferSourceBytes(value: unknown, detachedAsEmpty = false): Uint8Array {
+export function bufferSourceBytes(value: unknown, detachedAsEmpty = false,
+  ErrorType: TypeErrorConstructor = TypeError): Uint8Array {
   if (ArrayBuffer.isView(value)) {
     let buffer: ArrayBufferLike;
     try { buffer = typedBuffer.call(value); }
     catch { buffer = viewBuffer.call(value); }
     const backing = storage(buffer)!;
-    if (backing.variable) throw new TypeError('WebGL buffer sources require fixed-length storage.');
+    if (backing.variable) throw new ErrorType('WebGL buffer sources require fixed-length storage.');
     if (detachedAsEmpty && backing.length === 0) {
       try { new Uint8Array(buffer, 0, 0); }
       catch { return new Uint8Array(0); }
@@ -79,7 +81,7 @@ export function bufferSourceBytes(value: unknown, detachedAsEmpty = false): Uint
     return new Uint8Array(buffer, offset, length);
   }
   const backing = storage(value);
-  if (!backing || backing.variable) throw new TypeError('Expected a fixed-length AllowSharedBufferSource.');
+  if (!backing || backing.variable) throw new ErrorType('Expected a fixed-length AllowSharedBufferSource.');
   return new Uint8Array(backing.value, 0, backing.length);
 }
 

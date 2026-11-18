@@ -50,6 +50,25 @@ describe('resource facade conversion and identity', () => {
     expect((facade.invoke.mock.calls.at(-1)![1][8] as PixelUpload).viewType).toBe('Float32Array');
   });
 
+  it('validates compressed upload arguments before dispatch and transports only the view length', () => {
+    const { methods, invoke } = setup();
+    const rejected = () => { throw new Error('numeric argument conversion'); };
+    const image = methods.compressedTexImage2D!;
+    const subimage = methods.compressedTexSubImage2D!;
+    expect(() => image(1, 0, 2, 4, 4, 0)).toThrow(TypeError);
+    expect(() => subimage(1, 0, 0, 0, 4, 4, 2, null)).toThrow(TypeError);
+    expect(() => image(1, 0, 2, 4, 4, 0, new ArrayBuffer(8))).toThrow(TypeError);
+    expect(() => image(1, 0, { valueOf: rejected }, 4, 4, 0, null)).toThrow('numeric argument conversion');
+    const resizable = Reflect.construct(ArrayBuffer, [4, { maxByteLength: 8 }]);
+    expect(() => image(1, 0, 2, 4, 4, 0, new Uint8Array(resizable))).toThrow(TypeError);
+    expect(invoke).not.toHaveBeenCalled();
+    const view = new DataView(new SharedArrayBuffer(16), 2, 8);
+    image(1, 0, 2, 4, 4, 0, view, { valueOf: rejected });
+    expect(invoke).toHaveBeenLastCalledWith('compressedTexImage2D', [1, 0, 2, 4, 4, 0, 8]);
+    subimage(1, 0, 0, 0, 4, 4, 2, new Uint8Array(12).subarray(2, 10));
+    expect(invoke).toHaveBeenLastCalledWith('compressedTexSubImage2D', [1, 0, 0, 0, 4, 4, 2, 8]);
+  });
+
   it('applies fixed-view WebIDL checks before semantic dispatch', () => {
     const facade = setup();
     const image = (pixels: unknown) => facade.methods.texImage2D!(GL.TEXTURE_2D, 0, GL.RGBA,

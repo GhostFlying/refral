@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import support from '../docs/support.json' with { type: 'json' };
 
 export const BACKENDS = ['native', 'js', 'rust'];
@@ -164,6 +165,63 @@ function passingAssertionDifferences(files) {
       counters.js[key] !== counters.native[key] || counters.rust[key] !== counters.native[key]));
 }
 
+// These stable inputs distinguish an auditable manifest from an older partial one.
+// Additional configuration fields and every recorded runtime/fixture hash are compared too.
+const requiredSettings = {
+  playwrightVersion: 'string', version: 'string', revision: 'string', channel: 'string',
+  headless: 'boolean', slowTests: 'boolean', frames: 'number', deviceScaleFactor: 'number',
+  screenshots: 'boolean', abortUnsupported: 'boolean', unsupportedGraceMs: 'number',
+  timeoutMs: 'number', hardTimeoutMs: 'number',
+};
+const requiredHashes = [
+  'artifacts/compiler/compiler.wasm', 'artifacts/core-wasm/refral_core.wasm',
+  'tests/fixtures/conformance.html', 'tests/fixtures/conformance.ts', 'tests/fixtures/conformance-init.ts',
+  'tools/conformance-assets.ts', 'tools/conformance-run.mjs',
+  ...['core-api', 'core-js', 'core-wasm', 'browser-host', 'webgl', 'compiler'].map(name => `packages/${name}/src/index.ts`),
+];
+const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const nonemptyString = value => typeof value === 'string' && value.length > 0;
+
+function compareRunProvenance(runs) {
+  const environments = BACKENDS.map(backend => runs[backend]?.environment ?? {});
+  const configs = environments.map(env => record(env.configuration) ? env.configuration : {});
+  const manifests = configs.map(cfg => record(cfg.hashes) ? cfg.hashes : null);
+  const mismatches = [];
+  const unavailable = [];
+  function compare(field, values, valid, comparePresence = false) {
+    const observed = values.filter(valid);
+    const missing = BACKENDS.filter((_, i) => !valid(values[i]));
+    if (missing.length) unavailable.push({ field, backends: missing });
+    if (observed.some(value => !isDeepStrictEqual(value, observed[0])) ||
+        (comparePresence && observed.length && missing.length)) {
+      mismatches.push({ field, values: Object.fromEntries(BACKENDS.map((backend, i) => [backend, values[i] ?? null])) });
+    }
+  }
+  compare('browserVersion', environments.map(env => env.browserVersion), nonemptyString);
+  compare('runtimeRevision', environments.map((env, i) => env.runtimeRevision ?? configs[i].runtimeRevision), nonemptyString);
+  if (environments.some((env, i) => nonemptyString(env.runtimeRevision) && nonemptyString(configs[i].runtimeRevision) &&
+      env.runtimeRevision !== configs[i].runtimeRevision)) {
+    mismatches.push({ field: 'runtimeRevision declarations', values: Object.fromEntries(BACKENDS.map((backend, i) =>
+      [backend, { environment: environments[i].runtimeRevision ?? null, configuration: configs[i].runtimeRevision ?? null }])) });
+  }
+  const settings = new Set([...Object.keys(requiredSettings), ...configs.flatMap(Object.keys)]);
+  for (const key of ['runtimeRevision', 'hashes', 'backend', 'core', 'requestedCore', 'actualCore', 'launchHistory']) {
+    settings.delete(key);
+  }
+  for (const key of [...settings].sort()) {
+    const type = Object.hasOwn(requiredSettings, key) ? requiredSettings[key] : undefined;
+    compare(`configuration.${key}`, configs.map(cfg => cfg[key]), value =>
+      type === 'string' ? nonemptyString(value) : type ? typeof value === type : value !== undefined);
+  }
+  const paths = new Set([...requiredHashes, ...manifests.flatMap(manifest => Object.keys(manifest ?? {}))]);
+  for (const path of [...paths].sort()) {
+    compare(`hashes.${path}`, manifests.map(manifest => manifest?.[path]),
+      value => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value),
+      manifests.every(Boolean) && !requiredHashes.includes(path));
+  }
+  return { status: mismatches.length ? 'mismatch' : unavailable.length ? 'unavailable' : 'verified', mismatches, unavailable };
+}
+
 export function buildConformanceReport(runs, { expectedInventoryCount = 971 } = {}) {
   if (!validCount(expectedInventoryCount) || expectedInventoryCount === 0) throw new Error('Invalid expected inventory count.');
   const candidates = BACKENDS.map(backend => runs[backend]?.inventory).filter(Array.isArray);
@@ -292,7 +350,7 @@ export function buildConformanceReport(runs, { expectedInventoryCount = 971 } = 
   return {
     summary: { schemaVersion: 1, expectedInventoryCount, officialInventoryFiles: inventory.length,
       expectedBackendFileExecutions: expectedInventoryCount * BACKENDS.length,
-      complete: inputIssues.length === 0,
+      complete: inputIssues.length === 0, comparability: compareRunProvenance(runs),
       assertionAggregation: 'Each official URL contributes its first record once. Duplicate records invalidate that file and remain in inputIssues.',
       assertionCounterSemantics: 'Raw skipped assertions overlap original counters. totalAssertions = passed + failed + assertionTimeouts. effectiveFailed = failed - skippedFailures.',
       inventory, backends, passingAssertionDifferences: passingAssertionDifferences(files),
@@ -354,13 +412,31 @@ function buildClusters(files) {
 function markdown({ summary, clusters }) {
   const lines = ['# Official WebGL1 conformance baseline', '',
     `Official inventory contains ${summary.officialInventoryFiles} unique HTML files against ${summary.expectedInventoryCount} expected.`,
-    `Result collection is ${summary.complete ? 'complete' : 'incomplete'} with ${summary.inputIssues.length} input issues.`, '',
+    `Result collection is ${summary.complete ? 'complete' : 'incomplete'} with ${summary.inputIssues.length} input issues.`,
+    `Cross-backend build and runner comparability is **${summary.comparability.status}**.`, '',
     '| Backend | Expected files | Reported unique files | Effective pass | Fail | Unsupported | Timeout | Harness error | Skip | Missing | Total assertions | Raw failed assertions | Effective failed assertions |',
     '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |'];
   for (const backend of BACKENDS) {
     const row = summary.backends[backend];
     const counts = row.effectiveFileStatuses;
     lines.push(`| ${backend} | ${row.expectedFiles} | ${row.uniqueReportedFiles} | ${counts.pass} | ${counts.fail} | ${counts.unsupported} | ${counts.timeout} | ${counts['harness-error']} | ${counts.skip} | ${counts.missing} | ${row.assertions.totalAssertions} | ${row.assertions.failed} | ${row.assertions.effectiveFailed} |`);
+  }
+  const { mismatches, unavailable } = summary.comparability;
+  if (mismatches.length || unavailable.length) {
+    lines.push('', '## Cross-backend comparison evidence', '');
+    for (const { field, values } of mismatches.slice(0, 12)) {
+      const observations = BACKENDS.map(backend => {
+        const value = values[backend];
+        const display = field.startsWith('hashes.') && typeof value === 'string' ? value.slice(0, 12) : JSON.stringify(value);
+        return `${backend} ${display}`;
+      });
+      lines.push(`- ${field} differs (${observations.join(', ')}).`);
+    }
+    if (mismatches.length > 12) lines.push(`- See summary.json for all ${mismatches.length} differing fields and full values.`);
+    if (unavailable.length) {
+      const first = unavailable.slice(0, 5).map(({ field, backends }) => `${field} (${backends.join(', ')})`);
+      lines.push(`- Evidence is unavailable for ${unavailable.length} fields. ${first.join(', ')}. See summary.json for all fields.`);
+    }
   }
   lines.push('', 'Original statuses, skip counts, context provenance and per-module totals remain in summary.json.',
     'An uncaught NotSupportedError may end a selected-core file at a capability barrier. Observed counters remain exact, and unexecuted assertions are marked by originalTestCompleted/capabilityTerminated.',
@@ -423,7 +499,7 @@ async function main() {
     options[argument === '--input' ? 'inputDirectory' : 'outputDirectory'] = process.argv[++index];
   }
   const report = await writeConformanceReport(options);
-  console.log(`Reported ${report.summary.officialInventoryFiles} official HTML files for ${BACKENDS.join(', ')}. Collection ${report.summary.complete ? 'complete' : 'incomplete'}.`);
+  console.log(`Reported ${report.summary.officialInventoryFiles} official HTML files for ${BACKENDS.join(', ')}. Collection ${report.summary.complete ? 'complete' : 'incomplete'}. Cross-backend comparability ${report.summary.comparability.status}.`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

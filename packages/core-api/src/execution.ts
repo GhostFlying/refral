@@ -171,11 +171,11 @@ export interface TextureBinding {
   mipImages?: readonly TextureStorage[];
 }
 
-export type DrawMode = typeof GL.LINES | typeof GL.LINE_LOOP | typeof GL.LINE_STRIP
+export type DrawMode = typeof GL.POINTS | typeof GL.LINES | typeof GL.LINE_LOOP | typeof GL.LINE_STRIP
   | typeof GL.TRIANGLES | typeof GL.TRIANGLE_STRIP | typeof GL.TRIANGLE_FAN;
 
 export function isDrawMode(mode: number): mode is DrawMode {
-  return Number.isInteger(mode) && mode >= GL.LINES && mode <= GL.TRIANGLE_FAN;
+  return Number.isInteger(mode) && mode >= GL.POINTS && mode <= GL.TRIANGLE_FAN;
 }
 
 export interface DrawOperation {

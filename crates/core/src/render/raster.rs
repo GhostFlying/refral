@@ -129,6 +129,7 @@ impl ContextCore {
             0x0ba2 => Reply::Ints(state.viewport.to_vec()),
             0x0c10 => Reply::Ints(state.scissor.to_vec()),
             0x0b21 => Reply::Number(self.render.requested_line_width as f64),
+            0x846d => Reply::Floats(vec![1.0, 64.0]),
             0x846e => Reply::Floats(vec![1.0, 1.0]),
             0x8192 => Reply::Number(self.render.mipmap_hint as f64),
             0x0c22 => Reply::Floats(self.render.clear_color.to_vec()),

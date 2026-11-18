@@ -578,11 +578,12 @@ export class BrowserHost implements SemanticHost {
     return resources;
   }
 
-  private vertexBuffer(attribute: AttributeSnapshot, vertices: number): GPUBuffer {
+  private vertexBuffer(attribute: AttributeSnapshot, vertices: number,
+    gather: DrawOperation['indices'] = null): GPUBuffer {
     const components = componentCount(attribute.shaderType);
     const { type, normalized, size, offset } = attribute;
     const key = `${type}:${normalized}:${size}:${attribute.stride}:${offset}:${components}:${vertices}`;
-    if (attribute.data) {
+    if (attribute.data && !gather) {
       const cached = this.vertexCache.get(attribute.data)?.get(key);
       if (cached) return cached;
     }
@@ -609,18 +610,21 @@ export class BrowserHost implements SemanticHost {
           return view!.getFloat32(position, true);
       }
     };
+    const elements = gather && new DataView(gather.data.buffer, gather.data.byteOffset, gather.data.byteLength);
     for (let vertex = 0; vertex < Math.max(1, vertices); vertex++) {
+      const sourceVertex = gather && elements ? (gather.type === GL.UNSIGNED_BYTE
+        ? elements.getUint8(gather.offset + vertex) : elements.getUint16(gather.offset + vertex * 2, true)) : vertex;
       for (let component = 0; component < components; component++) {
         values[vertex * components + component] = view
           ? (component < size
-            ? read(offset + vertex * stride + component * componentBytes)
+            ? read(offset + sourceVertex * stride + component * componentBytes)
             : component === 3 ? 1 : 0)
           : attribute.constant[component] ?? (component === 3 ? 1 : 0);
       }
     }
     const buffer = this.createBuffer(new Uint8Array(values.buffer), GPUBufferUsage.VERTEX,
       !attribute.data);
-    if (attribute.data) {
+    if (attribute.data && !gather) {
       let cache = this.vertexCache.get(attribute.data);
       if (!cache) { cache = new Map(); this.vertexCache.set(attribute.data, cache); }
       cache.set(key, buffer);
@@ -670,10 +674,11 @@ export class BrowserHost implements SemanticHost {
     if (!width || !height || x >= operation.target.width || y >= operation.target.height
       || x + width <= 0 || y + height <= 0 || !operation.target.width || !operation.target.height) return;
     const mode = operation.mode;
+    const points = mode === GL.POINTS;
     const strip = mode === GL.TRIANGLE_STRIP || mode === GL.LINE_STRIP;
     const needsIndexExpansion = mode === GL.LINE_LOOP || mode === GL.TRIANGLE_FAN;
     const line = mode < GL.TRIANGLES;
-    const topology: GPUPrimitiveTopology = line
+    const topology: GPUPrimitiveTopology = points ? "triangle-strip" : line
       ? (strip ? 'line-strip' : 'line-list') : (strip ? 'triangle-strip' : 'triangle-list');
     // WebGL1 index 65535 remains a vertex index. WebGPU uint16 strips reserve it for restart.
     const wideIndices = strip && indices?.type === GL.UNSIGNED_SHORT && operation.vertexCount === 65536;
@@ -696,10 +701,10 @@ export class BrowserHost implements SemanticHost {
     const layouts: GPUVertexBufferLayout[] = operation.attributes.map(attribute => {
       const components = componentCount(attribute.shaderType);
       const format = (components === 1 ? "float32" : `float32x${components}`) as GPUVertexFormat;
-      return { arrayStride: components * 4,
+      return { arrayStride: components * 4, stepMode: points ? "instance" : "vertex",
         attributes: [{ shaderLocation: attribute.location, offset: 0, format }] };
     });
-    const key = JSON.stringify([topology, stripIndexFormat, layouts, target.depth?.format, target.opaque, state.depthTest, state.depthMask,
+    const key = JSON.stringify([mode, topology, stripIndexFormat, layouts, target.depth?.format, target.opaque, state.depthTest, state.depthMask,
       state.depthFunc, depthBias, depthBiasSlopeScale, state.colorMask, state.blend, state.blendSrcRGB, state.blendDstRGB,
       state.blendSrcAlpha, state.blendDstAlpha, state.blendEquationRGB, state.blendEquationAlpha,
       state.cull, state.cullFace, state.frontFace, stencil]);
@@ -712,12 +717,12 @@ export class BrowserHost implements SemanticHost {
           srcFactor: blendFactor(state.blendSrcAlpha), dstFactor: blendFactor(state.blendDstAlpha) },
       } : undefined;
       pipeline = this.device.createRenderPipeline({ layout: resources.layout,
-        vertex: { module: resources.vertex, entryPoint: program.vertexEntryPoint, buffers: layouts },
-        fragment: { module: resources.fragment, entryPoint: program.fragmentEntryPoint,
+        vertex: { module: resources.vertex, entryPoint: points ? "refralPointMain" : program.vertexEntryPoint, buffers: layouts },
+        fragment: { module: resources.fragment, entryPoint: points ? "refralPointMain" : program.fragmentEntryPoint,
           targets: [{ format: "rgba8unorm",
             writeMask: colorWriteMask(state.colorMask) & (target.opaque ? 7 : 15), blend }] },
         primitive: { topology, stripIndexFormat,
-          frontFace: state.frontFace === GL.CCW ? "cw" : "ccw",
+          frontFace: points || state.frontFace !== GL.CCW ? "ccw" : "cw",
           cullMode: line || !state.cull ? "none" : state.cullFace === GL.FRONT ? "front" : "back" },
         depthStencil: target.depth ? { format: target.depth.format,
           ...stencil,
@@ -731,7 +736,7 @@ export class BrowserHost implements SemanticHost {
       this.stats.pipelines++;
     }
     const vertexBuffers = operation.attributes.map(attribute =>
-      this.vertexBuffer(attribute, operation.vertexCount));
+      this.vertexBuffer(attribute, points && indices ? operation.count : operation.vertexCount, points ? indices : null));
     const vertexUniform = this.createBuffer(operation.vertexUniforms, GPUBufferUsage.UNIFORM, true);
     const fragmentUniform = this.createBuffer(operation.fragmentUniforms, GPUBufferUsage.UNIFORM, true);
     const uniformGroup = this.device.createBindGroup({ layout: resources.groups[0], entries: [
@@ -752,7 +757,7 @@ export class BrowserHost implements SemanticHost {
       textureEntries.push({ binding: sampler.textureBinding, resource: texture.createView({ dimension: cube ? 'cube' : '2d' }) });
     }
     const textureGroup = this.device.createBindGroup({ layout: resources.groups[1], entries: textureEntries });
-    const driverKey = JSON.stringify([target.width, target.height, state.depthRange]);
+    const driverKey = JSON.stringify([target.width, target.height, state.depthRange, points ? [width, height] : null]);
     let driverCache = this.driverGroups.get(program);
     if (!driverCache) { driverCache = new Map(); this.driverGroups.set(program, driverCache); }
     let driverGroup = driverCache.get(driverKey);
@@ -764,6 +769,7 @@ export class BrowserHost implements SemanticHost {
       uints[2] = ((target.height & 0xffff) << 16) | (target.width & 0xffff);
       uints[3] = 0x817f7f7f;
       uints[4] = 1 << 20;
+      if (points) { uints[6] = width; uints[7] = height; }
       const buffer = this.createBuffer(new Uint8Array(data), GPUBufferUsage.UNIFORM);
       driverGroup = this.device.createBindGroup({ layout: resources.groups[2], entries: [
         { binding: 0, resource: { buffer } },
@@ -779,7 +785,7 @@ export class BrowserHost implements SemanticHost {
         widened[index] = view.getUint16(indices.offset + index * 2, true);
       }
       indexBuffer = this.createBuffer(new Uint8Array(widened.buffer), GPUBufferUsage.INDEX, true);
-    } else if (indices && !needsIndexExpansion) {
+    } else if (indices && !points && !needsIndexExpansion) {
       const cachedIndices = this.indexCache.get(indices.data);
       indexBuffer = cachedIndices?.get(indices.type) ?? null;
       if (!indexBuffer) {
@@ -810,7 +816,9 @@ export class BrowserHost implements SemanticHost {
     pass.setBindGroup(1, textureGroup);
     pass.setBindGroup(2, driverGroup);
     vertexBuffers.forEach((buffer, index) => pass.setVertexBuffer(index, buffer));
-    if (needsIndexExpansion) {
+    if (points) {
+      pass.draw(4, operation.count, 0, indices ? 0 : operation.first);
+    } else if (needsIndexExpansion) {
       for (const batch of primitiveIndexBatches(mode, operation.first, operation.count, indices)) {
         const buffer = this.createBuffer(new Uint8Array(batch.buffer), GPUBufferUsage.INDEX, true);
         pass.setIndexBuffer(buffer, 'uint32');

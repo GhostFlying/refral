@@ -380,6 +380,30 @@ test('worker ownership distinguishes a verified CPU job, a mismatched WebGL core
   }
 });
 
+test('the manifest finalizes discarded worker realms and bounds an unresponsive live worker', async () => {
+  const setup = await nativeSession();
+  setup.start(0);
+  const url = setup.files[0].url;
+  for (const exit of ['owner-discarded', 'self-closed', 'terminated']) {
+    const observe = setup.bridge.worker(url, exit + '.js', () => {
+      throw new Error('An exited worker cannot be drained.');
+    });
+    if (exit === 'self-closed') observe({ type: 'ready' });
+    observe({ type: 'exit', reason: exit });
+  }
+  const live = setup.bridge.worker(url, 'live.js', () => new Promise(() => {}));
+  live({ type: 'ready' });
+  await setup.finish(0);
+  assert.equal(setup.scope.conformanceSession.results.length, 0);
+  await setup.tick(3000);
+  const [result] = setup.scope.conformanceSession.results;
+  assert.equal(result.status, 'harness-error');
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0].message, /timed out: live.js/);
+  assert.deepEqual(Array.from(result.workers, worker => [worker.ready, worker.exit]),
+    [[false, 'owner-discarded'], [true, 'self-closed'], [false, 'terminated'], [true, undefined]]);
+});
+
 test('previous-frame diagnostics stay with the completed result while active-frame errors remain active', async () => {
   const setup = await nativeSession();
   setup.start(0);

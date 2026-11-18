@@ -3,6 +3,7 @@ import { installConformanceBridge } from './conformance-init';
 import type { CanvasBridge, ConformanceBackend, WorkerObservation } from './conformance-init';
 
 interface OfficialWorkerGlobal {
+  close(): void;
   importScripts(url: string): void;
   postMessage(value: unknown): void;
 }
@@ -71,6 +72,11 @@ export async function runOfficialWorker(): Promise<void> {
     })().catch(error => send({ type: 'error', message: String(error) }))
       .finally(() => send({ type: 'finished' }));
   }, true);
-  worker.importScripts(source.href);
+  const originalClose = worker.close;
+  worker.close = function () {
+    send({ type: 'exit', reason: 'self-closed' });
+    return originalClose.call(this);
+  };
   send({ type: 'ready' });
+  worker.importScripts(source.href);
 }

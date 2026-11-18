@@ -12,7 +12,7 @@ mod texture_tests;
 mod textures;
 pub use framebuffers::{ColorRenderbufferAttachment, DepthAttachment, TargetSnapshot};
 mod uniforms;
-pub use raster::RasterState;
+pub use raster::{RasterState, StencilFace};
 pub use readback::ReadPixelsPlan;
 pub use textures::{
     ResourceOperation, TextureBinding, TextureCopy, TextureImages, TextureParameters,
@@ -310,6 +310,7 @@ pub(crate) struct RenderState {
     framebuffers: framebuffers::FramebufferState,
     context_alpha: bool,
     context_depth: bool,
+    context_stencil: bool,
     clear_color: [f32; 4],
     clear_depth: f32,
     next_request: u32,
@@ -333,6 +334,7 @@ impl Default for RenderState {
             framebuffers: framebuffers::FramebufferState::default(),
             context_alpha: true,
             context_depth: true,
+            context_stencil: false,
             clear_color: [0.0; 4],
             clear_depth: 1.0,
             next_request: 0,
@@ -428,9 +430,10 @@ impl ContextCore {
             height.min(i32::MAX as u32) as i32,
         ];
     }
-    pub fn configure_context_attributes(&mut self, alpha: bool, depth: bool) {
+    pub fn configure_context_attributes(&mut self, alpha: bool, depth: bool, stencil: bool) {
         self.render.context_alpha = alpha;
         self.render.context_depth = depth;
+        self.render.context_stencil = stencil;
     }
     pub fn configure_texture_units(&mut self, limit: usize) {
         self.render.texture_unit_limit = limit;
@@ -1574,6 +1577,13 @@ impl ContextCore {
         let Some(target) = self.target_snapshot(true) else {
             return Reply::Null;
         };
+        if self.render.raster.stencil_test
+            && self.target_has_stencil(&target)
+            && !self.render.raster.stencil_parameters_match()
+        {
+            self.record_error(INVALID_OPERATION);
+            return Reply::Null;
+        }
         let mut indices = None;
         let mut vertex_count = first as usize + count as usize;
         if let Some((ty, bytes, offset)) = index_format {

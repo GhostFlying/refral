@@ -1,8 +1,9 @@
 import {
   CUBE_FACES, GL, createRasterState, snapshotRaster, componentCount, vertexComponentBytes, isColorRenderbufferFormat,
+  isStencilRenderbufferFormat, stencilReference,
 } from "@refral/core-api";
 import type {
-  AttributeSnapshot, RasterState, TargetSnapshot, TextureBinding, TextureCopy,
+  AttributeSnapshot, RasterState, StencilFaceState, TargetSnapshot, TextureBinding, TextureCopy,
   Compiler, CompiledShader, LinkedProgram, ProgramUniform, DrawingSurface,
   ContextAttributes, RuntimeProfile, SemanticHost, ResourceRegistry, TextureVersion, PixelUpload,
   ReadPixelsPlan, ReadPixelsRequest, DomTextureUploadPlan, DomTextureUploadRequest,
@@ -669,6 +670,11 @@ export class SemanticContext {
     if (this.attributes.some(attribute => attribute.enabled && !attribute.buffer)) return this.error(GL.INVALID_OPERATION);
     if (this.samplerTypeConflict(this.program)) return this.error(GL.INVALID_OPERATION);
     const target = this.target(); if (!target) return;
+    if (this.state.stencilTest && (target.isDefault ? this.contextAttributes.stencil : isStencilRenderbufferFormat(target.depthFormat))) {
+      const { stencilFront: front, stencilBack: back } = this.state;
+      if (((front.writeMask ^ back.writeMask) & 0xff) || ((front.valueMask ^ back.valueMask) & 0xff)
+        || stencilReference(front.reference) !== stencilReference(back.reference)) return this.error(GL.INVALID_OPERATION);
+    }
     let vertices = first + count;
     if (indices) {
       const bytes = indices.type === GL.UNSIGNED_BYTE ? 1 : 2;
@@ -1303,7 +1309,8 @@ export class SemanticContext {
     else if (capability === GL.CULL_FACE) this.state.cull = enabled;
     else if (capability === GL.SCISSOR_TEST) this.state.scissorTest = enabled;
     else if (capability === GL.DITHER) this.dither = enabled;
-    else if (capability === GL.STENCIL_TEST || capability === GL.POLYGON_OFFSET_FILL) unsupported("stencil/polygon offset state");
+    else if (capability === GL.STENCIL_TEST) this.state.stencilTest = enabled;
+    else if (capability === GL.POLYGON_OFFSET_FILL) unsupported("polygon offset state");
     else this.error(GL.INVALID_ENUM);
   }
   isEnabled(capability: number): boolean {
@@ -1312,7 +1319,8 @@ export class SemanticContext {
     if (capability === GL.CULL_FACE) return this.state.cull;
     if (capability === GL.SCISSOR_TEST) return this.state.scissorTest;
     if (capability === GL.DITHER) return this.dither;
-    if (capability === GL.STENCIL_TEST || capability === GL.POLYGON_OFFSET_FILL) return false;
+    if (capability === GL.STENCIL_TEST) return this.state.stencilTest;
+    if (capability === GL.POLYGON_OFFSET_FILL) return false;
     this.error(GL.INVALID_ENUM); return false;
   }
   viewport(x: number, y: number, width: number, height: number): void {
@@ -1326,7 +1334,29 @@ export class SemanticContext {
   }
   clearColor(r: number, g: number, b: number, a: number): void { this.clearColorValue = [clamp(r), clamp(g), clamp(b), clamp(a)]; }
   clearDepth(depth: number): void { this.clearDepthValue = clamp(depth); }
-  clearStencil(_stencil: number): void {}
+  clearStencil(stencil: number): void { this.state.stencilClear = stencil; }
+  private updateStencilFaces(face: number, values: Partial<StencilFaceState>): void {
+    if (face !== GL.FRONT && face !== GL.BACK && face !== GL.FRONT_AND_BACK) return this.error(GL.INVALID_ENUM);
+    if (face !== GL.BACK) Object.assign(this.state.stencilFront, values);
+    if (face !== GL.FRONT) Object.assign(this.state.stencilBack, values);
+  }
+  stencilMask(mask: number): void { this.stencilMaskSeparate(GL.FRONT_AND_BACK, mask); }
+  stencilMaskSeparate(face: number, mask: number): void { this.updateStencilFaces(face, { writeMask: mask }); }
+  stencilFunc(func: number, reference: number, mask: number): void {
+    this.stencilFuncSeparate(GL.FRONT_AND_BACK, func, reference, mask);
+  }
+  stencilFuncSeparate(face: number, func: number, reference: number, mask: number): void {
+    if (func < GL.NEVER || func > GL.ALWAYS) return this.error(GL.INVALID_ENUM);
+    this.updateStencilFaces(face, { func, reference, valueMask: mask });
+  }
+  stencilOp(fail: number, depthFail: number, pass: number): void {
+    this.stencilOpSeparate(GL.FRONT_AND_BACK, fail, depthFail, pass);
+  }
+  stencilOpSeparate(face: number, fail: number, depthFail: number, pass: number): void {
+    const operations: readonly number[] = [GL.KEEP, GL.ZERO, GL.REPLACE, GL.INCR, GL.INCR_WRAP, GL.DECR, GL.DECR_WRAP, GL.INVERT];
+    if (![fail, depthFail, pass].every(operation => operations.includes(operation))) return this.error(GL.INVALID_ENUM);
+    this.updateStencilFaces(face, { fail, depthFail, pass });
+  }
   colorMask(r: boolean, g: boolean, b: boolean, a: boolean): void { this.state.colorMask = [!!r, !!g, !!b, !!a]; }
   depthMask(enabled: boolean): void { this.state.depthMask = !!enabled; }
   depthFunc(func: number): void {
@@ -1392,8 +1422,9 @@ export class SemanticContext {
     const depthBits = this.framebuffer ? (depth?.width && depth.height &&
       (depth.format === GL.DEPTH_COMPONENT16 || depth.format === GL.DEPTH_STENCIL) ? 24 : 0)
       : (this.contextAttributes.depth ? 24 : 0);
-    const stencilBits = stencil?.width && stencil.height &&
-      (stencil.format === GL.STENCIL_INDEX8 || stencil.format === GL.DEPTH_STENCIL) ? 8 : 0;
+    const stencilBits = this.framebuffer ? (stencil?.width && stencil.height && isStencilRenderbufferFormat(stencil.format) ? 8 : 0)
+      : (this.contextAttributes.stencil ? 8 : 0);
+    const { stencilFront: front, stencilBack: back } = this.state;
     const values: Record<number, unknown> = {
       [GL.ARRAY_BUFFER_BINDING]: this.arrayBuffer, [GL.ELEMENT_ARRAY_BUFFER_BINDING]: this.elementBuffer,
       [GL.CURRENT_PROGRAM]: this.program, [GL.FRAMEBUFFER_BINDING]: this.framebuffer,
@@ -1409,6 +1440,13 @@ export class SemanticContext {
       [GL.BLEND_DST_RGB]: this.state.blendDstRGB, [GL.BLEND_SRC_ALPHA]: this.state.blendSrcAlpha,
       [GL.BLEND_DST_ALPHA]: this.state.blendDstAlpha, [GL.CULL_FACE_MODE]: this.state.cullFace,
       [GL.FRONT_FACE]: this.state.frontFace, [GL.UNPACK_ALIGNMENT]: this.unpackAlignment,
+      [GL.STENCIL_CLEAR_VALUE]: this.state.stencilClear,
+      [GL.STENCIL_FUNC]: front.func, [GL.STENCIL_REF]: front.reference, [GL.STENCIL_VALUE_MASK]: front.valueMask,
+      [GL.STENCIL_WRITEMASK]: front.writeMask, [GL.STENCIL_FAIL]: front.fail,
+      [GL.STENCIL_PASS_DEPTH_FAIL]: front.depthFail, [GL.STENCIL_PASS_DEPTH_PASS]: front.pass,
+      [GL.STENCIL_BACK_FUNC]: back.func, [GL.STENCIL_BACK_REF]: back.reference, [GL.STENCIL_BACK_VALUE_MASK]: back.valueMask,
+      [GL.STENCIL_BACK_WRITEMASK]: back.writeMask, [GL.STENCIL_BACK_FAIL]: back.fail,
+      [GL.STENCIL_BACK_PASS_DEPTH_FAIL]: back.depthFail, [GL.STENCIL_BACK_PASS_DEPTH_PASS]: back.pass,
       [GL.PACK_ALIGNMENT]: this.packAlignment, [GL.UNPACK_FLIP_Y_WEBGL]: this.unpackFlipY,
       [GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL]: this.unpackPremultiply,
       [GL.UNPACK_COLORSPACE_CONVERSION_WEBGL]: this.unpackColorSpace,

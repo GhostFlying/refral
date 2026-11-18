@@ -532,6 +532,15 @@ impl ContextCore {
         !target.is_default || self.render.context_alpha
     }
 
+    pub(super) fn target_has_stencil(&self, target: &TargetSnapshot) -> bool {
+        if target.is_default {
+            return self.render.context_stencil;
+        }
+        target
+            .depth
+            .is_some_and(|buffer| matches!(buffer.format, STENCIL_INDEX8 | DEPTH_STENCIL))
+    }
+
     pub(super) fn prepare_color_write(&mut self, target: &TargetSnapshot) -> bool {
         let Some(version) = target.color else {
             return true;
@@ -624,6 +633,7 @@ impl ContextCore {
                         0
                     }
                 }
+                0x0d57 if self.render.context_stencil => 8,
                 _ => 0,
             };
         };

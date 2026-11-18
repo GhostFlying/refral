@@ -1745,7 +1745,7 @@
             "artifacts/rtt/fbo-stencil-attachments/result.json"
           ],
           "limits": [
-            "This entry covers framebuffer storage and attachment behavior. The raster operations and default stencil buffer are tracked by task 048."
+            "See stencil-raster for the default buffer and stencil draw/clear state."
           ],
           "unsupportedBehavior": "An invalid or undefined attachment image makes the attachment incomplete. Conflicting depth and stencil attachment points give FRAMEBUFFER_UNSUPPORTED."
         },
@@ -1764,9 +1764,61 @@
             "artifacts/rtt/fbo-stencil-attachments/result.json"
           ],
           "limits": [
-            "This entry covers framebuffer storage and attachment behavior. The raster operations and default stencil buffer are tracked by task 048."
+            "See stencil-raster for the default buffer and stencil draw/clear state."
           ],
           "unsupportedBehavior": "An invalid or undefined attachment image makes the attachment incomplete. Conflicting depth and stencil attachment points give FRAMEBUFFER_UNSUPPORTED."
+        }
+      }
+    },
+    {
+      "id": "stencil-raster",
+      "api": "stencil context attribute, STENCIL_TEST, clearStencil, stencilFunc/Mask/Op and Separate variants",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Default and offscreen stencil state, queries, separate face operations, masked/scissored clear, stencil-only and packed framebuffer drawing.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT default-stencil-raster",
+            "sdk/tests/conformance/misc/webgl-specific-stencil-settings.html",
+            "sdk/tests/conformance/renderbuffers/stencil-renderbuffer-initialization.html",
+            "sdk/tests/conformance/renderbuffers/depth-renderbuffer-initialization.html",
+            "sdk/tests/conformance/rendering/rendering-stencil-large-viewport.html",
+            "sdk/tests/conformance/context/context-attributes-alpha-depth-stencil-antialias.html"
+          ],
+          "evidence": [
+            "artifacts/stencil-raster/official-final",
+            "artifacts/rtt/default-stencil-raster/result.json"
+          ],
+          "limits": [
+            "The actual default drawing buffer is capped by maxTextureDimension2D. An oversized requested canvas supports draws and readback through the bounded buffer; its WebGPU swapchain cannot present."
+          ],
+          "unsupportedBehavior": "A draw with enabled stencil and a stencil attachment rejects mismatched effective front/back masks or references with INVALID_OPERATION."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Default and offscreen stencil state, queries, separate face operations, masked/scissored clear, stencil-only and packed framebuffer drawing.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT default-stencil-raster",
+            "sdk/tests/conformance/misc/webgl-specific-stencil-settings.html",
+            "sdk/tests/conformance/renderbuffers/stencil-renderbuffer-initialization.html",
+            "sdk/tests/conformance/renderbuffers/depth-renderbuffer-initialization.html",
+            "sdk/tests/conformance/rendering/rendering-stencil-large-viewport.html",
+            "sdk/tests/conformance/context/context-attributes-alpha-depth-stencil-antialias.html"
+          ],
+          "evidence": [
+            "artifacts/stencil-raster/official-final",
+            "artifacts/rtt/default-stencil-raster/result.json"
+          ],
+          "limits": [
+            "The actual default drawing buffer is capped by maxTextureDimension2D. An oversized requested canvas supports draws and readback through the bounded buffer; its WebGPU swapchain cannot present."
+          ],
+          "unsupportedBehavior": "A draw with enabled stencil and a stencil attachment rejects mismatched effective front/back masks or references with INVALID_OPERATION."
         }
       }
     },
@@ -2204,7 +2256,7 @@
     },
     {
       "id": "additional-rendering-capabilities",
-      "api": "compressed textures, other primitive modes beyond triangle lists and strips, stencil and polygon offset",
+      "api": "compressed textures, other primitive modes beyond triangle lists and strips, and polygon offset",
       "cores": {
         "js": {
           "status": "unimplemented",

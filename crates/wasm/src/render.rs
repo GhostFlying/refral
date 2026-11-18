@@ -275,8 +275,10 @@ fn initialize_drawing(core: &mut BufferCore, args: &[Argument]) {
     if let Some(Argument::Number(limit)) = args.get(4) {
         core.configure_texture_dimension(*limit as u32);
     }
-    if let [.., Argument::Boolean(alpha), Argument::Boolean(depth)] = args {
-        core.configure_context_attributes(*alpha, *depth);
+    if let [.., Argument::Boolean(alpha), Argument::Boolean(depth), Argument::Boolean(stencil)] =
+        args
+    {
+        core.configure_context_attributes(*alpha, *depth, *stencil);
     }
 }
 
@@ -438,6 +440,21 @@ fn raster(output: &mut Vec<u8>, state: refral_core::RasterState) {
     u32_value(output, u32::from(state.cull));
     u32_value(output, state.cull_face);
     u32_value(output, state.front_face);
+    u32_value(output, u32::from(state.stencil_test));
+    u32_value(output, state.stencil_clear as u32);
+    for face in [state.stencil_front, state.stencil_back] {
+        for value in [
+            face.func,
+            face.reference as u32,
+            face.value_mask,
+            face.write_mask,
+            face.fail,
+            face.depth_fail,
+            face.pass,
+        ] {
+            u32_value(output, value);
+        }
+    }
 }
 fn buffer(output: &mut Vec<u8>, snapshot: &BufferSnapshot) {
     for value in [
@@ -460,9 +477,9 @@ fn reply_capacity(value: &Reply) -> Option<usize> {
         Reply::Compile(request) => request.source.len().checked_mul(2),
         Reply::Target(target) => Some(crate::resources::target_capacity(target)),
         Reply::ReadPixelsPlan(plan) => Some(40 + crate::resources::target_capacity(&plan.target)),
-        Reply::Clear(snapshot) => Some(140 + crate::resources::target_capacity(&snapshot.target)),
+        Reply::Clear(snapshot) => Some(204 + crate::resources::target_capacity(&snapshot.target)),
         Reply::Draw(snapshot) => {
-            let mut total = 180_usize
+            let mut total = 244_usize
                 .checked_add(crate::resources::target_capacity(&snapshot.target))?
                 .checked_add(snapshot.vertex_uniforms.len())?
                 .checked_add(snapshot.fragment_uniforms.len())?;
@@ -577,8 +594,8 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             json!({"type":"clear"})
         }
         Reply::Draw(snapshot) => {
-            u32_value(output, 0x34444652);
-            u32_value(output, 4);
+            u32_value(output, 0x35444652);
+            u32_value(output, 5);
             u32_value(output, snapshot.artifact_id);
             for value in [
                 snapshot.program.context_id,

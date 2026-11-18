@@ -60,6 +60,8 @@ Task 045 covers level-zero RGBA CubeMap framebuffer attachments through both cor
 
 Task 046 covers color renderbuffers and ordered framebuffer-to-texture copies through both cores. The original tex-input-validation and copy pixel cases pass through all three backends. The broader framebuffer attachment file depends on stencil and packed depth-stencil renderbuffers. [Color renderbuffer and copy results](tasks/046-color-renderbuffers-and-texture-copy.md)
 
+Tasks 047–048 cover WebGL1 packed depth-stencil and standalone stencil attachments, default context stencil, and per-face state. The original attachment, initialization and WebGL stencil-state files pass through both cores. [Attachment results](tasks/047-stencil-framebuffer-attachments.md) · [Raster results](tasks/048-stencil-raster.md)
+
 The completed milestones and subsequent compatibility dependencies follow.
 
 1. Task 025 establishes synchronous readback feasibility using actual JS/Rust cores and an independent GPU worker. Task 027 adds a main-thread Canvas2D candidate, byte-exact shared rendering corpus and matched latency/process CPU comparison. Task028 implements the user-selected Canvas2D path through both public cores, including destination ownership, packing, clipping, ordering and loss handling. The original program-handling, feedback-loop and read-pixels-pack-alignment files execute unchanged through a recorded iframe prototype adapter. ADR 007 records the accepted backend.

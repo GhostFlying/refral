@@ -77,6 +77,16 @@ export interface TextureCopy {
   type: number;
 }
 
+export interface StencilFaceState {
+  func: number;
+  reference: number;
+  valueMask: number;
+  writeMask: number;
+  fail: number;
+  depthFail: number;
+  pass: number;
+}
+
 export interface RasterState {
   viewport: [number, number, number, number];
   scissor: [number, number, number, number];
@@ -86,6 +96,10 @@ export interface RasterState {
   depthMask: boolean;
   depthFunc: number;
   depthRange: [number, number];
+  stencilTest: boolean;
+  stencilClear: number;
+  stencilFront: StencilFaceState;
+  stencilBack: StencilFaceState;
   blend: boolean;
   blendColor: [number, number, number, number];
   blendSrcRGB: number;
@@ -100,10 +114,13 @@ export interface RasterState {
 }
 
 export function createRasterState(width: number, height: number): RasterState {
+  const stencil: StencilFaceState = { func: GL.ALWAYS, reference: 0, valueMask: 0xffff_ffff,
+    writeMask: 0xffff_ffff, fail: GL.KEEP, depthFail: GL.KEEP, pass: GL.KEEP };
   return {
     viewport: [0, 0, width, height], scissor: [0, 0, width, height], scissorTest: false,
     colorMask: [true, true, true, true], depthTest: false, depthMask: true,
-    depthFunc: GL.LESS, depthRange: [0, 1], blend: false, blendColor: [0, 0, 0, 0],
+    depthFunc: GL.LESS, depthRange: [0, 1], stencilTest: false, stencilClear: 0,
+    stencilFront: { ...stencil }, stencilBack: { ...stencil }, blend: false, blendColor: [0, 0, 0, 0],
     blendSrcRGB: GL.ONE, blendDstRGB: GL.ZERO, blendSrcAlpha: GL.ONE,
     blendDstAlpha: GL.ZERO, blendEquationRGB: GL.FUNC_ADD,
     blendEquationAlpha: GL.FUNC_ADD, cull: false, cullFace: GL.BACK, frontFace: GL.CCW,
@@ -115,8 +132,15 @@ export function snapshotRaster(state: RasterState): RasterState {
     ...state,
     viewport: [...state.viewport], scissor: [...state.scissor],
     colorMask: [...state.colorMask], depthRange: [...state.depthRange],
+    stencilFront: { ...state.stencilFront }, stencilBack: { ...state.stencilBack },
     blendColor: [...state.blendColor],
   };
+}
+
+export function stencilReference(value: number): number { return Math.max(0, Math.min(0xff, value)); }
+
+export function isStencilRenderbufferFormat(format: number | undefined): boolean {
+  return format === GL.STENCIL_INDEX8 || format === GL.DEPTH_STENCIL;
 }
 
 export function componentCount(type: number): number {

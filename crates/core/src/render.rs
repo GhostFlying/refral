@@ -1628,31 +1628,19 @@ impl ContextCore {
             self.record_error(INVALID_OPERATION);
             return Reply::Null;
         }
+        let Some(textures) = self.sampled_textures(executable) else {
+            self.record_error(OUT_OF_MEMORY);
+            return Reply::Null;
+        };
         if let Some(color) = self.framebuffer_color_texture() {
-            if executable
-                .layout
-                .samplers
+            if textures
                 .iter()
-                .enumerate()
-                .any(|(index, sampler)| {
-                    let unit =
-                        executable.values[executable.layout.uniforms.len() + index][0] as usize;
-                    self.render
-                        .textures
-                        .units
-                        .get(unit)
-                        .and_then(|unit| unit.binding(Self::sampler_target(sampler.ty)))
-                        == Some(color)
-                })
+                .any(|binding| binding.images.texture() == Some(color))
             {
                 self.record_error(INVALID_OPERATION);
                 return Reply::Null;
             }
         }
-        let Some(textures) = self.sampled_textures(executable) else {
-            self.record_error(OUT_OF_MEMORY);
-            return Reply::Null;
-        };
         let mut attributes = Vec::new();
         if attributes
             .try_reserve_exact(executable.layout.attributes.len())

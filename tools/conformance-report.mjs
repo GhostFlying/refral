@@ -234,6 +234,7 @@ export function buildConformanceReport(runs, { expectedInventoryCount = 971 } = 
         ...annotation, completion: result.completion, assertionCountsComplete: !result.partialCountsUnavailable,
         observedCountersComplete: !result.partialCountsUnavailable, originalTestCompleted: result.completion === 'finished',
         capabilityTerminated: result.capabilityTerminated === true,
+        ...(result.screenshot ? { screenshot: result.screenshot } : {}),
         lateDiagnostics: result.lateDiagnostics ?? [],
         assertions: caseAssertions(result),
         retainedFailureMessages: Array.isArray(result.failures) ? result.failures.length : 0,

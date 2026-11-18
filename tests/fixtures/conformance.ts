@@ -11,6 +11,10 @@ interface ContextRecord {
   adapter: Record<string, unknown>;
   url: string;
 }
+type CaseScreenshot =
+  | { kind: 'case-page' | 'runner-page'; file: string; width: number; height: number;
+      canvas?: { id: string; x: number; y: number; width: number; height: number } }
+  | { kind: 'unavailable'; message: string };
 interface CaseResult {
   index: number;
   url: string;
@@ -32,6 +36,7 @@ interface CaseResult {
   adapterGaps: ConformanceGap[];
   durationMs: number;
   realmTransfers: number;
+  screenshot?: CaseScreenshot;
 }
 interface Scope {
   factory: PreparedContextFactory | null;
@@ -181,7 +186,7 @@ function captureContext(target: Scope, context: WebGLRenderingContext, kind: str
   activity();
 }
 
-async function finalizeResources(target: Scope, url: string): Promise<void> {
+async function finalizeResources(target: Scope, url: string, beforeDispose?: () => Promise<void>): Promise<void> {
   if (backend === 'native') {
     for (const [context, record] of target.contexts) {
       try {
@@ -194,6 +199,7 @@ async function finalizeResources(target: Scope, url: string): Promise<void> {
         // Forcing context loss here would re-enter the completed test's event listeners.
       } catch (error) { addError(target, diagnostic(error, 'context-finalization', url)); }
     }
+    await beforeDispose?.();
     return;
   }
   for (const context of target.contexts.keys()) {
@@ -210,6 +216,7 @@ async function finalizeResources(target: Scope, url: string): Promise<void> {
       addError(target, { kind: 'gpu-validation', name: 'GPUValidationError', message, url });
     }
   }
+  await beforeDispose?.();
   try { await target.factory?.dispose(); }
   catch (error) { addError(target, diagnostic(error, 'factory-disposal', url)); }
   target.factory = null;
@@ -236,7 +243,17 @@ async function finishCase(instance: OfficialHarness, original: (argument: never)
   const test = typeof argument === 'string'
     ? instance.runningTests[active.url] : argument;
   if (test) instance.clearTimeout(test);
-  try { await finalizeResources(active, active.url); }
+  const capture = Reflect.get(window, '__refralConformanceCapture') as
+    ((request: { index: number; url: string }) => Promise<CaseScreenshot>) | undefined;
+  let screenshot: CaseScreenshot | undefined;
+  let captureDuration = 0;
+  const beforeDispose = capture && (async () => {
+    const started = performance.now();
+    try { screenshot = await capture({ index: active.index, url: active.url }); }
+    catch (error) { screenshot = { kind: 'unavailable', message: String(error) }; }
+    captureDuration = performance.now() - started;
+  });
+  try { await finalizeResources(active, active.url, beforeDispose); }
   catch (error) { addError(active, diagnostic(error, 'finalization', active.url)); }
   const result: CaseResult = { index: active.index, url: active.url, backend,
     status: status(active, completion), completion, capabilityTerminated: active.capabilityTerminated,
@@ -245,8 +262,8 @@ async function finishCase(instance: OfficialHarness, original: (argument: never)
     assertionTimeouts: active.assertionTimeouts,
     failures: active.failures.slice(), failuresTruncated: active.failuresTruncated,
     errors: active.errors.slice(), contexts: [...active.contexts.values()],
-    adapterGaps: active.adapterGaps.slice(), durationMs: performance.now() - active.started,
-    realmTransfers: active.realmTransfers };
+    adapterGaps: active.adapterGaps.slice(), durationMs: performance.now() - active.started - captureDuration,
+    realmTransfers: active.realmTransfers, ...(screenshot ? { screenshot } : {}) };
   results.push(result);
   progress.finished++;
   progress.activeIndex = null;

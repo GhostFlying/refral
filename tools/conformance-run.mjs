@@ -20,11 +20,12 @@ const { values } = parseArgs({ options: {
   'timeout-ms': { type: 'string', default: '20000' },
   'hard-timeout-ms': { type: 'string', default: '600000' },
   fresh: { type: 'boolean', default: false },
+  screenshots: { type: 'boolean', default: false },
   'wait-unsupported': { type: 'boolean', default: false },
   help: { type: 'boolean', default: false },
 } });
 if (values.help) {
-  console.log('pnpm conformance:run [--backend native|js|rust|all] [--output directory] [--include regex] [--start index] [--count entries] [--batch-size 32] [--timeout-ms 20000] [--hard-timeout-ms 600000] [--wait-unsupported] [--fresh]');
+  console.log('pnpm conformance:run [--backend native|js|rust|all] [--output directory] [--include regex] [--start index] [--count entries] [--batch-size 32] [--timeout-ms 20000] [--hard-timeout-ms 600000] [--screenshots] [--wait-unsupported] [--fresh]');
   process.exit(0);
 }
 function integer(name, fallback) {
@@ -66,6 +67,7 @@ const runtimeRevision = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: '
 const playwrightVersion = JSON.parse(await readFile('node_modules/@playwright/test/package.json', 'utf8')).version;
 const configuration = { runtimeRevision, playwrightVersion, revision: sources.revision, version: '1.0.4', headless: true,
   channel: 'chrome', deviceScaleFactor: 1, frames: 1, slowTests: true,
+  screenshots: values.screenshots,
   abortUnsupported: !values['wait-unsupported'], unsupportedGraceMs: 100,
   timeoutMs: settings.timeoutMs, hardTimeoutMs: settings.hardTimeoutMs, hashes };
 
@@ -90,6 +92,77 @@ async function writeJson(file, value) {
   await writeFile(temporary, JSON.stringify(value, null, 2) + '\n');
   await rename(temporary, file);
 }
+
+function intersectClip(first, second) {
+  const x = Math.ceil(Math.max(first.x, second.x));
+  const y = Math.ceil(Math.max(first.y, second.y));
+  const right = Math.floor(Math.min(first.x + first.width, second.x + second.width));
+  const bottom = Math.floor(Math.min(first.y + first.height, second.y + second.height));
+  return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : null;
+}
+
+async function captureCasePage(page, url) {
+  const runnerUrl = `${origin}/third_party/cts/sdk/tests/webgl-conformance-tests.html`;
+  const runner = page.frames().find(frame => frame.url().split('?')[0] === runnerUrl);
+  const expectedPath = new URL(url, runnerUrl).pathname;
+  const frame = page.frames().find(candidate =>
+    candidate.parentFrame() === runner && new URL(candidate.url()).pathname === expectedPath);
+  if (!frame) return { kind: 'runner-page', bytes: await page.screenshot({ timeout: 3000 }) };
+
+  const panel = runner.locator('#iframe-container');
+  const saved = await panel.evaluate(element => {
+    const style = element.getAttribute('style');
+    element.style.transition = 'none';
+    element.style.left = '10%';
+    return style;
+  }, undefined, { timeout: 1000 });
+  try {
+    const viewport = { x: 0, y: 0, ...page.viewportSize() };
+    const iframe = await frame.frameElement();
+    const frameBox = await iframe.boundingBox();
+    const frameClip = frameBox && intersectClip(frameBox, viewport);
+    if (!frameClip) return { kind: 'runner-page', bytes: await page.screenshot({ timeout: 3000 }) };
+    const canvases = frame.locator('canvas');
+    const candidate = await canvases.evaluateAll(elements => {
+      let selected = null;
+      for (const [index, element] of elements.entries()) {
+        if (!element.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+        const rect = element.getBoundingClientRect();
+        const width = Math.min(innerWidth, rect.right) - Math.max(0, rect.left);
+        const height = Math.min(innerHeight, rect.bottom) - Math.max(0, rect.top);
+        if (width < 1 || height < 1) continue;
+        const area = width * height;
+        if (!selected || area > selected.area) selected = { index, area, id: element.id };
+      }
+      return selected;
+    });
+    const canvasBox = candidate && await canvases.nth(candidate.index).boundingBox({ timeout: 1000 });
+    const canvasClip = canvasBox && intersectClip(canvasBox, frameClip);
+    const canvas = canvasClip && { id: candidate.id || String(candidate.index + 1),
+      x: canvasClip.x - frameClip.x, y: canvasClip.y - frameClip.y,
+      width: canvasClip.width, height: canvasClip.height };
+    const bytes = await page.screenshot({ clip: frameClip, timeout: 3000 });
+    return { kind: 'case-page', bytes, ...(canvas ? { canvas } : {}) };
+  } finally {
+    await panel.evaluate((element, style) => {
+      if (style === null) element.removeAttribute('style');
+      else element.setAttribute('style', style);
+    }, saved, { timeout: 1000 }).catch(() => {});
+  }
+}
+
+async function saveCaseScreenshot(page, backend, index, url) {
+  try {
+    const { bytes, ...capture } = await withDeadline(captureCasePage(page, url), 10_000,
+      'Conformance screenshot exceeded its deadline.');
+    const relative = `${backend}/screenshots/${String(index).padStart(4, '0')}.png`;
+    await writeFile(join(output, relative), bytes);
+    return { ...capture, file: relative, width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  } catch (error) {
+    return { kind: 'unavailable', message: error.message };
+  }
+}
+
 let browser;
 let browserProcess;
 let browserClose;
@@ -168,6 +241,7 @@ try {
     if (stopSignal) break;
     const directory = join(output, backend);
     await mkdir(directory, { recursive: true });
+    if (values.screenshots) await mkdir(join(directory, 'screenshots'), { recursive: true });
     const file = join(directory, 'results.json');
     const records = new Map();
     let inventory;
@@ -244,6 +318,14 @@ try {
       let batch;
       let completedBatch = false;
       try {
+        if (values.screenshots) {
+          await page.exposeFunction('__refralConformanceCapture', ({ index, url }) => {
+            if (inventory?.[index] !== url || activeIndex !== index) {
+              throw new Error('Conformance screenshot identity mismatch.');
+            }
+            return saveCaseScreenshot(page, backend, index, url);
+          });
+        }
         await page.exposeFunction('__refralConformanceEvent', event => {
           if (event.type === 'start') { activeIndex = event.index; activeStarted = Date.now(); }
           if (event.type === 'finish') eventResults.push(event.result);
@@ -337,6 +419,7 @@ try {
             errors: [{ kind: 'recovery', name: error.name, message: error.message }], contexts: [], adapterGaps: [],
             browserDiagnostics: diagnostics.filter(item => item.index === failedIndex), partialCountsUnavailable: true,
             durationMs: Date.now() - activeStarted,
+            ...(values.screenshots ? { screenshot: await saveCaseScreenshot(page, backend, failedIndex, inventory[failedIndex]) } : {}),
           });
           await checkpoint();
         }

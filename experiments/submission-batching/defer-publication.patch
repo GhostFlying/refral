@@ -1,0 +1,14 @@
+diff --git a/packages/browser-host/src/index.ts b/packages/browser-host/src/index.ts
+index 32f6668..58efbbf 100644
+--- a/packages/browser-host/src/index.ts
++++ b/packages/browser-host/src/index.ts
+@@ -1079,3 +1079,3 @@ export class BrowserHost implements SemanticHost {
+     this.defaultDirty = true;
+-    this.submitEncoded();
++    // Task 104 diagnostic: existing core microtask flush publishes this work.
+   }
+@@ -1172,2 +1172,4 @@ export class BrowserHost implements SemanticHost {
+     this.submitEncoded();
++    console.debug('[104-host]', JSON.stringify({ time: Date.now(), draws: this.stats.draws, passes: this.stats.passes,
++      submits: this.stats.submits, bindGroups: this.stats.bindGroups, peakBufferBytes: this.stats.peakAllocatedBufferBytes }));
+     const fence = this.completion.observe();

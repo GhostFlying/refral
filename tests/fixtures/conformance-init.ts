@@ -32,10 +32,12 @@ export type WorkerObservation =
   | { type: 'ready' | 'finished' }
   | { type: 'exit'; reason: WorkerExit }
   | { type: 'context'; context: WorkerContextRecord }
+  | { type: 'nested'; id: number; script: string; event?: WorkerObservation }
   | { type: 'error'; name?: string; message: string }
   | { type: 'gap'; message: string };
 
 export interface CanvasBridge {
+  worker(url: string, script: string, finish: () => Promise<void>): (event: WorkerObservation) => void;
   acquire(canvas: HTMLCanvasElement | OffscreenCanvas, kind: string, attributes: WebGLContextAttributes | undefined,
     url: string, surface: CanvasSurface): WebGLRenderingContext | null;
   context(context: WebGLRenderingContext, kind: string, attributes: WebGLContextAttributes | undefined,
@@ -44,7 +46,6 @@ export interface CanvasBridge {
   gap(value: ConformanceGap): void;
 }
 export interface ConformanceBridge extends CanvasBridge {
-  worker(url: string, script: string, finish: () => Promise<void>): (event: WorkerObservation) => void;
   realmTransfer?(url: string): void;
   attach(harness: OfficialHarness): void;
   report: OfficialReport;
@@ -226,10 +227,35 @@ export function installConformanceBridge(options: { backend: ConformanceBackend;
 
   if (typeof Worker !== 'undefined') {
     const OriginalWorker = Worker;
+    type Lifetime = { worker: WeakRef<Worker>; token: string; ready: boolean; closed: boolean; startup?: () => void; drained?: () => void; bootstrapURL?: string };
+    function releaseURL(state: Lifetime) {
+      if (state.bootstrapURL) URL.revokeObjectURL(state.bootstrapURL);
+      state.bootstrapURL = undefined;
+    }
+    function trackOwner(end: (reason: WorkerExit) => void) {
+      window.addEventListener('pagehide', event => {
+        if (!event.persisted) end('owner-discarded');
+      });
+    }
+    function cleanup(state: Lifetime) {
+      return async () => {
+        const worker = state.worker.deref();
+        if (!worker || state.closed) return;
+        try {
+          if (!state.ready) await new Promise<void>(resolve => { state.startup = resolve; });
+          if (state.closed) return;
+          await new Promise<void>(resolve => {
+            state.drained = resolve;
+            OriginalWorker.prototype.postMessage.call(worker, { __refralFinish: state.token });
+          });
+        } finally { releaseURL(state); OriginalWorker.prototype.terminate.call(worker); }
+      };
+    }
     globalThis.Worker = new Proxy(OriginalWorker, { construct(target, args, newTarget) {
       if (!args.length) return Reflect.construct(target, args, newTarget);
       const source = new URL(args[0], options.worker ? location.href : document.baseURI);
-      if (options.worker || source.origin !== location.origin || !source.pathname.startsWith(testsPath)
+      const isBlob = source.protocol === 'blob:';
+      if (source.origin !== location.origin || (!isBlob && !source.pathname.startsWith(testsPath))
         || (args[1]?.type && args[1].type !== 'classic')) {
         if (options.backend === 'native') return Reflect.construct(target, args, newTarget);
         const message = `Selected-core instrumentation is unavailable for this worker: ${source.href}`;
@@ -240,45 +266,43 @@ export function installConformanceBridge(options: { backend: ConformanceBackend;
       const entry = new URL(source);
       entry.searchParams.set('__refral_worker', token);
       entry.searchParams.set('__refral_backend', options.backend);
-      const worker = Reflect.construct(target, [entry.href, ...args.slice(1)], newTarget) as Worker;
+      let bootstrapURL: string | undefined;
+      if (isBlob) {
+        // This bootstrap runs at a Blob URL so its relative imports follow the original Worker URL rules.
+        const bootstrap = `self.addEventListener('message', ({data}) => {
+          const source = URL.createObjectURL(data.blob);
+          import(data.moduleURL).then(m => m.runOfficialWorker({ source, backend: data.backend, token: data.token }))
+            .catch(error => self.postMessage({ __refralWorker: data.token,
+              detail: { type: 'error', name: error?.name, message: String(error) } }))
+            .finally(() => URL.revokeObjectURL(source));
+        }, { once: true });`;
+        bootstrapURL = URL.createObjectURL(new Blob([bootstrap], { type: 'text/javascript' }));
+      }
+      const worker = Reflect.construct(target, [bootstrapURL ?? entry.href, ...args.slice(1)], newTarget) as Worker;
       const post = worker.postMessage.bind(worker);
       const terminate = worker.terminate.bind(worker);
-      let ready = false;
-      let closed = false;
-      let startup: (() => void) | undefined;
-      let drained: (() => void) | undefined;
+      const state: Lifetime = { worker: new WeakRef(worker), ready: false, closed: false, token, bootstrapURL };
       const pending: { message: unknown; transfer: Transferable[] }[] = [];
-      const observe = requiredBridge().worker(location.href, source.href, async () => {
-        if (closed) return;
-        try {
-          if (!ready) await new Promise<void>(resolve => { startup = resolve; });
-          if (closed) return;
-          await new Promise<void>(resolve => {
-            drained = resolve;
-            post({ __refralFinish: token });
-          });
-        } finally { terminate(); }
-      });
+      const observe = (options.worker ?? requiredBridge()).worker(location.href, source.href, cleanup(state));
       // Preserve immediate structured-clone and transfer semantics while the worker initializes.
       Object.defineProperty(worker, 'postMessage', { configurable: true, writable: true,
         value(message: unknown, transferOrOptions?: Transferable[] | StructuredSerializeOptions) {
-          if (ready || closed) return Reflect.apply(post, worker, arguments);
+          if (state.ready || state.closed) return Reflect.apply(post, worker, arguments);
           if (!arguments.length) throw new TypeError('Worker.postMessage requires a message.');
           const transfer = Array.from(transferOrOptions && Symbol.iterator in Object(transferOrOptions)
             ? transferOrOptions as Iterable<Transferable> : (transferOrOptions as StructuredSerializeOptions | undefined)?.transfer ?? []);
           pending.push(structuredClone({ message, transfer }, { transfer }));
         } });
       function ended(reason: WorkerExit) {
-        if (closed) return;
-        closed = true;
+        if (state.closed) return;
+        state.closed = true;
         pending.length = 0;
-        startup?.();
-        drained?.();
+        releaseURL(state);
+        state.startup?.();
+        state.drained?.();
         observe({ type: 'exit', reason });
       }
-      if (!options.worker) window.addEventListener('pagehide', event => {
-        if (!event.persisted) ended('owner-discarded');
-      });
+      if (!options.worker) trackOwner(ended);
       worker.terminate = () => { ended('terminated'); terminate(); };
       worker.addEventListener('message', event => {
         if (event.data?.__refralWorker !== token) return;
@@ -287,14 +311,25 @@ export function installConformanceBridge(options: { backend: ConformanceBackend;
         if (detail.type === 'exit') { ended(detail.reason); return; }
         observe(detail);
         if (detail.type === 'ready') {
-          ready = true;
-          startup?.();
+          releaseURL(state);
+          state.ready = true;
+          state.startup?.();
           delete (worker as Partial<Worker>).postMessage;
           for (const item of pending) post(item.message, item.transfer);
           pending.length = 0;
-        } else if (detail.type === 'finished') drained?.();
+        } else if (detail.type === 'finished') state.drained?.();
       });
       worker.addEventListener('error', event => observe({ type: 'error', name: event.error?.name, message: event.message }));
+      if (isBlob) {
+        // Start resolving the original object URL synchronously, before the caller can revoke it.
+        void fetch(source).then(response => {
+          if (!response.ok) throw new Error(`Cannot load original Blob worker: ${response.status}`);
+          return response.blob();
+        }).then(blob => {
+          if (!state.closed) post({ token, backend: options.backend, blob,
+            moduleURL: new URL('/tests/fixtures/conformance-worker.ts', location.origin).href });
+        }).catch(error => observe({ type: 'error', message: String(error) }));
+      }
       return worker;
     } });
   }

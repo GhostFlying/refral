@@ -220,7 +220,7 @@ test('worker startup detaches transferable buffers immediately and only delivers
 
 test('selected worker sources outside the instrumented suite cannot create native WebGL contexts', () => {
   const { scope, calls } = fixture('js', { Worker: class { constructor() { throw new Error('native worker started'); } } });
-  assert.throws(() => new scope.Worker('blob:http://localhost/other'), { name: 'NotSupportedError' });
+  assert.throws(() => new scope.Worker('http://different.example/worker.js'), { name: 'NotSupportedError' });
   assert.equal(calls.gaps[0].kind, 'worker-webgl-provenance');
 });
 

@@ -1,3 +1,4 @@
+import type { PreparedRealm } from '@refral/webgl';
 export type ConformanceBackend = 'native' | 'js' | 'rust';
 
 export type CanvasSurface = 'html-canvas' | 'offscreen-canvas';
@@ -39,7 +40,7 @@ export type WorkerObservation =
 export interface CanvasBridge {
   worker(url: string, script: string, finish: () => Promise<void>): (event: WorkerObservation) => void;
   acquire(canvas: HTMLCanvasElement | OffscreenCanvas, kind: string, attributes: WebGLContextAttributes | undefined,
-    url: string, surface: CanvasSurface): WebGLRenderingContext | null;
+    url: string, surface: CanvasSurface, binding: PreparedRealm): WebGLRenderingContext | null;
   context(context: WebGLRenderingContext, kind: string, attributes: WebGLContextAttributes | undefined,
     url: string, surface: CanvasSurface): void;
   error(value: ConformanceDiagnostic): void;
@@ -132,7 +133,6 @@ export function installConformanceBridge(options: { backend: ConformanceBackend;
   ]);
   const realmGetters = new Set(['getParameter', 'getVertexAttrib', 'getUniform',
     'getAttachedShaders', 'getSupportedExtensions']);
-  const childContexts = new WeakMap<WebGLRenderingContext, WebGLRenderingContext>();
 
   function childResult(value: unknown): unknown {
     if (options.worker) return value; // The worker factory already lives in this realm.
@@ -157,28 +157,10 @@ export function installConformanceBridge(options: { backend: ConformanceBackend;
     return value;
   }
 
-  function childContext(raw: WebGLRenderingContext): WebGLRenderingContext {
-    const existing = childContexts.get(raw);
-    if (existing) return existing;
-    const methods = new Map<PropertyKey, { original: unknown; wrapped: (...args: unknown[]) => unknown }>();
-    const context = new Proxy(raw, {
-      // Provide the child realm's instanceof identity while reads, writes and has checks use the facade.
-      getPrototypeOf: target => Reflect.isExtensible(target)
-        ? WebGLRenderingContext.prototype : Reflect.getPrototypeOf(target),
-      get(target, property) {
-        const original = Reflect.get(target, property, target);
-        if (typeof property !== 'string' || !realmGetters.has(property) || typeof original !== 'function') return original;
-        let method = methods.get(property);
-        if (!method || method.original !== original) {
-          method = { original, wrapped: (...args) => childResult(Reflect.apply(original, target, args)) };
-          methods.set(property, method);
-        }
-        return method.wrapped;
-      },
-    });
-    childContexts.set(raw, context);
-    return context;
-  }
+  const binding: PreparedRealm = {
+    realm: globalThis,
+    queryResult: (name, value) => realmGetters.has(name) ? childResult(value) : value,
+  };
 
   const toString = String;
   function installCanvasContext(prototype: HTMLCanvasElement | OffscreenCanvas, surface: CanvasSurface): void {
@@ -212,10 +194,10 @@ export function installConformanceBridge(options: { backend: ConformanceBackend;
         // The host acquires the canvas's WebGPU slot during the first selected WebGL call.
         if (!selected.has(this) && nativeMode.has(this)) return null;
         try {
-          const context = (options.worker ?? requiredBridge()).acquire(this, kind, attributes, location.href, surface);
+          const context = (options.worker ?? requiredBridge()).acquire(this, kind, attributes, location.href, surface, binding);
           if (!context) return null;
           selected.add(this);
-          return childContext(context);
+          return context;
         } catch (error) {
           diagnostic('context-acquisition', error);
           throw error;

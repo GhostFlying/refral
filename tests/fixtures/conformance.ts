@@ -347,7 +347,7 @@ const report: OfficialReport = (type, _url, message, success, skipped) => {
 };
 
 const bridge: ConformanceBridge = {
-  acquire(canvas, kind, attributes, url, surface) {
+  acquire(canvas, kind, attributes, url, surface, binding) {
     const target = selectedScope(url);
     if (!target || !target.factory) throw new DOMException('Selected test factory is unavailable.', 'NotSupportedError');
     const existing = target.canvases.get(canvas);
@@ -357,7 +357,7 @@ const bridge: ConformanceBridge = {
       throw new DOMException('Selected-core WebGL2 acquisition is unavailable.', 'NotSupportedError');
     }
     let context: WebGLRenderingContext;
-    try { context = target.factory(canvas, attributes); }
+    try { context = target.factory(canvas, attributes, binding); }
     catch (error) {
       const detail = error as { name?: unknown; message?: unknown } | null;
       if (detail?.name === 'InvalidStateError'

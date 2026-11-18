@@ -2131,7 +2131,7 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Typed context-owned generational buffers, shaders, programs, textures, renderbuffers and framebuffers preserve wrapper identity, retained deletion and queued execution versions. Cross-context resources and stale handles are rejected. Attachment replacement, repeated deletion, resize and final GPU retirement pass the shared profile. Resource wrappers use their canvas realm’s WebGL interface prototypes. Active-info and precision records expose read-only fields, and forged prototypes fail object conversion.",
+          "coverage": "Typed context-owned generational buffers, shaders, programs, textures, renderbuffers and framebuffers preserve wrapper identity, retained deletion and queued execution versions. Cross-context resources and stale handles are rejected. Attachment replacement, repeated deletion, resize and final GPU retirement pass the shared profile. Resource wrappers use their canvas realm’s WebGL interface prototypes. Active-info and precision records expose read-only fields, and forged prototypes fail object conversion. Shared context prototype methods use the receiver’s own core. The initial drawingBufferFormat exposes RGB8 or RGBA8.",
           "tests": [
             "tests/chrome/webgl-interface-identity.spec.ts",
             "tests/chrome/differential.spec.ts::WebGL1 differential resource-ownership",
@@ -2175,7 +2175,7 @@
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "Typed context-owned generational buffers, shaders, programs, textures, renderbuffers and framebuffers preserve wrapper identity, retained deletion and queued execution versions. Cross-context resources and stale handles are rejected. Attachment replacement, repeated deletion, resize and final GPU retirement pass the shared profile. Resource wrappers use their canvas realm’s WebGL interface prototypes. Active-info and precision records expose read-only fields, and forged prototypes fail object conversion.",
+          "coverage": "Typed context-owned generational buffers, shaders, programs, textures, renderbuffers and framebuffers preserve wrapper identity, retained deletion and queued execution versions. Cross-context resources and stale handles are rejected. Attachment replacement, repeated deletion, resize and final GPU retirement pass the shared profile. Resource wrappers use their canvas realm’s WebGL interface prototypes. Active-info and precision records expose read-only fields, and forged prototypes fail object conversion. Shared context prototype methods use the receiver’s own core. The initial drawingBufferFormat exposes RGB8 or RGBA8.",
           "tests": [
             "tests/chrome/webgl-interface-identity.spec.ts",
             "tests/chrome/dual-core-drawing.spec.ts",

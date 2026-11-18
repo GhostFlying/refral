@@ -84,12 +84,8 @@ export async function runCts(path: string, requestedBackend: CtsBackend) {
           : Reflect.apply(original, this, [kind, attributes]) as WebGLRenderingContext | null;
         if (!context) return null;
         contexts.push(context);
-        const exposed = factory ? new Proxy(context, {
-          getPrototypeOf: target => Reflect.isExtensible(target)
-            ? frame.WebGLRenderingContext.prototype : Reflect.getPrototypeOf(target),
-        }) : context;
-        canvasContexts.set(this, exposed);
-        return exposed;
+        canvasContexts.set(this, context);
+        return context;
       },
       configurable: true,
     });

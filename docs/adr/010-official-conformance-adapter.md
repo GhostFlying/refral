@@ -33,3 +33,5 @@ The CLI owns headless Chrome and its local Vite process, handles interruption an
 ## Interpretation
 
 A complete baseline contains all 971 original URLs for each of native, JS and Rust. Evidence-pattern clusters identify dependency candidates for specification review. Native failures retain paired observations. Future feature and semantic fixes follow the observed baseline and pinned specification assertions.
+
+Task 080 passes the requesting realm and its existing getter-container conversion to the prepared factory. The harness returns the real facade to the page. Reading and invoking an operation from its prototype exercises the same receiver checks as the normal public entry point. Tracking and result-container conversion preserve the per-case provenance.

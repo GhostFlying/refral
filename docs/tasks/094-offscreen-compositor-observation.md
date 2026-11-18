@@ -48,3 +48,22 @@ All 64 subsequent same-stack accesses added zero GPU probes in every sample. The
 Run `pnpm check`, `pnpm ci:check`, `pnpm rust:test:wasm`, `pnpm test:chrome offscreen-discard.spec.ts offscreen-context.spec.ts worker-context.spec.ts`, and `node experiments/presentation/offscreen-discard-cost.mjs`. The official runner accepts `--include '/(context-attribute-preserve-drawing-buffer|buffer-preserve-test|buffer-offscreen-test|offscreencanvas-transfer-image-bitmap)\.html'` and `--screenshots` for each backend. Run all GPU commands headless in the exclusive campaign slot. Scene data/screenshots and raw timed samples are in `artifacts/offscreen-discard/`. The unchanged originals and per-file screenshots are in `artifacts/conformance/094-final/`. Compiler Wasm SHA-256 is `04c0a5ae77825e94f82f8b0ac97843829161c96cdbf388d2b836e1a57003cff7`. Rust Wasm SHA-256 is `e6095830f652136494b8ca6fa851f8de58a9e027a178e2b48bf6547a7e4057b1`.
 
 WebGPU also allows an independent automatic expiry task. The relative lifetime of standalone and transferred textures was established on the recorded Chrome build. A device/runtime where both expire produces an indeterminate result and retains the canonical attachments. Re-run both independent controls and the official tests when changing Chrome or porting the browser host. [WebGPU canvas texture lifetime](https://www.w3.org/TR/webgpu/#dom-gpucanvascontext-getcurrenttexture)
+
+## Full-clear follow-up plan
+
+Avoid the synchronous lifetime probe when a clear fully overwrites every existing default attachment. Check WebGL color, depth and stencil write masks, actual context attachments and the scissor enable before resolving the default target. Forget only that generation and acquire a fresh pair when the new clear is presented. Preserve the ordinary observation for partial overwrites, draws, reads and framebuffer objects. Exercise native, JS and Rust on standalone and transferred canvases with all attachment combinations. Track actual probe counts, pixels and timing for repeated full and color-only frame clears. Run the required checks, the headless OffscreenCanvas tests and the original preserve/transfer files. The change is limited to BrowserHost, its focused verification and this task.
+
+The host checks the effective attachment masks before resolving the default target. Full clears forget the old texture pair. The ordinary publish still acquires the next one. Fully masked and empty clears do no work and retain the old observation for subsequent reads. Partial color masks, scissoring, missing depth/stencil clear bits or partial stencil masks retain the synchronous check when earlier contents could contribute.
+
+The 13 clear scenarios ran on both standalone and visible transferred surfaces for all three backends. All 78 combinations produced the specified RGBA. Full and empty/masked clears made zero probes, partial clears made one. The two public API timing groups use a 4×4 nonpreserved default framebuffer containing color, depth and stencil. The sample measures only the wall time of synchronous gl.clear after two animation frames. It includes facade, selected core, host, submission and any synchronous lifetime observation. Readback happens afterward. Each group has 5 warmups and 30 samples, with the ordinary 0.1 ms timer. The source and resources were warmed before recording.
+
+| Surface | Backend | Full clear p50/p95 ms | Color-only clear p50/p95 ms |
+| --- | --- | ---: | ---: |
+| Standalone | Chrome | 0.0 / 0.0 | 0.0 / 0.1 |
+| Standalone | JS | 0.3 / 0.5 | 2.2 / 2.7 |
+| Standalone | Rust | 0.2 / 0.4 | 2.1 / 2.6 |
+| Transferred | Chrome | 0.0 / 0.1 | 0.0 / 0.1 |
+| Transferred | JS | 0.3 / 0.4 | 1.7 / 2.8 |
+| Transferred | Rust | 0.3 / 0.6 | 2.4 / 2.9 |
+
+Run `pnpm test:chrome offscreen-clear-overwrite.spec.ts offscreen-discard.spec.ts offscreen-context.spec.ts worker-context.spec.ts` in the shared headless GPU slot. Raw samples and probe counts are in `artifacts/offscreen-discard/clear-standalone.json` and `clear-transferred.json`. Zero timing samples finished inside the timer's resolution.

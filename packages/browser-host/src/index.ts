@@ -33,9 +33,10 @@ export interface PreparedHostFactory {
   dispose(): void;
 }
 
-interface HostContextAttributes { alpha: boolean; depth: boolean; stencil?: boolean | undefined }
+interface HostContextAttributes { alpha: boolean; depth: boolean; stencil?: boolean | undefined; premultipliedAlpha?: boolean | undefined }
 
 interface Target {
+  presentationGroup?: GPUBindGroup;
   color: GPUTexture;
   depth: GPUTexture | null;
   width: number;
@@ -164,6 +165,7 @@ export class BrowserHost implements SemanticHost {
     readonly alpha: boolean,
     readonly hasDepth: boolean,
     readonly hasStencil: boolean,
+    private readonly premultipliedAlpha: boolean,
     private readonly ownsDevice = true,
   ) {
     this.limits = device.limits;
@@ -208,7 +210,9 @@ export class BrowserHost implements SemanticHost {
     const factory: PreparedHostFactory = (canvas, attributes, ownsDevice = false) => {
       const context = canvas.getContext("webgpu");
       if (!context) throw new DOMException("Canvas is already bound to another context", "InvalidStateError");
-      return new BrowserHost(canvas, device, context, format, adapter, attributes.alpha, attributes.depth, attributes.stencil ?? false, ownsDevice);
+      const presentationFormat = attributes.alpha && attributes.premultipliedAlpha === false ? "rgba16float" : format;
+      return new BrowserHost(canvas, device, context, presentationFormat, adapter, attributes.alpha, attributes.depth,
+        attributes.stencil ?? false, attributes.premultipliedAlpha ?? true, ownsDevice);
     };
     factory.dispose = () => device.destroy();
     return factory;
@@ -806,7 +810,7 @@ export class BrowserHost implements SemanticHost {
     } else pass.draw(operation.count, 1, operation.first);
     this.stats.draws++;
     this.stats.bindGroups += 2;
-    if (operation.target.isDefault) this.defaultDirty = true;
+    if (operation.target.isDefault) this.publishDefaultColor();
   }
 
   private applyScissor(pass: GPURenderPassEncoder, state: RasterState, target: Target): void {
@@ -861,7 +865,7 @@ export class BrowserHost implements SemanticHost {
     pass.setBindGroup(0, group);
     pass.draw(3);
     this.stats.bindGroups++;
-    if (snapshot.isDefault) this.defaultDirty = true;
+    if (snapshot.isDefault && writeMask) this.publishDefaultColor();
   }
 
   private configurePresentation(): boolean {
@@ -872,6 +876,12 @@ export class BrowserHost implements SemanticHost {
       this.presentationConfigured = true;
     }
     return true;
+  }
+
+  // DOM consumers such as drawImage and toDataURL can observe the canvas in this same task.
+  private publishDefaultColor(): void {
+    this.defaultDirty = true;
+    this.submitEncoded();
   }
 
   private present(): void {
@@ -890,26 +900,30 @@ export class BrowserHost implements SemanticHost {
           out.uv = (positions[index] + vec2f(1)) * 0.5; return out;
         }
         @fragment fn fs(input: Out) -> @location(0) vec4f {
-          return textureSample(image,filtering,input.uv);
+          let color = textureSample(image, filtering, input.uv);
+          return ${this.alpha && !this.premultipliedAlpha ? "vec4f(color.rgb * color.a, color.a)" : "color"};
         }` });
       this.presentationPipeline = this.device.createRenderPipeline({ layout: "auto",
         vertex: { module, entryPoint: "vs" }, fragment: { module, entryPoint: "fs",
           targets: [{ format: this.format }] }, primitive: { topology: "triangle-list" } });
       this.stats.pipelines++;
     }
-    const group = this.device.createBindGroup({ layout: this.presentationPipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: target.color.createView() },
-        { binding: 1, resource: this.device.createSampler({ magFilter: "nearest", minFilter: "nearest" }) }] });
+    if (!target.presentationGroup) {
+      target.presentationGroup = this.device.createBindGroup({ layout: this.presentationPipeline.getBindGroupLayout(0),
+        entries: [{ binding: 0, resource: target.color.createView() },
+          { binding: 1, resource: this.sampler({ magFilter: GL.NEAREST, minFilter: GL.NEAREST,
+            wrapS: GL.CLAMP_TO_EDGE, wrapT: GL.CLAMP_TO_EDGE }) }] });
+      this.stats.bindGroups++;
+    }
     const pass = this.getEncoder().beginRenderPass({ colorAttachments: [{
       view: this.context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store",
       clearValue: { r: 0, g: 0, b: 0, a: this.alpha ? 0 : 1 },
     }] });
     pass.setPipeline(this.presentationPipeline);
-    pass.setBindGroup(0, group);
+    pass.setBindGroup(0, target.presentationGroup);
     pass.draw(3);
     pass.end();
     this.stats.passes++;
-    this.stats.bindGroups++;
     this.defaultDirty = false;
   }
 
@@ -923,8 +937,7 @@ export class BrowserHost implements SemanticHost {
     this.flush();
   }
 
-  flush(): void {
-    if (this.disposed) return;
+  private submitEncoded(): void {
     this.endPass();
     this.present();
     if (this.encoder) {
@@ -932,6 +945,11 @@ export class BrowserHost implements SemanticHost {
       this.encoder = null;
       this.stats.submits++;
     }
+  }
+
+  flush(): void {
+    if (this.disposed) return;
+    this.submitEncoded();
     if (!this.buffers.size && !this.retiredTextures.size) return;
     const completed = [...this.buffers];
     this.buffers.clear();

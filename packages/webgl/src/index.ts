@@ -55,7 +55,7 @@ function unsupported(operation: string): never {
 export type WebGL1PrototypeContext = WebGLRenderingContext;
 
 function actualAttributes(requested: WebGLContextAttributes): WebGLContextAttributes {
-  return { ...defaults, alpha: requested.alpha ?? true, depth: requested.depth ?? true, stencil: requested.stencil ?? false };
+  return { ...defaults, premultipliedAlpha: requested.premultipliedAlpha ?? true, alpha: requested.alpha ?? true, depth: requested.depth ?? true, stencil: requested.stencil ?? false };
 }
 
 function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, host: BrowserHost,
@@ -152,7 +152,7 @@ export async function createWebGLOnWebGPU(canvas: HTMLCanvasElement | OffscreenC
   if (kind !== 'js' && kind !== 'rust') return unsupported('core selection');
   const attributes = actualAttributes({ ...options, ...options.contextAttributes, ...options.attributes });
   const compiler = options.compiler ?? await createCompiler(options.compilerBaseURL);
-  const host = await BrowserHost.create(canvas, { alpha: attributes.alpha!, depth: attributes.depth!, stencil: attributes.stencil });
+  const host = await BrowserHost.create(canvas, { alpha: attributes.alpha!, depth: attributes.depth!, stencil: attributes.stencil, premultipliedAlpha: attributes.premultipliedAlpha });
   const registry = createCompilerRegistry(compiler);
   const contextId = allocateContextId();
   const resources = new ExecutionResources(contextId, host);
@@ -198,7 +198,7 @@ export async function prepareContextFactory(
   const contexts = new Set<WebGL1PrototypeContext>();
   const factory: PreparedContextFactory = (canvas, requested = {}) => {
     const attributes = actualAttributes(requested);
-    const host = makeHost(canvas, { alpha: attributes.alpha!, depth: attributes.depth!, stencil: attributes.stencil });
+    const host = makeHost(canvas, { alpha: attributes.alpha!, depth: attributes.depth!, stencil: attributes.stencil, premultipliedAlpha: attributes.premultipliedAlpha });
     const registry = createCompilerRegistry(compiler);
     const contextId = allocateContextId();
     const resources = new ExecutionResources(contextId, host);

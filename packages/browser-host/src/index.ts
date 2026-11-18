@@ -133,6 +133,7 @@ export class BrowserHost implements SemanticHost {
   private indexCache = new WeakMap<Uint8Array, Map<number, GPUBuffer>>();
   private programs = new WeakMap<LinkedProgram, {
     layout: GPUPipelineLayout;
+    sampledElements: { type: number; samplerBinding: number; textureBinding: number }[];
     groups: [GPUBindGroupLayout, GPUBindGroupLayout, GPUBindGroupLayout];
     vertex: GPUShaderModule;
     fragment: GPUShaderModule;
@@ -552,7 +553,10 @@ export class BrowserHost implements SemanticHost {
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } },
     ] });
     const textureEntries: GPUBindGroupLayoutEntry[] = [];
-    for (const sampler of program.samplers) {
+    const sampledElements = program.samplers.flatMap(sampler => Array.from({ length: sampler.size }, (_, i) => ({
+      type: sampler.type, samplerBinding: sampler.samplerBinding + i * 2, textureBinding: sampler.textureBinding + i * 2,
+    })));
+    for (const sampler of sampledElements) {
       textureEntries.push({ binding: sampler.samplerBinding,
         visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } });
       textureEntries.push({ binding: sampler.textureBinding,
@@ -566,7 +570,7 @@ export class BrowserHost implements SemanticHost {
     ] });
     const groups: [GPUBindGroupLayout, GPUBindGroupLayout, GPUBindGroupLayout] =
       [uniformLayout, textureLayout, driverLayout];
-    resources = { groups, layout: this.device.createPipelineLayout({ bindGroupLayouts: groups }),
+    resources = { groups, sampledElements, layout: this.device.createPipelineLayout({ bindGroupLayouts: groups }),
       vertex: this.device.createShaderModule({ code: program.vertexWGSL }),
       fragment: this.device.createShaderModule({ code: program.fragmentWGSL }),
       pipelines: new Map<string, GPURenderPipeline>() };
@@ -735,8 +739,8 @@ export class BrowserHost implements SemanticHost {
       { binding: 1, resource: { buffer: fragmentUniform } },
     ] });
     const textureEntries: GPUBindGroupEntry[] = [];
-    for (let i = 0; i < program.samplers.length; i++) {
-      const sampler = program.samplers[i]!;
+    for (let i = 0; i < resources.sampledElements.length; i++) {
+      const sampler = resources.sampledElements[i]!;
       const binding = operation.textures[i]!;
       const cube = sampler.type === GL.SAMPLER_CUBE;
       if (cube !== (binding.dimension === 'cube')) throw new Error('Sampler and execution texture dimensions differ.');

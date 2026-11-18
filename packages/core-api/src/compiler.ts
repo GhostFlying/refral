@@ -57,6 +57,7 @@ export interface ProgramSampler {
   name: string;
   type: number;
   size: number;
+  /** Each successive array element uses the next pair of bindings (+2). */
   samplerBinding: number;
   textureBinding: number;
 }

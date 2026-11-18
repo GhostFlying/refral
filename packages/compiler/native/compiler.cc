@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "GLSLANG/ShaderLang.h"
@@ -46,19 +47,17 @@ std::string Quote(const std::string& value) {
   return output.str();
 }
 
-class DefaultUniformEncoder : public sh::Std140BlockEncoder {
- protected:
-  void advanceOffset(GLenum type, size_t bytes_per_component,
-                     const std::vector<unsigned int>& array_sizes,
-                     bool is_row_major, int array_stride,
-                     int matrix_stride) override {
-    if (!gl::IsOpaqueType(type)) {
-      sh::Std140BlockEncoder::advanceOffset(type, bytes_per_component,
-                                            array_sizes, is_row_major,
-                                            array_stride, matrix_stride);
-    }
+// Match the numeric default block left by ANGLE's structure-sampler extraction.
+// A structure with only opaque fields contributes no alignment or array stride.
+bool KeepNumericFields(sh::ShaderVariable* variable) {
+  if (!variable->isStruct()) return !gl::IsOpaqueType(variable->type);
+  std::vector<sh::ShaderVariable> numeric_fields;
+  for (auto& field : variable->fields) {
+    if (KeepNumericFields(&field)) numeric_fields.push_back(std::move(field));
   }
-};
+  variable->fields = std::move(numeric_fields);
+  return !variable->fields.empty();
+}
 
 // A WebGL default block exposes every element of an array of structures.
 // ANGLE's storage-block visitor only publishes element zero and its stride.
@@ -220,12 +219,15 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char* RefralCompile(const char* source,
     }
   }
   sh::BlockLayoutMap uniform_layout;
-  DefaultUniformEncoder encoder;
+  sh::Std140BlockEncoder encoder;
   if (success && packing_error.empty()) {
     UniformLayoutVisitor visitor(&encoder, &uniform_layout);
     for (const auto& uniform : *sh::GetUniforms(compiler)) {
       if (uniform.active && !uniform.isBuiltIn()) {
-        sh::TraverseShaderVariable(uniform, false, &visitor);
+        sh::ShaderVariable numeric = uniform;
+        if (KeepNumericFields(&numeric)) {
+          sh::TraverseShaderVariable(numeric, false, &visitor);
+        }
       }
     }
   }

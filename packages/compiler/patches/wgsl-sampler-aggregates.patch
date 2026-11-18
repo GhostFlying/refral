@@ -1,0 +1,198 @@
+--- a/src/compiler/translator/tree_ops/RewriteStructSamplers.cpp
++++ b/src/compiler/translator/tree_ops/RewriteStructSamplers.cpp
+@@ -563,3 +563,16 @@
+         std::ostringstream newNameBuilder;
+-        newNameBuilder << kExtractedSamplerNamePrefix << "_" << mExtractedSamplers.size();
++        if (mCompiler->getOutputType() == SH_WGSL_OUTPUT) {
++          // The linker uses the original qualified name across independent stage compilations.
++          // User declarations cannot start with gl_. Lengths make each path unambiguous.
++          newNameBuilder << "gl_RefralField";
++          size_t start = 0;
++          while (start < path.size()) {
++            size_t end = path.find('.', start);
++            if (end == std::string::npos) end = path.size();
++            newNameBuilder << "_" << end - start << "_" << path.substr(start, end - start);
++            start = end + 1;
++          }
++        } else {
++          newNameBuilder << kExtractedSamplerNamePrefix << "_" << mExtractedSamplers.size();
++        }
+         const std::string newName = newNameBuilder.str();
+--- a/src/compiler/translator/wgsl/OutputUniformBlocks.cpp
++++ b/src/compiler/translator/wgsl/OutputUniformBlocks.cpp
+@@ -350,13 +350,20 @@
+         }
+-
+-        // Note that this may output ignored symbols.
+-        output << kTextureSamplerBindingMarker << kAngleSamplerPrefix << declSymbol->getName()
+-               << " : ";
+-        WriteWgslSamplerType(output, declType, WgslSamplerTypeConfig::Sampler);
+-        output << ";\n";
+
+-        output << kTextureSamplerBindingMarker << kAngleTexturePrefix << declSymbol->getName()
+-               << " : ";
+-        WriteWgslSamplerType(output, declType, WgslSamplerTypeConfig::Texture);
+-        output << ";\n";
++        // WebGPU core exposes individual resources. The linker rejects active arrays
++        // above the profile; cap ignored declarations before emitting WGSL.
++        const unsigned int count = declType.isArray()
++            ? std::min(declType.getOutermostArraySize(),
++                       static_cast<unsigned int>(compiler->getResources().MaxCombinedTextureImageUnits))
++            : 1;
++        for (unsigned int element = 0; element < count; ++element) {
++          const ImmutableString name = declType.isArray()
++              ? BuildConcatenatedImmutableString("gl_RefralElement", element, "_", declSymbol->getName())
++              : declSymbol->getName();
++          output << kTextureSamplerBindingMarker << kAngleSamplerPrefix << name << " : ";
++          WriteWgslSamplerType(output, declType, WgslSamplerTypeConfig::Sampler);
++          output << ";\n";
++          output << kTextureSamplerBindingMarker << kAngleTexturePrefix << name << " : ";
++          WriteWgslSamplerType(output, declType, WgslSamplerTypeConfig::Texture);
++          output << ";\n";
++        }
+     }
+--- a/src/compiler/translator/wgsl/TranslatorWGSL.cpp
++++ b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
+@@ -220,2 +220,4 @@
+     void emitStructIndexNoUnwrapping(TIntermBinary *binaryNode);
++    void emitIndexedTextureCall(TOperator op, const TIntermSequence &args,
++                                TIntermSymbol &sampler, TIntermTyped &selector);
+     void emitTextureBuiltin(const TOperator op, const TIntermSequence &args);
+@@ -237,2 +239,3 @@
+
++    TSet<ImmutableString> mSamplerDispatchNames;
+     TUnorderedSet<TSymbolUniqueId> mIsActuallyOfPointerType;
+@@ -1584,2 +1587,53 @@
+
++// GLSL ES 1.00 permits constant-index-expressions including normalized loop indices.
++// Evaluate the selector and all texture arguments once before dispatching to scalar bindings.
++void OutputWGSLTraverser::emitIndexedTextureCall(TOperator op, const TIntermSequence &args,
++                                                TIntermSymbol &sampler, TIntermTyped &selector)
++{
++    const bool cube = IsSamplerCube(sampler.getType().getBasicType());
++    const bool projected = op == EOpTexture2DProj || op == EOpTexture2DProjBias ||
++                           op == EOpTexture2DProjLodVS;
++    const bool lod = op == EOpTexture2DLodVS || op == EOpTexture2DProjLodVS ||
++                     op == EOpTextureCubeLodVS;
++    const bool bias = op == EOpTexture2DBias || op == EOpTextureCubeBias ||
++                      op == EOpTexture2DProjBias;
++    if ((!cube && !IsSampler2D(sampler.getType().getBasicType())) ||
++        (!projected && !lod && !bias && op != EOpTexture2D && op != EOpTextureCube)) {
++      mSink << "TODO_UNHANDLED_TEXTURE_FUNCTION()";
++      return;
++    }
++    const unsigned int width = args[1]->getAsTyped()->getNominalSize();
++    const ImmutableString name = BuildConcatenatedImmutableString(
++        "ANGLE_sampleIndexed_", static_cast<unsigned int>(op), "_", width, "_", sampler.getName());
++    if (mSamplerDispatchNames.insert(name).second) {
++      TInfoSinkBase &samplerFunctions = mWGSLGenerationMetadataForUniforms->samplerFunctions;
++      samplerFunctions << "fn " << name << "(index : i32, p : vec" << width << "<f32>";
++      if (bias || lod) samplerFunctions << ", level : f32";
++      samplerFunctions << ") -> vec4<f32> {\n  switch index {\n";
++      const unsigned int count = std::min(mWGSLGenerationMetadataForUniforms->samplerLimit, sampler.getType().getOutermostArraySize());
++      for (unsigned int element = 0; element < count; ++element) {
++        const ImmutableString binding = BuildConcatenatedImmutableString(
++            "gl_RefralElement", element, "_", sampler.getName());
++        const bool explicitLevel = lod || mShaderType == GL_VERTEX_SHADER;
++        samplerFunctions << "    case " << element << ": { return "
++                         << (bias ? "textureSampleBias" : explicitLevel ? "textureSampleLevel" : "textureSample")
++                         << "(" << kAngleTexturePrefix << binding << ", " << kAngleSamplerPrefix
++                         << binding << ", p." << (cube ? "xyz" : "xy");
++        if (projected) samplerFunctions << (width == 3 ? " / p.z" : " / p.w");
++        if (bias || lod) samplerFunctions << ", level";
++        else if (explicitLevel) samplerFunctions << ", 0.0f";
++        samplerFunctions << "); }\n";
++      }
++      samplerFunctions << "    default: { return vec4<f32>(0.0); }\n  }\n}\n";
++    }
++    mSink << name << "(i32(";
++    selector.traverse(this);
++    mSink << ")";
++    for (size_t i = 1; i < args.size(); ++i) {
++      mSink << ", ";
++      args[i]->traverse(this);
++    }
++    mSink << ")";
++}
++
+ void OutputWGSLTraverser::emitTextureBuiltin(const TOperator op, const TIntermSequence &args)
+@@ -1625,12 +1679,26 @@
+
+-    // MonomorphizeUnsupportedFunctions() and RewriteStructSamplers() ensure that this is a
+-    // reference to the global sampler.
++    // Monomorphization leaves a global sampler or an index into a global sampler array.
+     TIntermSymbol *samplerNode = args[0]->getAsSymbolNode();
+-    // TODO(anglebug.com/389145696): this will fail if it's an array of samplers, which isn't yet
+-    // handled.
+-    if (!samplerNode)
+-    {
+-        UNIMPLEMENTED();
+-        mSink << "TODO_UNHANDLED_TEXTURE_FUNCTION()";
++    TIntermTyped *selector = nullptr;
++    if (!samplerNode) {
++      TIntermBinary *access = args[0]->getAsBinaryNode();
++      if (access && (access->getOp() == EOpIndexDirect || access->getOp() == EOpIndexIndirect)) {
++        samplerNode = access->getLeft()->getAsSymbolNode();
++        selector = access->getRight();
++      }
++    }
++    if (!samplerNode) {
++      mSink << "TODO_UNHANDLED_TEXTURE_FUNCTION()";
++      return;
++    }
++    ImmutableString samplerName = samplerNode->getName();
++    if (selector) {
++      const TConstantUnion *index = selector->getConstantValue();
++      if (index && index->getType() == EbtInt && index->getIConst() >= 0) {
++        samplerName = BuildConcatenatedImmutableString("gl_RefralElement",
++            static_cast<unsigned int>(index->getIConst()), "_", samplerName);
++      } else {
++        emitIndexedTextureCall(op, args, *samplerNode, *selector);
+         return;
++      }
+     }
+@@ -1644,3 +1712,3 @@
+         wgslTextureVarName =
+-            BuildConcatenatedImmutableString(kAngleTexturePrefix, samplerNode->getName());
++            BuildConcatenatedImmutableString(kAngleTexturePrefix, samplerName);
+     };
+@@ -1649,3 +1717,3 @@
+         wgslSamplerVarName =
+-            BuildConcatenatedImmutableString(kAngleSamplerPrefix, samplerNode->getName());
++            BuildConcatenatedImmutableString(kAngleSamplerPrefix, samplerName);
+     };
+@@ -2797,3 +2865,4 @@
+                                            UnsupportedFunctionArgs::AtomicCounter,
+-                                           UnsupportedFunctionArgs::Image};
++                                           UnsupportedFunctionArgs::Image,
++                                           UnsupportedFunctionArgs::Sampler};
+         if (!MonomorphizeUnsupportedFunctions(this, root, &getSymbolTable(), args))
+@@ -2920,2 +2989,3 @@
+     WGSLGenerationMetadataForUniforms wgslGenerationMetadataForUniforms;
++    wgslGenerationMetadataForUniforms.samplerLimit = getResources().MaxCombinedTextureImageUnits;
+
+@@ -2979,2 +3049,3 @@
+     // since the traverser code references the wrapper struct types.
++    sink << wgslGenerationMetadataForUniforms.samplerFunctions.str();
+     sink << traverserOutput.str();
+--- a/src/compiler/translator/wgsl/OutputUniformBlocks.h
++++ b/src/compiler/translator/wgsl/OutputUniformBlocks.h
+@@ -83,2 +83,4 @@
+     TSet<TType> outputMatCx2Conversion;
++    unsigned int samplerLimit = 0;
++    TInfoSinkBase samplerFunctions;
+ };
+--- a/src/compiler/translator/tree_ops/MonomorphizeUnsupportedFunctions.h
++++ b/src/compiler/translator/tree_ops/MonomorphizeUnsupportedFunctions.h
+@@ -41,2 +41,3 @@
+     PixelLocalStorage            = 4,
++    Sampler                      = 5,
+
+--- a/src/compiler/translator/tree_ops/MonomorphizeUnsupportedFunctions.cpp
++++ b/src/compiler/translator/tree_ops/MonomorphizeUnsupportedFunctions.cpp
+@@ -353 +353,5 @@
+         const TType &type = uniform->getType();
++        if (mUnsupportedFunctionArgs[UnsupportedFunctionArgs::Sampler] &&
++            funcArgument->getType().isSampler()) {
++          return true;
++        }

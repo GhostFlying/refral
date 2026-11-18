@@ -44,7 +44,7 @@ class ProgramObject extends LogicalObject {
   vertexUniforms = new Uint8Array(16);
   fragmentUniforms = new Uint8Array(16);
   values = new Map<string, Float32Array | Int32Array>();
-  samplerUnits = new Map<string, number>();
+  samplerUnits = new Map<string, Int32Array>();
 }
 
 class UniformLocation {
@@ -419,7 +419,7 @@ export class SemanticContext {
       const size = componentCount(uniform.type) * uniform.size;
       program.values.set(baseName(uniform.name), integer ? new Int32Array(size) : new Float32Array(size));
     }
-    for (const sampler of executable.samplers) program.samplerUnits.set(baseName(sampler.name), 0);
+    for (const sampler of executable.samplers) program.samplerUnits.set(baseName(sampler.name), new Int32Array(sampler.size));
   }
   useProgram(program: ProgramObject | null): void {
     if (program !== null && !this.valid(program, ProgramObject)) return;
@@ -451,10 +451,11 @@ export class SemanticContext {
   private samplerTypeConflict(program: ProgramObject): boolean {
     const types = new Map<number, number>();
     for (const sampler of program.executable?.samplers ?? []) {
-      const unit = program.samplerUnits.get(baseName(sampler.name)) ?? 0;
-      const previous = types.get(unit);
-      if (previous !== undefined && previous !== sampler.type) return true;
-      types.set(unit, sampler.type);
+      for (const unit of program.samplerUnits.get(baseName(sampler.name))!) {
+        const previous = types.get(unit);
+        if (previous !== undefined && previous !== sampler.type) return true;
+        types.set(unit, sampler.type);
+      }
     }
     return false;
   }
@@ -521,11 +522,19 @@ export class SemanticContext {
     }
     if (values.length < components || values.length % components !== 0) return this.error(GL.INVALID_VALUE);
     const program = location.program;
-    if (program.samplerUnits.has(location.name)) {
-      if (!integer || components !== 1 || values.length !== 1) return this.error(GL.INVALID_OPERATION);
-      const unit = Number(values[0]);
-      if (!Number.isInteger(unit) || unit < 0 || unit >= this.textureUnits.length) return this.error(GL.INVALID_VALUE);
-      program.samplerUnits.set(location.name, unit); return;
+    const units = program.samplerUnits.get(location.name);
+    if (units) {
+      const sampler = program.executable!.samplers.find(value => baseName(value.name) === location.name)!;
+      if (!integer || components !== 1 || (values.length > 1 && !isUniformArray(sampler))) {
+        return this.error(GL.INVALID_OPERATION);
+      }
+      const count = Math.min(values.length, units.length - location.index);
+      for (let i = 0; i < count; ++i) {
+        const unit = values[i]!;
+        if (!Number.isInteger(unit) || unit < 0 || unit >= this.textureUnits.length) return this.error(GL.INVALID_VALUE);
+      }
+      for (let i = 0; i < count; ++i) units[location.index + i] = values[i]!;
+      return;
     }
     const uniform = program.executable!.uniforms.find(value => baseName(value.name) === location.name)!;
     const isInteger = [GL.INT, GL.INT_VEC2, GL.INT_VEC3, GL.INT_VEC4,
@@ -600,7 +609,7 @@ export class SemanticContext {
         location.program !== program || location.owner !== this.owner || location.generation !== program.generation) {
       this.error(GL.INVALID_OPERATION); return null;
     }
-    if (program.samplerUnits.has(location.name)) return program.samplerUnits.get(location.name);
+    if (program.samplerUnits.has(location.name)) return program.samplerUnits.get(location.name)![location.index];
     const uniform = program.executable!.uniforms.find(value => baseName(value.name) === location.name)!;
     const values = program.values.get(location.name)!;
     const components = componentCount(uniform.type);
@@ -724,26 +733,27 @@ export class SemanticContext {
     }
     const textures: TextureBinding[] = [];
     for (const sampler of this.program.executable.samplers) {
-      const unit = this.program!.samplerUnits.get(baseName(sampler.name)) ?? 0;
-      const binding = this.textureUnits[unit]!;
-      const cube = sampler.type === GL.SAMPLER_CUBE;
-      if (!cube && sampler.type !== GL.SAMPLER_2D) return unsupported("sampler type");
-      const texture = cube ? binding.cubeMap : binding.texture2D;
-      const levels = texture ? textureSamplingLevelCount(texture) : 0;
-      if (levels && this.framebuffer?.color === texture) return this.error(GL.INVALID_OPERATION);
-      const parameters = texture ? { ...texture.parameters } :
-        { minFilter: GL.NEAREST, magFilter: GL.NEAREST, wrapS: GL.CLAMP_TO_EDGE, wrapT: GL.CLAMP_TO_EDGE };
-      if (levels > 1 && texture) {
-        const mipImages = [];
-        for (let level = 0; level < levels; level++) {
-          for (const target of textureTargets(texture)) mipImages.push(texture.image(target, level)!.storage!);
-        }
-        textures.push({ dimension: cube ? "cube" : "2d", storage: null, parameters, mipImages });
-      } else if (cube) {
-        const snapshot: TextureBinding = { dimension: "cube", storage: null, parameters };
-        if (levels) snapshot.cubeFaces = CUBE_FACES.map(face => texture!.image(face)!.storage!);
-        textures.push(snapshot);
-      } else textures.push({ storage: levels ? texture!.storage : null, parameters });
+      for (const unit of this.program.samplerUnits.get(baseName(sampler.name))!) {
+        const binding = this.textureUnits[unit]!;
+        const cube = sampler.type === GL.SAMPLER_CUBE;
+        if (!cube && sampler.type !== GL.SAMPLER_2D) return unsupported("sampler type");
+        const texture = cube ? binding.cubeMap : binding.texture2D;
+        const levels = texture ? textureSamplingLevelCount(texture) : 0;
+        if (levels && this.framebuffer?.color === texture) return this.error(GL.INVALID_OPERATION);
+        const parameters = texture ? { ...texture.parameters } :
+          { minFilter: GL.NEAREST, magFilter: GL.NEAREST, wrapS: GL.CLAMP_TO_EDGE, wrapT: GL.CLAMP_TO_EDGE };
+        if (levels > 1 && texture) {
+          const mipImages = [];
+          for (let level = 0; level < levels; level++) {
+            for (const target of textureTargets(texture)) mipImages.push(texture.image(target, level)!.storage!);
+          }
+          textures.push({ dimension: cube ? "cube" : "2d", storage: null, parameters, mipImages });
+        } else if (cube) {
+          const snapshot: TextureBinding = { dimension: "cube", storage: null, parameters };
+          if (levels) snapshot.cubeFaces = CUBE_FACES.map(face => texture!.image(face)!.storage!);
+          textures.push(snapshot);
+        } else textures.push({ storage: levels ? texture!.storage : null, parameters });
+      }
     }
     if (!count || !target.width || !target.height ||
         (mode >= GL.TRIANGLES && this.state.cull && this.state.cullFace === GL.FRONT_AND_BACK)) return;

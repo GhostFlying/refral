@@ -143,6 +143,18 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
     .replace("struct S", "struct Other").replace("uniform S", "uniform Other"), "fragment");
   const mismatchedPrecision = compiler.compile(structUniformShaders.fragment
     .replace("float gain", "highp float gain"), "fragment");
+  const sampleStage = (count: number, stage: "vertex" | "fragment") => {
+    const output = stage === "vertex" ? "gl_Position" : "gl_FragColor";
+    return compiler.compile(`precision mediump float; uniform sampler2D samples[${count}];
+      void main(){ vec4 sum=vec4(0); for(int i=0;i<${count};++i) sum+=texture2D(samples[i],vec2(.5)); ${output}=sum; }`, stage);
+  };
+  const limit = COMPILER_LIMITS.combinedTextureUnits;
+  const boundary = compiler.link(vertex, sampleStage(limit, "fragment"));
+  const overBudget = compiler.link(sampleStage(limit, "vertex"), sampleStage(limit, "fragment"));
+  const nested = compiler.compile("precision mediump float; struct A{sampler2D a[2];}; struct B{A inner[2];}; uniform B obj[2]; void main(){gl_FragColor=texture2D(obj[1].inner[0].a[1],vec2(0));}", "fragment");
+  const forwarded = compiler.compile("precision mediump float; uniform sampler2D s[2]; vec4 lookup(sampler2D img){return texture2D(img, vec2(.5));} void main(){vec4 color=vec4(0);for(int i=0;i<2;++i) color+=lookup(s[i]); gl_FragColor=color;}", "fragment");
+  const forwardedProgram = compiler.link(vertex, forwarded);
+  const nestedProgram = compiler.link(vertex, nested);
   const opaqueStruct = compiler.compile("precision mediump float; struct S { sampler2D image; vec4 color; }; uniform S s; void main(){gl_FragColor=s.color+texture2D(s.image,vec2(0.0));}", "fragment");
   const opaqueStructProgram = compiler.link(vertex, opaqueStruct);
   const fullVertexRows = compiler.compile(vertexCapacityShaders.vertex
@@ -179,8 +191,19 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
     { name: "uniform-struct-type-and-field-precision", passed: mismatchedStruct.success && mismatchedPrecision.success &&
       !compiler.link(structVertex, mismatchedStruct).success && !compiler.link(structVertex, mismatchedPrecision).success,
       log: [mismatchedStruct.log, mismatchedPrecision.log].join("\n") },
-    { name: "uniform-struct-sampler-diagnostic", passed: opaqueStruct.success && !opaqueStructProgram.success &&
-      opaqueStructProgram.log.includes("Samplers inside struct"), log: opaqueStructProgram.log },
+    { name: "indexed-sampler-stage-budget", passed: boundary.success && boundary.samplers[0]?.size === limit &&
+      boundary.fragmentWGSL.includes("switch index") && !overBudget.success && overBudget.log.includes("Combined texture count"),
+      log: [boundary.log, overBudget.log].join(" ") },
+    { name: "sampler-parameter-preserves-dynamic-element", passed: forwardedProgram.success &&
+      forwardedProgram.fragmentWGSL.includes("switch index") && !forwardedProgram.fragmentWGSL.includes(" : )"),
+      log: forwardedProgram.log },
+    { name: "nested-sampler-array-bindings", passed: nestedProgram.success &&
+      nestedProgram.samplers.map(s => s.name).join(" ") === "obj[0].inner[0].a[0] obj[0].inner[1].a[0] obj[1].inner[0].a[0] obj[1].inner[1].a[0]" &&
+      nestedProgram.samplers[2]?.textureBinding === 9 &&
+      nestedProgram.fragmentWGSL.includes("@binding(11) var ANGLE_texture_gl_RefralElement5_"),
+      log: nestedProgram.log },
+    { name: "uniform-struct-sampler-and-color", passed: opaqueStruct.success && opaqueStructProgram.success &&
+      opaqueStructProgram.samplers[0]?.name === "s.image" && opaqueStructProgram.uniforms.find(u => u.name === "s.color")?.fragmentOffset === 0, log: opaqueStructProgram.log },
     { name: "varying-arrays-matching-stage-locations", passed: arrayInterface.success &&
       vertexFields.size === 7 && fragmentFields.size === 7 && new Set(vertexFields.values()).size === 7 &&
       [...vertexFields].every(([name, location]) => fragmentFields.get(name) === location),
@@ -247,10 +270,12 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
       && mixedProgram.samplers.some(sampler => sampler.type === 0x8b5e)
       && mixedProgram.samplers.some(sampler => sampler.type === 0x8b60)
       && mixedProgram.samplers.every((sampler, index) => sampler.samplerBinding === index * 2 && sampler.textureBinding === index * 2 + 1), log: mixedProgram.log },
-    { name: 'cube-sampler-array-diagnostic', passed: cubeArray.success && !cubeArrayProgram.success
-      && cubeArrayProgram.log.includes('Sampler cubes'), log: cubeArrayProgram.log },
-    { name: 'single-cube-sampler-array-diagnostic', passed: singleCubeArray.success && !singleCubeArrayProgram.success
-      && singleCubeArrayProgram.log.includes('sampler array'), log: singleCubeArrayProgram.log },
+    { name: 'cube-sampler-array-layout', passed: cubeArrayProgram.success && cubeArrayProgram.samplers[0]?.name === 'cubes[0]'
+      && cubeArrayProgram.samplers[0].size === 2 && cubeArrayProgram.fragmentWGSL.includes('@binding(3) var ANGLE_texture_gl_RefralElement1_cubes'),
+      log: cubeArrayProgram.log },
+    { name: 'size-one-sampler-array-identity', passed: singleCubeArrayProgram.success &&
+      singleCubeArrayProgram.samplers[0]?.name === 'cubes[0]' && singleCubeArrayProgram.samplers[0].size === 1,
+      log: singleCubeArrayProgram.log },
     { name: 'unsupported-volume-sampler-diagnostic', passed: unsupportedVolume.success && !unsupportedVolumeProgram.success
       && unsupportedVolumeProgram.log.includes('Sampler volume'), log: unsupportedVolumeProgram.log },
     { name: 'unsupported-integer-cube-diagnostic', passed: unsupportedIntegerCube.success && !unsupportedIntegerCubeProgram.success

@@ -1335,15 +1335,14 @@ impl ContextCore {
 
     pub(super) fn sampler_units_valid(&self, executable: &Executable) -> bool {
         let mut types = [0_u32; 32];
-        for (index, sampler) in executable.layout.samplers.iter().enumerate() {
-            let unit = executable.values[executable.layout.uniforms.len() + index][0] as usize;
+        for (ty, unit) in executable.sampled_units() {
             let Some(previous) = types.get_mut(unit) else {
                 return false;
             };
-            if *previous != 0 && *previous != sampler.ty {
+            if *previous != 0 && *previous != ty {
                 return false;
             }
-            *previous = sampler.ty;
+            *previous = ty;
         }
         true
     }
@@ -1351,11 +1350,17 @@ impl ContextCore {
     pub(super) fn sampled_textures(&self, executable: &Executable) -> Option<Vec<TextureBinding>> {
         let mut bindings = Vec::new();
         bindings
-            .try_reserve_exact(executable.layout.samplers.len())
+            .try_reserve_exact(
+                executable
+                    .layout
+                    .samplers
+                    .iter()
+                    .map(|s| s.size as usize)
+                    .sum(),
+            )
             .ok()?;
-        for (index, sampler) in executable.layout.samplers.iter().enumerate() {
-            let unit = executable.values[executable.layout.uniforms.len() + index][0] as usize;
-            let target = Self::sampler_target(sampler.ty);
+        for (ty, unit) in executable.sampled_units() {
+            let target = Self::sampler_target(ty);
             let texture_index = self
                 .render
                 .textures

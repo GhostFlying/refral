@@ -781,7 +781,7 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources and cubemap-level-zero entries record those accepted profiles. Nonzero mip levels, mipmap generation, packed types and additional formats follow their compatibility tasks."
+            "This entry covers the five level-zero UNSIGNED_BYTE formats. See texture-packed-typed-upload for packed types, and texture-dom-sources and cubemap-level-zero for source and target coverage. Mip levels, mipmap generation and additional formats remain pending."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -826,9 +826,103 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources and cubemap-level-zero entries record those accepted profiles. Nonzero mip levels, mipmap generation, packed types and additional formats follow their compatibility tasks."
+            "This entry covers the five level-zero UNSIGNED_BYTE formats. See texture-packed-typed-upload for packed types, and texture-dom-sources and cubemap-level-zero for source and target coverage. Mip levels, mipmap generation and additional formats remain pending."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
+        }
+      }
+    },
+    {
+      "id": "texture-packed-typed-upload",
+      "api": "texImage2D and texSubImage2D level 0, packed Uint16Array or null definition",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Level-zero RGB/5_6_5, RGBA/4_4_4_4 and RGBA/5_5_5_1 typed/null definitions and Uint16Array subimages. 2D and CubeMap, padded rows, byte offsets, unpack transforms, zero initialization, error validation and ordered snapshots.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT texture-packed-565",
+            "tests/chrome/rtt.spec.ts::RTT texture-packed-4444",
+            "tests/chrome/rtt.spec.ts::RTT texture-packed-5551",
+            "tests/chrome/rtt.spec.ts::RTT texture-packed-cube",
+            "sdk/tests/conformance/textures/misc/tex-image-and-sub-image-2d-with-array-buffer-view.html",
+            "sdk/tests/conformance/textures/misc/texture-formats-test.html",
+            "sdk/tests/conformance/textures/misc/texture-attachment-formats.html",
+            "sdk/tests/conformance/more/functions/texImage2DBadArgs.html",
+            "sdk/tests/conformance/more/functions/texSubImage2DBadArgs.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/rtt/texture-packed-565/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-packed-4444/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-packed-5551/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-packed-cube/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/packed-texture/official",
+              "scope": "Six of ten original files passed per core, including the five originals named here."
+            }
+          ],
+          "limits": [
+            "Packed DOM sources and nonzero mip levels have separate acceptance tasks."
+          ],
+          "unsupportedBehavior": "The cores produce GL errors for invalid format/type and source-view combinations before state changes. Valid packed DOM uploads report NotSupportedError."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Level-zero RGB/5_6_5, RGBA/4_4_4_4 and RGBA/5_5_5_1 typed/null definitions and Uint16Array subimages. 2D and CubeMap, padded rows, byte offsets, unpack transforms, zero initialization, error validation and ordered snapshots.",
+          "tests": [
+            "tests/chrome/rtt.spec.ts::RTT texture-packed-565",
+            "tests/chrome/rtt.spec.ts::RTT texture-packed-4444",
+            "tests/chrome/rtt.spec.ts::RTT texture-packed-5551",
+            "tests/chrome/rtt.spec.ts::RTT texture-packed-cube",
+            "sdk/tests/conformance/textures/misc/tex-image-and-sub-image-2d-with-array-buffer-view.html",
+            "sdk/tests/conformance/textures/misc/texture-formats-test.html",
+            "sdk/tests/conformance/textures/misc/texture-attachment-formats.html",
+            "sdk/tests/conformance/more/functions/texImage2DBadArgs.html",
+            "sdk/tests/conformance/more/functions/texSubImage2DBadArgs.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/rtt/texture-packed-565/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-packed-4444/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-packed-5551/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/rtt/texture-packed-cube/result.json",
+              "passed": true
+            },
+            {
+              "path": "artifacts/packed-texture/official",
+              "scope": "Six of ten original files passed per core, including the five originals named here."
+            }
+          ],
+          "limits": [
+            "Packed DOM sources and nonzero mip levels have separate acceptance tasks."
+          ],
+          "unsupportedBehavior": "The cores produce GL errors for invalid format/type and source-view combinations before state changes. Valid packed DOM uploads report NotSupportedError."
         }
       }
     },
@@ -1066,7 +1160,7 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources and cubemap-level-zero entries record those accepted profiles. Nonzero mip levels, mipmap generation, packed types and additional formats follow their compatibility tasks."
+            "This entry covers the five level-zero UNSIGNED_BYTE formats. See texture-packed-typed-upload for packed types, and texture-dom-sources and cubemap-level-zero for source and target coverage. Mip levels, mipmap generation and additional formats remain pending."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -1096,7 +1190,7 @@
             }
           ],
           "limits": [
-            "The typed/null profile uses level zero and UNSIGNED_BYTE. The texture-dom-sources and cubemap-level-zero entries record those accepted profiles. Nonzero mip levels, mipmap generation, packed types and additional formats follow their compatibility tasks."
+            "This entry covers the five level-zero UNSIGNED_BYTE formats. See texture-packed-typed-upload for packed types, and texture-dom-sources and cubemap-level-zero for source and target coverage. Mip levels, mipmap generation and additional formats remain pending."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -1132,7 +1226,7 @@
             }
           ],
           "limits": [
-            "Level zero and UNSIGNED_BYTE. The DOM entry records accepted source overloads. Nonzero mip levels, mipmap generation, packed types and additional formats have separate compatibility tasks."
+            "Level-zero byte and packed typed uploads are tracked in texture2d-typed-upload and texture-packed-typed-upload. The DOM entry records accepted source overloads. Nonzero mip levels, mipmap generation and additional formats have separate compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -1162,7 +1256,7 @@
             }
           ],
           "limits": [
-            "Level zero and UNSIGNED_BYTE. The DOM entry records accepted source overloads. Nonzero mip levels, mipmap generation, packed types and additional formats have separate compatibility tasks."
+            "Level-zero byte and packed typed uploads are tracked in texture2d-typed-upload and texture-packed-typed-upload. The DOM entry records accepted source overloads. Nonzero mip levels, mipmap generation and additional formats have separate compatibility tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -1193,7 +1287,7 @@
             }
           ],
           "limits": [
-            "Texture2D typed, DOM-source and level-zero CubeMap profiles are recorded by texture2d-typed-upload, texture-dom-sources and cubemap-level-zero. Nonzero levels, mipmaps and packed types follow their scoped tasks."
+            "Typed and DOM uploads are recorded by texture2d-typed-upload, texture-packed-typed-upload and texture-dom-sources. CubeMap coverage is recorded by cubemap-level-zero. Nonzero levels and mipmaps follow their scoped tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         },
@@ -1218,7 +1312,7 @@
             }
           ],
           "limits": [
-            "Texture2D typed, DOM-source and level-zero CubeMap profiles are recorded by texture2d-typed-upload, texture-dom-sources and cubemap-level-zero. Nonzero levels, mipmaps and packed types follow their scoped tasks."
+            "Typed and DOM uploads are recorded by texture2d-typed-upload, texture-packed-typed-upload and texture-dom-sources. CubeMap coverage is recorded by cubemap-level-zero. Nonzero levels and mipmaps follow their scoped tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors and preserve prior state. Valid operations beyond the selected profile report NotSupportedError."
         }
@@ -2077,7 +2171,7 @@
             }
           ],
           "limits": [
-            "Nonzero mip levels, mipmap generation, packed pixel types and CubeMap framebuffer attachments have separate acceptance tasks."
+            "See texture-packed-typed-upload for the verified packed CubeMap cases. Nonzero mip levels, mipmap generation, packed DOM sources and CubeMap framebuffer attachments have separate acceptance tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Valid operations beyond the declared profile report NotSupportedError."
         },
@@ -2110,7 +2204,7 @@
             }
           ],
           "limits": [
-            "Nonzero mip levels, mipmap generation, packed pixel types and CubeMap framebuffer attachments have separate acceptance tasks."
+            "See texture-packed-typed-upload for the verified packed CubeMap cases. Nonzero mip levels, mipmap generation, packed DOM sources and CubeMap framebuffer attachments have separate acceptance tasks."
           ],
           "unsupportedBehavior": "Invalid supported calls produce GL errors. Valid operations beyond the declared profile report NotSupportedError."
         }

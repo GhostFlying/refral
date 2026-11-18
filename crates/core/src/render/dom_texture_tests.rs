@@ -48,7 +48,7 @@ fn request(sub_image: bool, width: i64, height: i64, format: u32, valid: bool) -
 fn dom(data: &[u8], converted: bool) -> Argument {
     Argument::DomPixels {
         data: data.to_vec(),
-        valid_u8: true,
+        view: PixelView::U8,
         converted,
     }
 }
@@ -292,7 +292,7 @@ fn typed_and_null_uploads_preserve_zero_size_behavior() {
             Argument::Null,
             Argument::Pixels {
                 data: Vec::new(),
-                valid_u8: true,
+                view: PixelView::U8,
             },
         ] {
             image(&mut core, width, height, RGBA, source);
@@ -324,7 +324,7 @@ fn typed_and_null_uploads_preserve_zero_size_behavior() {
                 number(UNSIGNED_BYTE as i64),
                 Argument::Pixels {
                     data: Vec::new(),
-                    valid_u8: true,
+                    view: PixelView::U8,
                 },
             ],
         );
@@ -398,7 +398,7 @@ fn dom_rows_are_tight_and_preserve_transparent_rgb() {
         RGBA,
         Argument::Pixels {
             data: vec![1; 8],
-            valid_u8: true,
+            view: PixelView::U8,
         },
     );
     assert_eq!(core.get_error(), INVALID_OPERATION);
@@ -410,7 +410,7 @@ fn dom_rows_are_tight_and_preserve_transparent_rgb() {
         RGBA,
         Argument::Pixels {
             data: vec![1; 12],
-            valid_u8: true,
+            view: PixelView::U8,
         },
     );
     definition(&mut core);
@@ -502,7 +502,7 @@ fn dom_updates_own_their_pixels_and_failed_updates_preserve_versions() {
     no_operations(&mut core);
     args[8] = Argument::DomPixels {
         data: vec![1; 8],
-        valid_u8: false,
+        view: PixelView::Other,
         converted: false,
     };
     core.render_invoke("texSubImage2D", &args);

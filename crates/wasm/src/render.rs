@@ -1,7 +1,7 @@
 use super::*;
 use refral_core::{
     ActiveInfo, Argument, AttributeInfo, CompileOutcome, LinkOutcome, ObjectHandle, ObjectKind,
-    ProgramLayout, Reply, TextureImages, UniformInfo,
+    PixelView, ProgramLayout, Reply, TextureImages, UniformInfo,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -188,10 +188,11 @@ fn argument(value: &Value, bytes: &[u8], allocation_failed: &mut bool) -> Option
             _ => return None,
         };
         let input = range(value, "p", bytes, 1)?;
-        let valid_u8 = matches!(
-            value.get("viewType")?.as_str()?,
-            "Uint8Array" | "Uint8ClampedArray"
-        );
+        let view = match value.get("viewType")?.as_str()? {
+            "Uint8Array" | "Uint8ClampedArray" => PixelView::U8,
+            "Uint16Array" => PixelView::U16,
+            _ => PixelView::Other,
+        };
         let mut data = Vec::new();
         if data.try_reserve_exact(input.len()).is_err() {
             *allocation_failed = true;
@@ -201,10 +202,10 @@ fn argument(value: &Value, bytes: &[u8], allocation_failed: &mut bool) -> Option
         return Some(match converted {
             Some(converted) => Argument::DomPixels {
                 data,
-                valid_u8,
+                view,
                 converted,
             },
-            None => Argument::Pixels { data, valid_u8 },
+            None => Argument::Pixels { data, view },
         });
     }
     parse_handle(value).map(Argument::Handle)
@@ -668,14 +669,14 @@ mod tests {
             );
             let Some(Argument::DomPixels {
                 data,
-                valid_u8,
+                view,
                 converted: actual,
             }) = parsed
             else {
                 panic!()
             };
             assert_eq!(data, bytes);
-            assert!(valid_u8);
+            assert!(view == PixelView::U8);
             assert_eq!(actual, converted);
         }
         assert!(matches!(
@@ -684,16 +685,19 @@ mod tests {
                 &bytes,
                 &mut allocation_failed
             ),
-            Some(Argument::Pixels { valid_u8: true, .. })
+            Some(Argument::Pixels {
+                view: PixelView::U8,
+                ..
+            })
         ));
         assert!(matches!(
             argument(
-                &json!({"p":[0,4],"viewType":"Uint16Array","source":"dom"}),
+                &json!({"p":[0,4],"viewType":"Uint16Array"}),
                 &bytes,
                 &mut allocation_failed
             ),
-            Some(Argument::DomPixels {
-                valid_u8: false,
+            Some(Argument::Pixels {
+                view: PixelView::U16,
                 ..
             })
         ));

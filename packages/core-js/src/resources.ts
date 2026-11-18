@@ -24,6 +24,7 @@ export interface TextureImage {
   generation: number;
   version: number;
   format: number;
+  type: number;
 }
 
 export class TextureObject extends LogicalObject implements TextureImage {
@@ -37,6 +38,7 @@ export class TextureObject extends LogicalObject implements TextureImage {
   generation = 0;
   version = 0;
   format: number = GL.RGBA;
+  type: number = GL.UNSIGNED_BYTE;
   parameters: TextureParameters = {
     minFilter: GL.NEAREST_MIPMAP_LINEAR,
     magFilter: GL.LINEAR,
@@ -98,7 +100,7 @@ export function isTextureComplete(texture: TextureObject): boolean {
     if (width !== height || CUBE_FACES.some(face => {
       const other = texture.cubeImages.get(face);
       return !other?.storage || other.storage.width !== width || other.storage.height !== height
-        || other.format !== first.format;
+        || other.format !== first.format || other.type !== first.type;
     })) return false;
     image = first;
   }

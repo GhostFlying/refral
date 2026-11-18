@@ -240,7 +240,7 @@ fn face_updates_are_rectangular_owned_and_independently_versioned() {
         number(0x1401),
         Argument::Pixels {
             data: vec![11; 8],
-            valid_u8: true,
+            view: PixelView::U8,
         },
     ];
     core.render_invoke("texSubImage2D", &args);
@@ -419,7 +419,7 @@ fn dom_cube_preparation_uses_face_dimensions_and_owns_transformed_pixels() {
         RGBA,
         Argument::DomPixels {
             data: vec![200, 100, 50, 128],
-            valid_u8: true,
+            view: PixelView::U8,
             converted: false,
         },
     );
@@ -448,7 +448,7 @@ fn invalid_face_updates_and_exhausted_face_versions_preserve_other_images() {
         number(0x1401),
         Argument::Pixels {
             data: vec![1; 4],
-            valid_u8: true,
+            view: PixelView::U8,
         },
     ];
     core.render_invoke("texSubImage2D", &update);

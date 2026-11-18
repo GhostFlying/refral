@@ -17,7 +17,7 @@ export const CUBE_FACES = [
   GL.TEXTURE_CUBE_MAP_POSITIVE_Z, GL.TEXTURE_CUBE_MAP_NEGATIVE_Z,
 ] as const;
 
-/** Source view identity is retained for GL pixel-type validation. */
+/** Source view identity is retained for GL pixel-type validation. Uint16 words use little-endian bytes. */
 export interface PixelUpload {
   readonly bytes: Uint8Array;
   readonly viewType: string;

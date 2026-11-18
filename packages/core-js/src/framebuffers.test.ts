@@ -112,7 +112,7 @@ describe("JS framebuffer and resource lifetime semantics", () => {
     expect(core.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_UNSUPPORTED);
     core.framebufferTexture2D(GL.FRAMEBUFFER, GL.COLOR_ATTACHMENT0, GL.TEXTURE_2D, texture, 0);
     core.texImage2D(GL.TEXTURE_2D, 0, GL.RGB, 2, 2, 0, GL.RGB, GL.UNSIGNED_BYTE, null);
-    expect(core.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_UNSUPPORTED);
+    expect(core.checkFramebufferStatus(GL.FRAMEBUFFER)).toBe(GL.FRAMEBUFFER_COMPLETE);
     expect(core.getError()).toBe(GL.NO_ERROR);
   });
 

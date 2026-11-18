@@ -57,6 +57,7 @@ export interface AttributeSnapshot {
 
 export interface TargetSnapshot {
   color: TextureStorage | null;
+  colorOpaque?: boolean;
   depth: { readonly id: number } | null;
   depthGeneration: number;
   depthFormat?: number;

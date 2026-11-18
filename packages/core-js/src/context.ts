@@ -195,7 +195,7 @@ export class SemanticContext {
     const renderbuffer = this.framebuffer.depth ?? this.framebuffer.stencil ?? this.framebuffer.depthStencil;
     const depth = renderbuffer && this.resources
       ? { id: this.resources.depth(renderbuffer.handle!, renderbuffer.generation).id } : renderbuffer;
-    return { color: storage, depth,
+    return { color: storage, colorOpaque: colorRenderbuffer ? storage.opaque === true : this.framebuffer.colorImage?.format === GL.RGB, depth,
       depthGeneration: renderbuffer?.generation ?? 0, depthFormat: renderbuffer?.format,
       width: storage.width, height: storage.height, isDefault: false };
   }
@@ -958,7 +958,7 @@ export class SemanticContext {
     width: number, height: number): void {
     const source = this.target();
     if (!source) return;
-    const sourceHasAlpha = source.isDefault ? this.contextAttributes.alpha : !source.color?.opaque;
+    const sourceHasAlpha = source.isDefault ? this.contextAttributes.alpha : !source.colorOpaque;
     if ((!sourceHasAlpha && format !== GL.RGB && format !== GL.LUMINANCE)
       || (this.framebuffer?.color === texture && this.framebuffer.colorTarget === target && level === 0)) {
       return this.error(GL.INVALID_OPERATION);
@@ -1195,7 +1195,7 @@ export class SemanticContext {
     if (color && auxiliary && (auxiliary.width !== color.width || auxiliary.height !== color.height)) {
       return GL.FRAMEBUFFER_INCOMPLETE_DIMENSIONS;
     }
-    if (!colorRenderbuffer && colorImage?.format !== GL.RGBA) return GL.FRAMEBUFFER_UNSUPPORTED;
+    if (!color) return GL.FRAMEBUFFER_UNSUPPORTED;
     return GL.FRAMEBUFFER_COMPLETE;
   }
   getFramebufferAttachmentParameter(target: number, attachment: number, parameter: number): unknown {

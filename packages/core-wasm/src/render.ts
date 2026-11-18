@@ -252,13 +252,13 @@ export function createRustDrawingCoreFromModule(
     required.some((name) => typeof exports[name] !== 'function')
   ) {
     throw new Error(
-      'Rust drawing module requires ABI5/resource7/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
+      'Rust drawing module requires ABI5/resource8/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
     );
   }
   const abi = exports as unknown as ABI;
   if (abi.rf_abi_version() !== 5)
     throw new Error('Rust drawing ABI version mismatch; expected 5. Rebuild with pnpm rust:build.');
-  if (abi.rf_resource_protocol_version() !== 7)
+  if (abi.rf_resource_protocol_version() !== 8)
     throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_readback_protocol_version() !== 1)
     throw new Error('Rust readback protocol mismatch. Rebuild with pnpm rust:build.');
@@ -476,11 +476,11 @@ export function createRustDrawingCoreFromModule(
     const height = reader.u32();
     const isDefault = reader.u32() !== 0;
     const colorKind = reader.u32();
-    if (colorKind > 2 || (isDefault ? colorKind !== 0 : colorKind === 0)) {
+    if (colorKind > 3 || (isDefault ? colorKind !== 0 : colorKind === 0)) {
       throw new Error('Invalid Rust framebuffer color attachment.');
     }
     let color: TargetSnapshot['color'] = null;
-    if (colorKind === 1) color = services.resources.texture(textureVersion(reader));
+    if (colorKind === 1 || colorKind === 3) color = services.resources.texture(textureVersion(reader));
     else if (colorKind === 2) {
       const handle = { kind: 'renderbuffer' as const, contextId: reader.u32(), slot: reader.u32(), generation: reader.u32() };
       color = services.resources.colorRenderbuffer(handle, reader.u64(), width, height, reader.u32());
@@ -501,7 +501,8 @@ export function createRustDrawingCoreFromModule(
       depthGeneration = reader.u64();
       depth = services.resources.depth(handle, depthGeneration);
     }
-    return { color, depth, depthGeneration, ...(depthFormat ? { depthFormat } : {}), width, height, isDefault };
+    return { color, ...(colorKind === 3 ? { colorOpaque: true } : {}),
+      depth, depthGeneration, ...(depthFormat ? { depthFormat } : {}), width, height, isDefault };
   }
   function executeDraw(bytes: Uint8Array): void {
     const reader = new Reader(bytes);

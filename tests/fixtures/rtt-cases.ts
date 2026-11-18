@@ -7,7 +7,7 @@ export const textureRttCases = ['texture-format-rgba', 'texture-format-rgb', 'te
   'texture-packed-565', 'texture-packed-4444', 'texture-packed-5551', 'texture-packed-cube',
   'texture-manual-mip-2d', 'texture-manual-mip-cube', 'texture-generate-mip-from-fbo',
   'texture-updates-reallocation', 'texture-npot-completeness', 'texture-sampler-units', 'texture-invalid-state'] as const;
-export const framebufferRttCases = ['fbo-depth-render-sample', 'fbo-cube-face-render-sample', 'fbo-color-renderbuffer-copy', 'fbo-stencil-attachments', 'default-stencil-raster', 'fbo-attachment-resize',
+export const framebufferRttCases = ['fbo-depth-render-sample', 'fbo-cube-face-render-sample', 'fbo-color-renderbuffer-copy', 'fbo-stencil-attachments', 'default-stencil-raster', 'fbo-rgb-texture', 'fbo-attachment-resize',
   'fbo-deletion-bound-unbound', 'fbo-feedback-loop', 'raster-masks-depth-blend-cull',
   'resources-multiple-contexts', 'canvas-resize-present'] as const;
 export const rttCaseNames = [...uniformRttCases, ...textureRttCases, ...framebufferRttCases] as const;
@@ -709,6 +709,30 @@ gl_FragColor=vec4(u_i[0].x==16777217?1.:0.,u_i[1].w==(-2147483647-1)&&u_b[1].z&&
       gl.stencilFunc(gl.EQUAL, 0xf1, 0xff);
       drawColor([0, 1, 0, 1]);
       band(0, 32, [0, 255, 0, 255]); band(32, 32, [255, 0, 0, 255]);
+      break;
+    }
+    case 'fbo-rgb-texture': {
+      const rgb = rttTexture(gl, 4, 4, null, gl.RGB);
+      const fbo = gl.createFramebuffer()!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rgb, 0);
+      check('RGB texture framebuffer is complete', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_COMPLETE);
+      check('RGB texture attachment has zero alpha bits', gl.getParameter(gl.ALPHA_BITS), 0);
+      gl.viewport(0, 0, 4, 4);
+      gl.clearColor(1, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.DST_ALPHA, gl.ZERO);
+      drawColor([0, 1, 0, 0]); gl.disable(gl.BLEND);
+      const pixel = new Uint8Array(4);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      check('blend uses implicit opaque destination alpha', Array.from(pixel), [0, 255, 0, 255]);
+      const copied = rttTexture(gl, 4, 4, null, gl.RGB);
+      error('RGB attachment cannot supply RGBA copy', () => gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, 4, 4, 0), gl.INVALID_OPERATION);
+      gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGB, 0, 0, 4, 4, 0);
+      gl.clearColor(0, 0, 1, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, 32, 64); sample(copied);
+      gl.viewport(32, 0, 32, 64); sample(rgb);
+      band(0, 32, [0, 255, 0, 255]); band(32, 32, [0, 0, 255, 255]);
       break;
     }
     case 'fbo-attachment-resize': {

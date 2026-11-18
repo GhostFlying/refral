@@ -1040,7 +1040,7 @@
             "HTMLImage extraction requires a private native WebGL context at runtime, accepted in ADR008.",
             "ImageData acceptance is unorm8 sRGB with five UNSIGNED_BYTE formats. Canvas/image acceptance is RGBA/UNSIGNED_BYTE level zero, with sRGB Canvas encoding.",
             "Refral source ordering/loss coordination uses the same loaded facade module. Independent module/realm Refral sources and unregistered native WebGL source loss have pending acceptance.",
-            "Wide-gamut/HDR Canvas, additional ImageData encodings, ImageBitmap, VideoFrame and mipmaps retain compatibility tasks. See texture-video-source for HTMLVideoElement."
+            "Wide-gamut/HDR Canvas, additional ImageData encodings, VideoFrame and mipmaps retain compatibility tasks. See texture-video-source and texture-imagebitmap-source for additional source coverage."
           ],
           "unsupportedBehavior": "Invalid supported inputs produce WebIDL exceptions, SecurityError or core GL errors before destination mutation. Additional ImageData encodings and unavailable native image extraction report explicit capability errors. Other unaccepted source combinations are scoped by these limits."
         },
@@ -1154,7 +1154,7 @@
             "HTMLImage extraction requires a private native WebGL context at runtime, accepted in ADR008.",
             "ImageData acceptance is unorm8 sRGB with five UNSIGNED_BYTE formats. Canvas/image acceptance is RGBA/UNSIGNED_BYTE level zero, with sRGB Canvas encoding.",
             "Refral source ordering/loss coordination uses the same loaded facade module. Independent module/realm Refral sources and unregistered native WebGL source loss have pending acceptance.",
-            "Wide-gamut/HDR Canvas, additional ImageData encodings, ImageBitmap, VideoFrame and mipmaps retain compatibility tasks. See texture-video-source for HTMLVideoElement."
+            "Wide-gamut/HDR Canvas, additional ImageData encodings, VideoFrame and mipmaps retain compatibility tasks. See texture-video-source and texture-imagebitmap-source for additional source coverage."
           ],
           "unsupportedBehavior": "Invalid supported inputs produce WebIDL exceptions, SecurityError or core GL errors before destination mutation. Additional ImageData encodings and unavailable native image extraction report explicit capability errors. Other unaccepted source combinations are scoped by these limits."
         }
@@ -1181,7 +1181,7 @@
           ],
           "limits": [
             "Synchronous native WebGL extraction and RGBA readback are required. Decoder availability depends on Chrome and installed media support.",
-            "The original format cases exercise the default upload color-space path. The unpackColorSpace property, WebCodecs VideoFrame and ImageBitmap have separate scope."
+            "The original format cases exercise the default upload color-space path. The unpackColorSpace property and WebCodecs VideoFrame have separate scope. See texture-imagebitmap-source for ImageBitmap sources."
           ],
           "unsupportedBehavior": "Unavailable frames produce INVALID_VALUE. Origin violations throw SecurityError. Unavailable native extraction reports NotSupportedError."
         },
@@ -1202,9 +1202,53 @@
           ],
           "limits": [
             "Synchronous native WebGL extraction and RGBA readback are required. Decoder availability depends on Chrome and installed media support.",
-            "The original format cases exercise the default upload color-space path. The unpackColorSpace property, WebCodecs VideoFrame and ImageBitmap have separate scope."
+            "The original format cases exercise the default upload color-space path. The unpackColorSpace property and WebCodecs VideoFrame have separate scope. See texture-imagebitmap-source for ImageBitmap sources."
           ],
           "unsupportedBehavior": "Unavailable frames produce INVALID_VALUE. Origin violations throw SecurityError. Unavailable native extraction reports NotSupportedError."
+        }
+      }
+    },
+    {
+      "id": "texture-imagebitmap-source",
+      "api": "texImage2D and texSubImage2D ImageBitmap overloads",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": ["chrome158-macos-arm64"],
+          "coverage": "Texture2D and CubeMap uploads for five unsigned-byte formats and three packed formats. ImageBitmap creation orientation and alpha, taint and CORS, intrinsic dimensions, crop/resize, transfer and close, and ordered updates are verified.",
+          "tests": [
+            "tests/chrome/dom-canvas-image.spec.ts::DOM ImageBitmap bitmap-options-and-lifetime",
+            "tests/chrome/dom-canvas-image.spec.ts::DOM ImageBitmap bitmap-security-and-colorspace",
+            "conformance/textures/image_bitmap_from_*"
+          ],
+          "evidence": [
+            { "path": "artifacts/imagebitmap-upload/public/bitmap-options-and-lifetime/result.json", "passed": true },
+            { "path": "artifacts/imagebitmap-upload/public/bitmap-security-and-colorspace/result.json", "passed": true },
+            { "path": "artifacts/imagebitmap-upload/official/js/results.json", "passed": true, "originalFiles": 48, "assertions": 14448 }
+          ],
+          "limits": [
+            "Capture uses synchronous native WebGL upload and RGBA readback at the default upload color space. Explicit upload gamut selection has separate scope."
+          ],
+          "unsupportedBehavior": "Closed or transferred-away bitmaps produce INVALID_VALUE. Origin violations throw SecurityError. Unavailable native extraction reports NotSupportedError."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": ["chrome158-macos-arm64"],
+          "coverage": "Texture2D and CubeMap uploads for five unsigned-byte formats and three packed formats. ImageBitmap creation orientation and alpha, taint and CORS, intrinsic dimensions, crop/resize, transfer and close, and ordered updates are verified.",
+          "tests": [
+            "tests/chrome/dom-canvas-image.spec.ts::DOM ImageBitmap bitmap-options-and-lifetime",
+            "tests/chrome/dom-canvas-image.spec.ts::DOM ImageBitmap bitmap-security-and-colorspace",
+            "conformance/textures/image_bitmap_from_*"
+          ],
+          "evidence": [
+            { "path": "artifacts/imagebitmap-upload/public/bitmap-options-and-lifetime/result.json", "passed": true },
+            { "path": "artifacts/imagebitmap-upload/public/bitmap-security-and-colorspace/result.json", "passed": true },
+            { "path": "artifacts/imagebitmap-upload/official/rust/results.json", "passed": true, "originalFiles": 48, "assertions": 14448 }
+          ],
+          "limits": [
+            "Capture uses synchronous native WebGL upload and RGBA readback at the default upload color space. Explicit upload gamut selection has separate scope."
+          ],
+          "unsupportedBehavior": "Closed or transferred-away bitmaps produce INVALID_VALUE. Origin violations throw SecurityError. Unavailable native extraction reports NotSupportedError."
         }
       }
     },

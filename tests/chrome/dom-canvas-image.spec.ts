@@ -48,7 +48,8 @@ test.beforeAll(async ({ browser }) => {
 });
 
 for (const name of domCanvasImageCaseNames) {
-  test(`DOM Canvas/Image ${name}`, async ({ page, browser }) => {
+  const bitmap = name.startsWith('bitmap-');
+  test(`DOM ${bitmap ? 'ImageBitmap' : 'Canvas/Image'} ${name}`, async ({ page, browser }) => {
     await page.route('**/tests/fixtures/dom-assets/**', async route => {
       const path = new URL(route.request().url()).pathname;
       const headers: Record<string, string> = path.endsWith('/cors.png') ? { 'Access-Control-Allow-Origin': '*' } : {};
@@ -89,7 +90,7 @@ for (const name of domCanvasImageCaseNames) {
         matchesNative: reference?.width === capture.width && reference?.height === capture.height
           && JSON.stringify(reference.pixels) === JSON.stringify(capture.pixels) };
     }));
-    const directory = `artifacts/dom-input/pr3/public/${name}`;
+    const directory = `${bitmap ? 'artifacts/imagebitmap-upload' : 'artifacts/dom-input/pr3'}/public/${name}`;
     await mkdir(directory, { recursive: true });
     const { channel, headless, launchOptions, deviceScaleFactor } = test.info().project.use;
     await writeFile(`${directory}/result.json`, JSON.stringify({

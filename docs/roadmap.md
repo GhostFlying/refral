@@ -66,7 +66,9 @@ Task 049 accepts RGB texture attachments and their copy source behavior. The ori
 
 The full original run after Task 049 records 968 native, 785 JS and 788 Rust passes out of 971 files per backend. ImageBitmap, video, and OffscreenCanvas context acquisition accounted for most timeouts in that run. [Full conformance results](validation/2026-11-18-stencil-rgb-conformance.md)
 
-Task 050 adds current-frame HTMLVideoElement uploads to both cores. All thirteen targeted originals pass on native, JS and Rust, including rotation, non-square pixel aspect ratio and transparent playback. VideoFrame, ImageBitmap and the wider unpack color-space API have separate coverage. [Video upload results](tasks/050-video-texture-uploads.md)
+Task 050 adds current-frame HTMLVideoElement uploads to both cores. All thirteen targeted originals pass on native, JS and Rust, including rotation, non-square pixel aspect ratio and transparent playback. [Video upload results](tasks/050-video-texture-uploads.md)
+
+Task 051 adds ImageBitmap definitions and subimages to both cores. The 48 original ImageBitmap files pass with equal assertion counts across all three paths. VideoFrame, explicit unpack gamut selection and drawing-buffer color space have separate scope. [ImageBitmap results](tasks/051-imagebitmap-texture-uploads.md)
 
 The completed milestones and subsequent compatibility dependencies follow.
 

@@ -1,0 +1,4 @@
+{
+  "vertex": "attribute vec3 position; varying vec2 uv; void main(){ uv=position.xy; gl_Position=vec4(position,1.0); }",
+  "fragment": "precision highp float; varying vec2 uv; void main(){ vec2 bounds = clamp(uv,-1.0,1.0) + smoothstep(-1.0,1.0,uv) + step(0.0,uv); vec2 remainder = mod(bounds-vec2(4.0),3.0); mat2 a = mat2(uv.x); mat2 b = mat2(uv.y); mat2 product = matrixCompMult(a,b); float geometric = faceforward(uv.x,uv.y,-1.0) + reflect(uv.x,uv.y) + refract(uv.x,uv.y,0.5); gl_FragColor = vec4(remainder.x,gl_DepthRange.near,geometric+product[0][0],a != b && vec2(uv.x,0.0) != vec2(uv.y,0.0) ? 1.0 : 0.0); }"
+}

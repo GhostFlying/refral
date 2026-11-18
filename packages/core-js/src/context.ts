@@ -451,6 +451,7 @@ export class SemanticContext {
   getUniformLocation(program: ProgramObject, name: string): UniformLocation | null {
     if (!this.valid(program, ProgramObject)) return null;
     if (!program.linkStatus) { this.error(GL.INVALID_OPERATION); return null; }
+    if (name.startsWith("gl_")) return null;
     const match = /^(.*?)(?:\[(\d+)\])?$/.exec(String(name))!;
     const base = match[1]!; const index = Number(match[2] ?? 0);
     const uniform = [...program.executable!.uniforms, ...program.executable!.samplers].find(value => baseName(value.name) === base);

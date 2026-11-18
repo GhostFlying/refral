@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import essl100Shader from "../../packages/compiler/test/essl100-shader.json" with { type: "json" };
 import { createHash } from "node:crypto";
 
 test("ANGLE Wasm compiles ESSL corpus and WebGPU accepts linked WGSL", async ({ page }) => {
@@ -8,7 +9,7 @@ test("ANGLE Wasm compiles ESSL corpus and WebGPU accepts linked WGSL", async ({ 
     contentType: "text/javascript", body: "export const injectQuery = (url) => url;",
   }));
   await page.goto("/packages/compiler/test/browser.html");
-  const result = await page.evaluate(async () => {
+  const result = await page.evaluate(async (essl100Shader) => {
     const compilerURL = "/packages/compiler/src/index.ts";
     const corpusURL = "/packages/compiler/test/corpus.ts";
     const { createCompiler } = await import(compilerURL) as typeof import("../../packages/compiler/src/index.js");
@@ -21,6 +22,7 @@ test("ANGLE Wasm compiles ESSL corpus and WebGPU accepts linked WGSL", async ({ 
     if (!adapter) throw new Error("Chrome did not provide a WebGPU adapter.");
     const device = await adapter.requestDevice();
     const pairs = [
+      { version: 1 as const, matrix: false, ...essl100Shader },
       {
         version: 1 as const,
         matrix: false,
@@ -77,7 +79,7 @@ test("ANGLE Wasm compiles ESSL corpus and WebGPU accepts linked WGSL", async ({ 
     return { initializationMs, corpus, validation,
       adapter: { vendor: info.vendor, architecture: info.architecture, device: info.device,
         description: info.description, isFallbackAdapter: info.isFallbackAdapter } };
-  });
+  }, essl100Shader);
   await mkdir("artifacts/compiler", { recursive: true });
   await writeFile("artifacts/compiler/chrome-corpus.json", JSON.stringify(result, null, 2) + "\n");
   expect(result.corpus.filter((item) => !item.passed)).toEqual([]);

@@ -151,6 +151,7 @@ export class BrowserHost implements SemanticHost {
   private passTarget: Target | null = null;
   private defaultTarget: Target | null = null;
   private defaultDirty = false;
+  private readonly attachmentViews = new WeakMap<GPUTexture, GPUTextureView>();
   private textureCache = new WeakMap<TextureStorage, GPUTexture>();
   private sampledImageCache = new Map<TextureStorage, {
     texture: GPUTexture; images: readonly TextureStorage[]; versions: readonly (TextureVersion | undefined)[];
@@ -300,9 +301,14 @@ export class BrowserHost implements SemanticHost {
 
   private writeBuffer(buffer: GPUBuffer, data: Uint8Array): void {
     if (!data.byteLength) return;
-    const bytes = new Uint8Array(aligned(data.byteLength, 4));
-    bytes.set(data);
-    this.device.queue.writeBuffer(buffer, 0, bytes);
+    if (data.byteLength % 4 === 0) {
+      // WebGPU copies the input bytes before writeBuffer returns.
+      this.device.queue.writeBuffer(buffer, 0, data);
+    } else {
+      const bytes = new Uint8Array(aligned(data.byteLength, 4));
+      bytes.set(data);
+      this.device.queue.writeBuffer(buffer, 0, bytes);
+    }
     this.completion.markIssued();
     this.stats.uploadedBytes += data.byteLength;
   }
@@ -312,8 +318,8 @@ export class BrowserHost implements SemanticHost {
     const encoder = this.getEncoder();
     // A queue write follows earlier submissions, but would overtake draws still in this encoder.
     if (cached && cached.encoder !== encoder) {
-      this.writeBuffer(cached.vertex, operation.vertexUniforms);
-      this.writeBuffer(cached.fragment, operation.fragmentUniforms);
+      if (operation.program.vertexUniformBufferSize) this.writeBuffer(cached.vertex, operation.vertexUniforms);
+      if (operation.program.fragmentUniformBufferSize) this.writeBuffer(cached.fragment, operation.fragmentUniforms);
       cached.encoder = encoder;
       return cached.group;
     }
@@ -564,11 +570,20 @@ export class BrowserHost implements SemanticHost {
     return target;
   }
 
+  private attachmentView(texture: GPUTexture): GPUTextureView {
+    let view = this.attachmentViews.get(texture);
+    if (!view) {
+      view = texture.createView();
+      this.attachmentViews.set(texture, view);
+    }
+    return view;
+  }
+
   private beginPass(target: Target): GPURenderPassEncoder {
     if (this.pass && this.passTarget === target) return this.pass;
     this.endPass();
     const descriptor: GPURenderPassDescriptor = {
-      colorAttachments: [{ view: target.color.createView(),
+      colorAttachments: [{ view: this.attachmentView(target.color),
         loadOp: this.initialized.has(target.color) ? "load" : "clear",
         storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: target.opaque ? 1 : 0 } }],
     };
@@ -576,7 +591,7 @@ export class BrowserHost implements SemanticHost {
       const format = target.depth.format;
       const loadOp = this.initialized.has(target.depth) ? "load" : "clear";
       descriptor.depthStencilAttachment = {
-        view: target.depth.createView(),
+        view: this.attachmentView(target.depth),
         ...(format !== "stencil8" ? { depthLoadOp: loadOp, depthStoreOp: "store", depthClearValue: 1 } as const : {}),
         ...(format !== "depth24plus" ? { stencilLoadOp: loadOp, stencilStoreOp: "store", stencilClearValue: 0 } as const : {}),
       };
@@ -1029,7 +1044,7 @@ export class BrowserHost implements SemanticHost {
     }
     if (!target.presentationGroup) {
       target.presentationGroup = this.device.createBindGroup({ layout: this.presentationPipeline.getBindGroupLayout(0),
-        entries: [{ binding: 0, resource: target.color.createView() },
+        entries: [{ binding: 0, resource: this.attachmentView(target.color) },
           { binding: 1, resource: this.sampler({ magFilter: GL.NEAREST, minFilter: GL.NEAREST,
             wrapS: GL.CLAMP_TO_EDGE, wrapT: GL.CLAMP_TO_EDGE }) }] });
       this.stats.bindGroups++;
@@ -1037,7 +1052,7 @@ export class BrowserHost implements SemanticHost {
     const presentationTexture = this.context.getCurrentTexture();
     if (!this.retained) this.lastPresentedTexture = presentationTexture;
     const pass = this.getEncoder().beginRenderPass({ colorAttachments: [{
-      view: presentationTexture.createView(), loadOp: "clear", storeOp: "store",
+      view: this.attachmentView(presentationTexture), loadOp: "clear", storeOp: "store",
       clearValue: { r: 0, g: 0, b: 0, a: this.alpha ? 0 : 1 },
     }] });
     pass.setPipeline(this.presentationPipeline);

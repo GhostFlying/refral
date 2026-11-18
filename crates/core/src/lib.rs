@@ -121,16 +121,20 @@ impl ContextCore {
     }
 
     pub fn record_error(&mut self, error: u32) {
-        if self.lost
-            || !matches!(
-                error,
-                INVALID_ENUM
-                    | INVALID_VALUE
-                    | INVALID_OPERATION
-                    | OUT_OF_MEMORY
-                    | INVALID_FRAMEBUFFER_OPERATION
-            )
-        {
+        if !self.lost {
+            self.enqueue_error(error);
+        }
+    }
+
+    fn enqueue_error(&mut self, error: u32) {
+        if !matches!(
+            error,
+            INVALID_ENUM
+                | INVALID_VALUE
+                | INVALID_OPERATION
+                | OUT_OF_MEMORY
+                | INVALID_FRAMEBUFFER_OPERATION
+        ) {
             return;
         }
         if self.errors[..self.error_count].contains(&error) {

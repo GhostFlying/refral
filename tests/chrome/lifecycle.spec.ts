@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('device loss notifies the context and terminates resource creation', async ({ page }) => {
+test('device loss notifies the context and invalidates new resources', async ({ page }) => {
   await page.goto('/tests/fixtures/runner.html');
   const result = await page.evaluate(async () => {
     const path = '/packages/webgl/src/index.ts';
@@ -14,12 +14,12 @@ test('device loss notifies the context and terminates resource creation', async 
     hooks.device.destroy();
     const cancelable = await lost;
     const buffer = gl.createBuffer();
-    const result = { lost: gl.isContextLost(), cancelable, attributes: gl.getContextAttributes(), error: gl.getError(), nextError: gl.getError(), bufferCreated: buffer !== null, bufferValid: gl.isBuffer(buffer), shader: gl.createShader(gl.VERTEX_SHADER), viewport: gl.getParameter(gl.VIEWPORT) };
+    const result = { lost: gl.isContextLost(), cancelable, attributes: gl.getContextAttributes(), error: gl.getError(), nextError: gl.getError(), bufferCreated: buffer !== null, bufferValid: gl.isBuffer(buffer), shaderCreated: gl.createShader(gl.VERTEX_SHADER) !== null, viewport: gl.getParameter(gl.VIEWPORT) };
     await hooks.dispose();
     result.viewport = gl.getParameter(gl.VIEWPORT);
     return result;
   });
-  expect(result).toEqual({ lost: true, cancelable: true, attributes: null, error: 0x9242, nextError: 0, bufferCreated: true, bufferValid: false, shader: null, viewport: null });
+  expect(result).toEqual({ lost: true, cancelable: true, attributes: null, error: 0x9242, nextError: 0, bufferCreated: true, bufferValid: false, shaderCreated: true, viewport: null });
 });
 
 test('presentation after resizing a zero-sized drawing surface', async ({ page }) => {
@@ -55,3 +55,61 @@ test('presentation after resizing a zero-sized drawing surface', async ({ page }
       presented: [0, 255, 0, 255], error: 0, validation: [] });
   }
 });
+
+for (const core of ['js', 'rust'] as const) {
+  test(`${core} loses and restores one generation on a shared device`, async ({ page }) => {
+    await page.goto('/tests/fixtures/runner.html');
+    const result = await page.evaluate(async core => {
+      const path = '/packages/webgl/src/index.ts';
+      const { prepareContextFactory, getTestingHooks }: typeof import('@refral/webgl') = await import(/* @vite-ignore */ path);
+      const factory = await prepareContextFactory({ core });
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 3; canvas.height = 2;
+        const gl = factory(canvas);
+        const hooks = getTestingHooks(gl);
+        const peer = factory(new OffscreenCanvas(2, 2));
+        const deviceShared = hooks.device === getTestingHooks(peer).device;
+        peer.clearColor(1, 0, 0, 1);
+        peer.clear(peer.COLOR_BUFFER_BIT);
+        const ext = gl.getExtension('WEBGL_lose_context')!;
+        const previous = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, previous);
+        gl.bufferData(gl.ARRAY_BUFFER, 16, gl.STATIC_DRAW);
+        gl.clearColor(0.4, 0.5, 0.6, 1);
+        const errors: number[] = [];
+        ext.restoreContext(); errors.push(gl.getError());
+        const loss = new Promise<void>(r => canvas.addEventListener('webglcontextlost', e => {
+          e.preventDefault();
+          ext.restoreContext(); errors.push(gl.getError()); r();
+        }, { once: true }));
+        const restored = new Promise<void>(r => canvas.addEventListener('webglcontextrestored', () => r(), { once: true }));
+        ext.loseContext();
+        const immediate = gl.isContextLost();
+        errors.push(gl.getError(), gl.getError());
+        ext.loseContext(); errors.push(gl.getError());
+        await loss;
+        ext.restoreContext(); ext.restoreContext();
+        const queued = gl.isContextLost();
+        await restored;
+        const restoredState = [gl.getParameter(gl.ARRAY_BUFFER_BINDING), ...gl.getParameter(gl.COLOR_CLEAR_VALUE)];
+        gl.bindBuffer(gl.ARRAY_BUFFER, previous); errors.push(gl.getError());
+        const fresh = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, fresh);
+        const bound = gl.isBuffer(fresh) && !gl.isBuffer(previous);
+        gl.clearColor(0, 1, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+        const read = (context: WebGLRenderingContext) => {
+          const out = new Uint8Array(4);
+          context.readPixels(0, 0, 1, 1, context.RGBA, context.UNSIGNED_BYTE, out);
+          return [...out];
+        };
+        return { core: hooks.core, deviceShared, immediate, queued, extensions: gl.getSupportedExtensions(),
+          sameExtension: ext === gl.getExtension('webgl_lose_context'), bound, restoredState, errors,
+          pixels: read(gl), peerPixels: read(peer), lost: gl.isContextLost(), peerLost: peer.isContextLost() };
+      } finally { await factory.dispose(); }
+    }, core);
+    expect(result).toEqual({ core, deviceShared: true, immediate: true, queued: true, extensions: ['WEBGL_lose_context'],
+      sameExtension: true, bound: true, restoredState: [null, 0, 0, 0, 0], errors: [0x0502, 0x9242, 0, 0x0502, 0x0502, 0x0502],
+      pixels: [0, 255, 0, 255], peerPixels: [255, 0, 0, 255], lost: false, peerLost: false });
+  });
+}

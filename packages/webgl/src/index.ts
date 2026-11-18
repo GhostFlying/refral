@@ -2,7 +2,7 @@ import { webglInterfaces } from './interfaces.js';
 import { GL, allocateContextId, ExecutionResources } from "@refral/core-api";
 import type { BufferHandle, BufferSnapshot, CoreKind, DrawingCore } from "@refral/core-api";
 import { createJsDrawingCore } from "@refral/core-js";
-import { createRustDrawingCore, prepareRustDrawingCores, prepareRustModule } from "@refral/core-wasm";
+import { prepareRustDrawingCores, prepareRustModule } from "@refral/core-wasm";
 import { BrowserHost } from "@refral/browser-host";
 import type { CapturedPixels } from "@refral/browser-host";
 import { createCompiler, createCompilerRegistry, COMPILER_LIMITS } from "@refral/compiler";
@@ -13,6 +13,7 @@ import { createResourceFacade, isResourceBinding } from './resources.js';
 import { readPixels } from './readback.js';
 import { registerCanvasSource } from './dom-upload.js';
 import { webgl1Methods } from './methods.js';
+import { createContextLoss } from './context-loss.js';
 
 export interface ContextOptions extends WebGLContextAttributes {
   version: 1;
@@ -59,12 +60,13 @@ function actualAttributes(requested: WebGLContextAttributes): WebGLContextAttrib
   return { ...defaults, premultipliedAlpha: requested.premultipliedAlpha ?? true, alpha: requested.alpha ?? true, depth: requested.depth ?? true, stencil: requested.stencil ?? false };
 }
 
-function trackBitmapTransfer(canvas: HTMLCanvasElement | OffscreenCanvas, host: BrowserHost): () => void {
+function trackBitmapTransfer(canvas: HTMLCanvasElement | OffscreenCanvas, currentHost: () => BrowserHost): () => void {
   if (!('transferToImageBitmap' in canvas)) return () => {};
   const previous = Object.getOwnPropertyDescriptor(canvas, 'transferToImageBitmap');
   const original = canvas.transferToImageBitmap;
   function transferToImageBitmap(this: OffscreenCanvas): ImageBitmap {
     if (this !== canvas) return original.call(this);
+    const host = currentHost();
     host.prepareCanvasSource();
     const bitmap = original.call(this);
     host.resetDefaultDrawingBuffer();
@@ -80,17 +82,7 @@ function trackBitmapTransfer(canvas: HTMLCanvasElement | OffscreenCanvas, host: 
   };
 }
 
-function observeDeviceLoss(device: GPUDevice, canvas: WeakRef<HTMLCanvasElement | OffscreenCanvas>, core: WeakRef<DrawingCore>): void {
-  void device.lost.then(info => {
-    if (core.deref()?.markLost()) canvas.deref()?.dispatchEvent(new WebGLContextEvent('webglcontextlost', {
-      cancelable: true, statusMessage: info.message,
-    }));
-  });
-}
-
-function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, host: BrowserHost,
-  attributes: WebGLContextAttributes, core: DrawingCore,
-  disposeCompiler: () => void): WebGL1PrototypeContext {
+function createGeneration(canvas: HTMLCanvasElement | OffscreenCanvas, host: BrowserHost, core: DrawingCore, releaseResources: () => void) {
   const realm = ('ownerDocument' in canvas ? canvas.ownerDocument.defaultView : null) ?? globalThis;
   const interfaces = webglInterfaces(realm);
   const bufferFacade = createBufferFacade(core, interfaces);
@@ -98,13 +90,63 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, host: BrowserH
   const resourceFacade = createResourceFacade(core,
     (source, width, height, plan) => host.captureDomCanvas(source, width, height, plan),
     realm.TypeError, interfaces);
-  const untrackBitmap = trackBitmapTransfer(canvas, host);
-  const unregisterSource = registerCanvasSource(canvas, {
-    prepare: () => host.prepareCanvasSource(), isLost: () => core.isContextLost(),
+  let releasing: Promise<void> | undefined;
+  let disposed = false;
+  function releaseGPU() {
+    if (!releasing) { releaseResources(); releasing = host.dispose(); }
+    return releasing;
+  }
+  return { core, host, interfaces, bufferFacade, programFacade, resourceFacade, releaseGPU,
+    dispose() {
+      if (!disposed) {
+        disposed = true;
+        core.dispose();
+        bufferFacade.dispose();
+        programFacade.dispose();
+        resourceFacade.dispose();
+      }
+      return releaseGPU();
+    } };
+}
+
+function observeDeviceLoss(device: GPUDevice, owner: WeakRef<ReturnType<typeof createContextLoss>>): void {
+  void device.lost.then(info => owner.deref()?.deviceLoss(info.message));
+}
+
+function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: WebGLContextAttributes,
+  create: () => ReturnType<typeof createGeneration>, onDispose: () => void): WebGL1PrototypeContext {
+  let current = create();
+  const interfaces = current.interfaces;
+  let disposed: Promise<void> | undefined;
+  const lost = createContextLoss(canvas, {
+    invalidOperation: () => current.core.invoke('recordContextLossError', []),
+    lose() {
+      if (!current.core.markLost()) return false;
+      void current.releaseGPU();
+      return true;
+    },
+    async restore() {
+      const previous = current;
+      try {
+        await previous.releaseGPU();
+        if (!lost.canRestore()) return false;
+        current = create();
+        await previous.dispose();
+        return true;
+      } catch (error) {
+        current.host.errors.push(`Context restoration failed: ${String(error)}`);
+        return false;
+      }
+    },
   });
-  observeDeviceLoss(host.device, new WeakRef(canvas), new WeakRef(core));
+  const untrackBitmap = trackBitmapTransfer(canvas, () => current.host);
+  const unregisterSource = registerCanvasSource(canvas, {
+    prepare: () => current.host.prepareCanvasSource(), isLost: () => current.core.isContextLost(),
+  });
+  observeDeviceLoss(current.host.device, new WeakRef(lost));
   const methods = new Map<string, (...args: unknown[]) => unknown>();
   const invoke = (property: string, args: unknown[]): unknown => {
+    const { core, host, bufferFacade, programFacade, resourceFacade } = current;
     if (property === 'getError') return core.getError();
     if (property === 'isContextLost') return core.isContextLost();
     if (property === 'readPixels') return readPixels(core, host, args);
@@ -118,8 +160,12 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, host: BrowserH
       args = [parameter];
     }
     if (property === 'getContextAttributes') return core.isContextLost() ? null : { ...attributes };
-    if (property === 'getSupportedExtensions') return core.isContextLost() ? null : [];
-    if (property === 'getExtension') return null;
+    if (property === 'getSupportedExtensions') return core.isContextLost() ? null : ['WEBGL_lose_context'];
+    if (property === 'getExtension') {
+      requireArguments(property, args, 1);
+      const name = `${args[0]}`.toLowerCase();
+      return !core.isContextLost() && name === 'webgl_lose_context' ? lost.extension : null;
+    }
     if (property === 'vertexAttribPointer') {
       requireArguments(property, args, 6);
       args = [toEnum(args[0]), +(args[1] as number) | 0, toEnum(args[2]), Boolean(args[3]),
@@ -140,8 +186,8 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, host: BrowserH
   };
   const surface = Object.setPrototypeOf({
     get canvas() { return canvas; },
-    get drawingBufferWidth() { return core.isContextLost() ? 0 : host.surface.width; },
-    get drawingBufferHeight() { return core.isContextLost() ? 0 : host.surface.height; },
+    get drawingBufferWidth() { return current.core.isContextLost() ? 0 : current.host.surface.width; },
+    get drawingBufferHeight() { return current.core.isContextLost() ? 0 : current.host.surface.height; },
     get drawingBufferColorSpace() { return 'srgb'; },
   }, interfaces.context ?? constants);
   const proxy = new Proxy(surface, {
@@ -162,19 +208,21 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, host: BrowserH
     },
   });
   hooks.set(proxy, {
-    core: core.kind,
-    inspectBuffer: bufferFacade.inspect,
-    capture: () => host.capture(core.captureTarget()),
-    stats: host.stats, environment: host.environment, errors: host.errors, device: host.device,
-    dispose: async () => {
-      untrackBitmap();
-      unregisterSource();
-      core.dispose();
-      bufferFacade.dispose();
-      programFacade.dispose();
-      resourceFacade.dispose();
-      disposeCompiler();
-      await host.dispose();
+    core: current.core.kind,
+    inspectBuffer: buffer => current.bufferFacade.inspect(buffer),
+    capture: () => current.host.capture(current.core.captureTarget()),
+    get stats() { return current.host.stats; },
+    get environment() { return current.host.environment; },
+    get errors() { return current.host.errors; },
+    get device() { return current.host.device; },
+    dispose() {
+      if (!disposed) {
+        lost.dispose();
+        untrackBitmap();
+        unregisterSource();
+        disposed = current.dispose().finally(onDispose);
+      }
+      return disposed;
     },
   });
   return proxy as unknown as WebGL1PrototypeContext;
@@ -183,40 +231,19 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, host: BrowserH
 export async function createWebGLOnWebGPU(canvas: HTMLCanvasElement | OffscreenCanvas,
   options: ContextOptions = { version: 1 }): Promise<WebGL1PrototypeContext> {
   if (options.version !== 1) return unsupported("WebGL version");
-  const kind = options.core ?? 'js';
-  if (kind !== 'js' && kind !== 'rust') return unsupported('core selection');
-  const attributes = actualAttributes({ ...options, ...options.contextAttributes, ...options.attributes });
-  const compiler = options.compiler ?? await createCompiler(options.compilerBaseURL);
-  const host = await BrowserHost.create(canvas, { alpha: attributes.alpha!, depth: attributes.depth!, stencil: attributes.stencil, premultipliedAlpha: attributes.premultipliedAlpha });
-  const registry = createCompilerRegistry(compiler);
-  const contextId = allocateContextId();
-  const resources = new ExecutionResources(contextId, host);
+  const prepared = await prepareRuntime(options);
   try {
-    const coreOptions = {
-      contextId, maxBufferBytes: host.limits.maxBufferSize,
-      surface: host.surface, attributes, profile: COMPILER_LIMITS,
-    };
-    const services = { compiler: registry, host, resources };
-    const core = kind === 'rust'
-      ? await createRustDrawingCore(coreOptions, services, options.coreWasmURL)
-      : createJsDrawingCore(coreOptions, services);
-    return wrapContext(canvas, host, attributes, core, () => { resources.dispose(); registry.dispose(); });
-  } catch (error) {
-    registry.dispose();
-    resources.dispose();
-    await host.dispose();
-    throw error;
-  }
+    return prepared.create(canvas, { ...options, ...options.contextAttributes, ...options.attributes }, prepared.dispose);
+  } catch (error) { prepared.dispose(); throw error; }
 }
 
-/** Harness-only synchronous construction after browser device/compiler initialization. */
-export async function prepareContextFactory(
-  options: Pick<ContextOptions, 'core' | 'coreWasmURL' | 'compilerBaseURL'> = {},
-): Promise<PreparedContextFactory> {
+type RuntimeOptions = Pick<ContextOptions, 'core' | 'coreWasmURL' | 'compiler' | 'compilerBaseURL'>;
+
+async function prepareRuntime(options: RuntimeOptions) {
   const kind = options.core ?? 'js';
   if (kind !== 'js' && kind !== 'rust') return unsupported('core selection');
   const prepared = await Promise.allSettled([
-    createCompiler(options.compilerBaseURL), BrowserHost.prepare(),
+    options.compiler ?? createCompiler(options.compilerBaseURL), BrowserHost.prepare(),
     kind === 'rust' ? prepareRustModule(options.coreWasmURL) : null,
   ]);
   const [compilerResult, hostResult, moduleResult] = prepared;
@@ -230,29 +257,42 @@ export async function prepareContextFactory(
   const compiler = compilerResult.value;
   const makeHost = hostResult.value;
   const makeCore = moduleResult.value ? prepareRustDrawingCores(moduleResult.value) : createJsDrawingCore;
+  const create = (canvas: HTMLCanvasElement | OffscreenCanvas, requested: WebGLContextAttributes, onDispose: () => void) => {
+    const attributes = actualAttributes(requested);
+    const errors: string[] = [];
+    return wrapContext(canvas, attributes, () => {
+      const host = makeHost(canvas, { alpha: attributes.alpha!, depth: attributes.depth!, stencil: attributes.stencil, premultipliedAlpha: attributes.premultipliedAlpha, errors });
+      const registry = createCompilerRegistry(compiler);
+      const contextId = allocateContextId();
+      const resources = new ExecutionResources(contextId, host);
+      const coreOptions = {
+        contextId, maxBufferBytes: host.limits.maxBufferSize,
+        surface: host.surface, attributes, profile: COMPILER_LIMITS,
+      };
+      const services = { compiler: registry, host, resources };
+      try {
+        const core = makeCore(coreOptions, services);
+        return createGeneration(canvas, host, core, () => { resources.dispose(); registry.dispose(); });
+      } catch (error) {
+        registry.dispose();
+        resources.dispose();
+        void host.dispose();
+        throw error;
+      }
+    }, onDispose);
+  };
+  return { create, dispose: makeHost.dispose };
+}
+
+/** Harness-only synchronous construction after browser device/compiler initialization. */
+export async function prepareContextFactory(options: RuntimeOptions = {}): Promise<PreparedContextFactory> {
+  const prepared = await prepareRuntime(options);
   const contexts = new Set<WeakRef<WebGL1PrototypeContext>>();
   const factory: PreparedContextFactory = (canvas, requested = {}) => {
-    const attributes = actualAttributes(requested);
-    const host = makeHost(canvas, { alpha: attributes.alpha!, depth: attributes.depth!, stencil: attributes.stencil, premultipliedAlpha: attributes.premultipliedAlpha });
-    const registry = createCompilerRegistry(compiler);
-    const contextId = allocateContextId();
-    const resources = new ExecutionResources(contextId, host);
-    const coreOptions = {
-      contextId, maxBufferBytes: host.limits.maxBufferSize,
-      surface: host.surface, attributes, profile: COMPILER_LIMITS,
-    };
-    const services = { compiler: registry, host, resources };
-    try {
-      const core = makeCore(coreOptions, services);
-      const context = wrapContext(canvas, host, attributes, core, () => { resources.dispose(); registry.dispose(); });
-      contexts.add(new WeakRef(context));
-      return context;
-    } catch (error) {
-      registry.dispose();
-      resources.dispose();
-      void host.dispose();
-      throw error;
-    }
+    const context = prepared.create(canvas, requested, () => contexts.delete(reference));
+    const reference = new WeakRef(context);
+    contexts.add(reference);
+    return context;
   };
   factory.dispose = async () => {
     await Promise.all([...contexts].map(ref => {
@@ -260,7 +300,7 @@ export async function prepareContextFactory(
       return context && getTestingHooks(context).dispose();
     }));
     contexts.clear();
-    makeHost.dispose();
+    prepared.dispose();
   };
   return factory;
 }

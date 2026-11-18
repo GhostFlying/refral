@@ -2160,7 +2160,7 @@
           ],
           "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "limits": [
-            "Additional formats and context restoration require subsequent acceptance."
+            "Additional formats require subsequent acceptance. Simulated restoration is tracked in resize-and-context-loss."
           ],
           "overloadStates": {
             "deleteBuffer": "differential-verified",
@@ -2207,7 +2207,7 @@
           ],
           "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
           "limits": [
-            "Additional formats and context restoration require subsequent acceptance."
+            "Additional formats require subsequent acceptance. Simulated restoration is tracked in resize-and-context-loss."
           ]
         }
       }
@@ -2264,17 +2264,20 @@
     },
     {
       "id": "resize-and-context-loss",
-      "api": "drawingBufferWidth, drawingBufferHeight, resize, device loss and disposal",
+      "api": "drawingBufferWidth, drawingBufferHeight, resize, WEBGL_lose_context, device loss and disposal",
       "cores": {
         "js": {
           "status": "differential-verified",
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Resize and resource disposal paths are implemented. Device loss dispatches the browser context event and marks the semantic context lost.",
+          "coverage": "The loss extension queues cancelable loss, supports restoration after cancellation and invalidates earlier generations while preserving peer contexts. Resize and resource disposal paths are implemented. Device loss dispatches the browser context event and marks the semantic context lost.",
           "tests": [
+            "tests/chrome/lifecycle.spec.ts",
+            "sdk/tests/conformance/context/context-lost.html",
+            "sdk/tests/conformance/context/context-lost-restored.html",
             "tests/chrome/differential.spec.ts::WebGL1 differential resize-framebuffer",
-            "tests/chrome/lifecycle.spec.ts::device loss notifies the context and terminates resource creation",
+            "tests/chrome/lifecycle.spec.ts::device loss notifies the context and invalidates new resources",
             "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
@@ -2291,15 +2294,18 @@
             "Same-size canvas reset and complete lost-context API behavior require dedicated tests"
           ],
           "gpuVerification": {
-            "test": "tests/chrome/lifecycle.spec.ts::device loss notifies the context and terminates resource creation",
+            "test": "tests/chrome/lifecycle.spec.ts::device loss notifies the context and invalidates new resources",
             "status": "passed",
             "scope": "Device destruction produces a cancelable loss event, fresh invalidated Buffer wrappers, null shader/context-attribute/state queries, and a single CONTEXT_LOST_WEBGL error."
           }
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "Default-target drawing/capture follows canvas dimensions. Shared Buffer loss fixtures verify neutral state and one loss error. Device recovery and context restoration remain outside this milestone.",
+          "coverage": "The loss extension queues cancelable loss, supports restoration after cancellation and invalidates earlier generations while preserving peer contexts. Default-target drawing/capture follows canvas dimensions. Shared Buffer loss fixtures verify neutral state and one loss error. Device recovery and context restoration remain outside this milestone.",
           "tests": [
+            "tests/chrome/lifecycle.spec.ts",
+            "sdk/tests/conformance/context/context-lost.html",
+            "sdk/tests/conformance/context/context-lost-restored.html",
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
             "packages/core-wasm/tests/render.integration.ts"
@@ -2635,7 +2641,7 @@
           "limits": [
             "Buffer-only common contract; draw snapshot parity is tracked by the rendering groups.",
             "Host capacity is supplied during initialization. Wasm32 allocation failure reports OUT_OF_MEMORY.",
-            "Context restoration remains future coverage.",
+            "Simulated restoration coverage is tracked in resize-and-context-loss.",
             "Native WebGL1 has no Buffer byte-readback query. Byte snapshots and versions are compared between JS and Rust; native comparison covers public state/errors/identity."
           ],
           "unsupportedBehavior": "Invalid supported inputs produce GL errors; invalid JS overloads produce TypeError in the shared facade. Errors preserve existing valid state."
@@ -2686,7 +2692,7 @@
           "limits": [
             "Buffer-only common contract; draw snapshot parity is tracked by the rendering groups.",
             "Host capacity is supplied during initialization. Wasm32 allocation failure reports OUT_OF_MEMORY.",
-            "Context restoration remains future coverage.",
+            "Simulated restoration coverage is tracked in resize-and-context-loss.",
             "Native WebGL1 has no Buffer byte-readback query. Byte snapshots and versions are compared between JS and Rust; native comparison covers public state/errors/identity."
           ],
           "unsupportedBehavior": "Invalid supported inputs produce GL errors; invalid JS overloads produce TypeError in the shared facade. Errors preserve existing valid state."

@@ -160,6 +160,10 @@ export class BrowserHost implements SemanticHost {
   private initialized = new WeakSet<GPUTexture>();
   private vertexCache = new WeakMap<Uint8Array, Map<string, GPUBuffer>>();
   private indexCache = new WeakMap<Uint8Array, Map<number, GPUBuffer>>();
+  private uniformGroups = new WeakMap<LinkedProgram, {
+    group: GPUBindGroup; vertex: GPUBuffer; fragment: GPUBuffer; encoder: GPUCommandEncoder;
+  }>();
+  private readonly emptyTextureGroups = new WeakMap<GPUBindGroupLayout, GPUBindGroup>();
   private programs = new WeakMap<LinkedProgram, {
     layout: GPUPipelineLayout;
     sampledElements: { type: number; samplerBinding: number; textureBinding: number }[];
@@ -285,18 +289,41 @@ export class BrowserHost implements SemanticHost {
   private createBuffer(data: Uint8Array, usage: GPUBufferUsageFlags, _transient = false): GPUBuffer {
     const buffer = this.device.createBuffer({ size: Math.max(4, aligned(data.byteLength, 4)),
       usage: usage | GPUBufferUsage.COPY_DST });
-    if (data.byteLength) {
-      const padded = new Uint8Array(aligned(data.byteLength, 4));
-      padded.set(data);
-      this.device.queue.writeBuffer(buffer, 0, padded);
-      this.completion.markIssued();
-      this.stats.uploadedBytes += data.byteLength;
-    }
+    this.writeBuffer(buffer, data);
     this.buffers.add(buffer);
     this.stats.allocatedBufferBytes += buffer.size;
     this.stats.peakAllocatedBufferBytes = Math.max(this.stats.peakAllocatedBufferBytes,
       this.stats.allocatedBufferBytes);
     return buffer;
+  }
+
+  private writeBuffer(buffer: GPUBuffer, data: Uint8Array): void {
+    if (!data.byteLength) return;
+    const bytes = new Uint8Array(aligned(data.byteLength, 4));
+    bytes.set(data);
+    this.device.queue.writeBuffer(buffer, 0, bytes);
+    this.completion.markIssued();
+    this.stats.uploadedBytes += data.byteLength;
+  }
+
+  private uniformGroup(operation: DrawOperation, layout: GPUBindGroupLayout): GPUBindGroup {
+    const cached = this.uniformGroups.get(operation.program);
+    const encoder = this.getEncoder();
+    // A queue write follows earlier submissions, but would overtake draws still in this encoder.
+    if (cached && cached.encoder !== encoder) {
+      this.writeBuffer(cached.vertex, operation.vertexUniforms);
+      this.writeBuffer(cached.fragment, operation.fragmentUniforms);
+      cached.encoder = encoder;
+      return cached.group;
+    }
+    const vertex = this.createBuffer(operation.vertexUniforms, GPUBufferUsage.UNIFORM);
+    const fragment = this.createBuffer(operation.fragmentUniforms, GPUBufferUsage.UNIFORM);
+    const group = this.device.createBindGroup({ layout, entries: [
+      { binding: 0, resource: { buffer: vertex } }, { binding: 1, resource: { buffer: fragment } },
+    ] });
+    this.stats.bindGroups++;
+    if (!cached) this.uniformGroups.set(operation.program, { vertex, fragment, group, encoder });
+    return group;
   }
 
   private uploadTexture(texture: GPUTexture, data: Uint8Array, width: number, height: number,
@@ -791,12 +818,7 @@ export class BrowserHost implements SemanticHost {
     }
     const vertexBuffers = operation.attributes.map(attribute =>
       this.vertexBuffer(attribute, points && indices ? operation.count : operation.vertexCount, points ? indices : null));
-    const vertexUniform = this.createBuffer(operation.vertexUniforms, GPUBufferUsage.UNIFORM, true);
-    const fragmentUniform = this.createBuffer(operation.fragmentUniforms, GPUBufferUsage.UNIFORM, true);
-    const uniformGroup = this.device.createBindGroup({ layout: resources.groups[0], entries: [
-      { binding: 0, resource: { buffer: vertexUniform } },
-      { binding: 1, resource: { buffer: fragmentUniform } },
-    ] });
+    const uniformGroup = this.uniformGroup(operation, resources.groups[0]);
     const textureEntries: GPUBindGroupEntry[] = [];
     for (let i = 0; i < resources.sampledElements.length; i++) {
       const sampler = resources.sampledElements[i]!;
@@ -810,7 +832,13 @@ export class BrowserHost implements SemanticHost {
       textureEntries.push({ binding: sampler.samplerBinding, resource: this.sampler(binding.parameters) });
       textureEntries.push({ binding: sampler.textureBinding, resource: texture.createView({ dimension: cube ? 'cube' : '2d' }) });
     }
-    const textureGroup = this.device.createBindGroup({ layout: resources.groups[1], entries: textureEntries });
+    const textureLayout = resources.groups[1];
+    let textureGroup = textureEntries.length ? undefined : this.emptyTextureGroups.get(textureLayout);
+    if (!textureGroup) {
+      textureGroup = this.device.createBindGroup({ layout: textureLayout, entries: textureEntries });
+      this.stats.bindGroups++;
+      if (!textureEntries.length) this.emptyTextureGroups.set(textureLayout, textureGroup);
+    }
     const driverKey = JSON.stringify([target.width, target.height, state.depthRange, points ? [width, height] : null]);
     let driverCache = this.driverGroups.get(program);
     if (!driverCache) { driverCache = new Map(); this.driverGroups.set(program, driverCache); }
@@ -884,7 +912,6 @@ export class BrowserHost implements SemanticHost {
       pass.drawIndexed(operation.count, 1, wideIndices ? 0 : indices.offset / size);
     } else pass.draw(operation.count, 1, operation.first);
     this.stats.draws++;
-    this.stats.bindGroups += 2;
     if (operation.target.isDefault) this.publishDefaultColor();
   }
 
@@ -1053,6 +1080,7 @@ export class BrowserHost implements SemanticHost {
     if (!this.buffers.size && !this.retiredTextures.size) return;
     const completed = [...this.buffers];
     this.buffers.clear();
+    this.uniformGroups = new WeakMap();
     this.vertexCache = new WeakMap();
     this.indexCache = new WeakMap();
     this.driverGroups = new WeakMap();

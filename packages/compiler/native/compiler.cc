@@ -205,6 +205,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char* RefralCompile(const char* source,
   ShCompileOptions options{};
   options.objectCode = true;
   options.validateAST = true;
+  options.limitCallStackDepth = true;
+  options.limitExpressionComplexity = true;
   options.separateCompoundStructDeclarations = true;
   options.scalarizeVecAndMatConstructorArgs = true;
   options.removeInactiveVariables = true;

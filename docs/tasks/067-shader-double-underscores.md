@@ -1,0 +1,9 @@
+# Consecutive underscores in WebGL1 shader identifiers
+
+The pinned WebGL1 Double-Underscore in Shader Identifiers rule allows these names. ANGLE's pinned WebGL parser rejects them. The original shader-with-double-underscore.html also contains an independent fragment-stage attribute declaration and no default float precision. Keep the official source and its expected outcomes intact.
+
+Permit the identifier in WebGL1. Check that user name mangling, reflection and location bindings preserve both a__b and a_b, including leading underscores. Separately verify an original valid vertex shader, a legal fragment equivalent and the original malformed fragment. This task owns the ANGLE parser patch, build registration, corpus checks and compiler evidence. Run the actual Wasm corpus and the three-way original under headless Chrome. Record an upstream-fixture dependency if its remaining expectation conflicts with ESSL.
+
+The built compiler passed all 60 corpus entries, and Chrome accepted the three WebGPU compiler integration suites. The valid control binds foo__bar to location 3, retains its reflection spelling and links against a legal fragment stage. The fragment-stage attribute control reports both the forbidden qualifier and missing float precision.
+
+The unmodified official file completed on Chrome 158 with 1 passed/2 failed assertions natively and 1 passed/1 failed on both selected cores. Both now compile the original valid vertex shader. The sole remaining selected failure expects a fragment-stage attribute to compile successfully. The accepted campaign decision keeps the pinned original in the denominator, preserves its failure and tracks it as an upstream fixture blocker. Resolution requires a conforming fragment fixture and an approved upstream revision change. Evidence including all three screenshots, diagnostics and both compiler corpus reports is under artifacts/conformance/campaign/double-underscore.

@@ -214,3 +214,7 @@ Task 064 uses an OffscreenCanvas's owning worker and navigator GPU adapter for i
 ## Synchronous canvas image observation
 
 The WebGL1 drawing buffer is the image source for same-task Canvas2D drawing and canvas serialization. Task 066 publishes default color writes in GL call order. When premultipliedAlpha is false the compositor consumes the product of stored color and alpha. GL pixel reads retain the unmultiplied RGBA8 values. At small nonzero alpha the browser host uses a floating-point presentation surface to retain channel precision through export. [WebGL drawing buffer](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#THE_DRAWING_BUFFER)
+
+### WebGL1 shader identifier spelling
+
+Task 067 applies the WebGL1 rule permitting consecutive underscores in shader identifiers to the ANGLE WebGL1 parser. Name lookup, distinct bindings and reflection preserve the ESSL spelling. GLSL ES 1.00 §4.3.3 limits attribute declarations to vertex shaders. Section 4.5.4 defines fragment default precision and requires an explicit float precision for the fragment declaration in this original. The pinned double-underscore test exercises all three rules. [WebGL identifier rule](https://github.com/KhronosGroup/WebGL/blob/39443210f7f81db4773eb104facadfb85d05dfa4/specs/latest/1.0/index.html#DOUBLE_UNDERSCORE_IN_SHADER_IDENTIFIERS) · [ESSL 1.00](https://registry.khronos.org/OpenGL/specs/es/2.0/GLSL_ES_Specification_1.00.pdf)

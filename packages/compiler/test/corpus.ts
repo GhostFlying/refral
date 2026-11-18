@@ -70,6 +70,10 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
   const overAttributeProgram = compiler.link(overAttributeLimit, plainFragment);
   const prototypeName = compiler.compile("attribute vec4 toString; void main(){gl_Position=toString;}", "vertex");
   const prototypeProgram = compiler.link(prototypeName, plainFragment);
+  const underscoreVertex = compiler.compile('attribute vec4 foo__bar; attribute vec4 foo_bar; void main(){gl_Position=foo__bar + foo_bar;}', 'vertex');
+  const underscoreFragment = compiler.compile('precision mediump float; uniform vec4 __color; void main(){gl_FragColor=__color;}', 'fragment');
+  const underscores = compiler.link(underscoreVertex, underscoreFragment, { foo__bar: 1, foo_bar: 2 });
+  const invalidFragmentAttribute = compiler.compile('attribute vec4 foo__bar; void main(){gl_FragColor=foo__bar;}', 'fragment');
   const arrayVertex = compiler.compile("attribute vec4 position; uniform vec4 colors[2]; void main(){gl_Position=position+colors[1];}", "vertex");
   const arrayProgram = compiler.link(arrayVertex, plainFragment);
   const arrayUniform = arrayProgram.uniforms.find((uniform) => uniform.name === "colors");
@@ -175,6 +179,11 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
       && !lowering.fragmentWGSL.includes("gl_DepthRange_")
       && lowering.uniforms.some(uniform => uniform.name === "gl_DepthRange.near"
         && uniform.vertexOffset === null && uniform.fragmentOffset === null), log: lowering.log },
+    { name: 'webgl1-double-underscore-identity', passed: underscores.success
+      && underscores.attributes.some(attribute => attribute.name === 'foo__bar' && attribute.location === 1)
+      && underscores.attributes.some(attribute => attribute.name === 'foo_bar' && attribute.location === 2)
+      && underscores.uniforms.some(uniform => uniform.name === '__color'), log: underscores.log },
+    { name: 'fragment-stage-attribute-is-illegal', passed: !invalidFragmentAttribute.success, log: invalidFragmentAttribute.log },
     { name: 'integer-minimum-literal', passed: minimumInteger.success
       && minimumInteger.wgsl.includes('(-2147483647i - 1i)')
       && !minimumInteger.wgsl.includes('-2147483648i'), log: minimumInteger.log },

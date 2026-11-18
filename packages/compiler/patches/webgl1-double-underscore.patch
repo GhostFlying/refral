@@ -1,0 +1,12 @@
+--- a/src/compiler/translator/ParseContext.cpp
++++ b/src/compiler/translator/ParseContext.cpp
+@@ -1644,7 +1644,8 @@
+             return false;
+         }
+     }
+-    if (identifier.contains("__"))
++    // WebGL 1.0 explicitly permits consecutive underscores in shader identifiers.
++    if (mShaderSpec != SH_WEBGL_SPEC && identifier.contains("__"))
+     {
+         if (sh::IsWebGLBasedSpec(mShaderSpec))
+         {

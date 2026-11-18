@@ -286,6 +286,7 @@ test('the CLI writer reads backend result paths and emits bounded JSON and Markd
     assert.deepEqual(JSON.parse(await readFile(join(output, 'failure-clusters.json'), 'utf8')).clusters, []);
     const markdown = await readFile(join(output, 'summary.md'), 'utf8');
     assert.match(markdown, /971 unique HTML files/);
+    assert.match(markdown, /Cross-backend build and runner comparability is \*\*unavailable\*\*/);
     assert.match(markdown, /conformance\/state \| 971 \| 971 \| 971 \| 971/);
     const cliOutput = join(directory, 'cli-report');
     const cli = await execFileAsync(process.execPath, ['tools/conformance-report.mjs', '--input', directory, '--output', cliOutput]);
@@ -343,4 +344,97 @@ test('capability barriers retain exact observed counters and disclose unfinished
   assert.equal(file.observedCountersComplete, true);
   assert.equal(file.originalTestCompleted, false);
   assert.equal(file.capabilityTerminated, true);
+});
+
+// The ec2443009 vertex-arrays checkpoints recorded these distinct Rust Wasm binaries.
+// Other fixture digests below are synthetic and held constant.
+const nativeCoreWasm = 'c338f30b49a8552ebc64a0d55bb2fcd61bb1470c09efa8e64c7b425434aae827';
+const selectedCoreWasm = 'e04606f860d08a58888f18014888b8f3716bf344d842ed789986263886b668e1';
+const wasmPath = 'artifacts/core-wasm/refral_core.wasm';
+const sharedHash = 'a'.repeat(64);
+
+function comparableRuns() {
+  const inputs = runs(['conformance/state/a.html']);
+  const runtimeRevision = 'ec24430090f892a41ee3f494b5ba4eed9db5cf2c';
+  const fields = ['artifacts/compiler/compiler.wasm', wasmPath, 'tests/fixtures/conformance.html',
+    'tests/fixtures/conformance.ts', 'tests/fixtures/conformance-init.ts', 'tests/fixtures/conformance-worker.ts',
+    'tools/conformance-assets.ts', 'tools/conformance-run.mjs', 'tools/conformance-run-state.mjs',
+    ...['core-api', 'core-js', 'core-wasm', 'browser-host', 'webgl', 'compiler'].map(name => `packages/${name}/src/index.ts`)];
+  for (const [index, backend] of BACKENDS.entries()) {
+    const hashes = Object.fromEntries(fields.map(path => [path, path === wasmPath ? nativeCoreWasm : sharedHash]));
+    const configuration = { runtimeRevision, playwrightVersion: '1.65.0',
+      revision: '39443210f7f81db4773eb104facadfb85d05dfa4', version: '1.0.4', headless: true, channel: 'chrome',
+      deviceScaleFactor: 1, frames: 1, slowTests: true, screenshots: true, abortUnsupported: true,
+      unsupportedGraceMs: 100, timeoutMs: 5000, hardTimeoutMs: 600000, hashes };
+    inputs[backend].environment = { backend, runtimeRevision, browserVersion: '158.0.8127.36', configuration,
+      launchHistory: [{ pid: index + 100 }, { pid: index + 200 }] };
+  }
+  return inputs;
+}
+
+test('recorded build comparability is independent of backend, launch order, JSON key order and collection coverage', () => {
+  const inputs = comparableRuns();
+  inputs.rust.environment.launchHistory.reverse();
+  for (const backend of BACKENDS) inputs[backend].environment.configuration.backend = backend;
+  const config = inputs.js.environment.configuration;
+  config.hashes = Object.fromEntries(Object.entries(config.hashes).reverse());
+  inputs.js.environment.configuration = Object.fromEntries(Object.entries(config).reverse());
+  const { summary } = build(inputs);
+  assert.deepEqual(summary.comparability, { status: 'verified', mismatches: [], unavailable: [] });
+  assert.equal(summary.complete, true);
+  inputs.rust.results.pop();
+  const partial = build(inputs).summary;
+  assert.equal(partial.complete, false);
+  assert.equal(partial.comparability.status, 'verified');
+});
+
+test('a changed binary at the same revision names its path and backend digests without changing results', () => {
+  const inputs = comparableRuns();
+  const original = build(inputs);
+  inputs.js.environment.configuration.hashes[wasmPath] = selectedCoreWasm;
+  inputs.rust.environment.configuration.hashes[wasmPath] = selectedCoreWasm;
+  const mixed = build(inputs);
+  assert.deepEqual(mixed.summary.comparability, { status: 'mismatch',
+    mismatches: [{ field: `hashes.${wasmPath}`, values: { native: nativeCoreWasm, js: selectedCoreWasm, rust: selectedCoreWasm } }],
+    unavailable: [] });
+  assert.equal(mixed.summary.complete, true);
+  assert.deepEqual(mixed.summary.files, original.summary.files);
+  assert.deepEqual(mixed.summary.modules, original.summary.modules);
+  assert.deepEqual(mixed.clusters, original.clusters);
+});
+
+test('different source, browser, CTS, fixtures, runtime and runner settings retain field-level evidence', () => {
+  const inputs = comparableRuns();
+  const env = inputs.js.environment;
+  env.runtimeRevision = env.configuration.runtimeRevision = 'b'.repeat(40);
+  env.browserVersion = '158.0.8127.99';
+  Object.assign(env.configuration, { version: '1.0.3', revision: 'c'.repeat(40), timeoutMs: 20000 });
+  env.configuration.hashes['tests/fixtures/conformance.ts'] = 'b'.repeat(64);
+  env.configuration.hashes['packages/browser-host/src/index.ts'] = 'b'.repeat(64);
+  env.configuration.hashes['packages/webgl/src/new-runtime-file.ts'] = sharedHash;
+  const comparison = build(inputs).summary.comparability;
+  assert.equal(comparison.status, 'mismatch');
+  assert.deepEqual(comparison.mismatches.map(row => row.field).sort(), [
+    'browserVersion', 'runtimeRevision', 'configuration.version', 'configuration.revision', 'configuration.timeoutMs',
+    'hashes.tests/fixtures/conformance.ts', 'hashes.packages/browser-host/src/index.ts', 'hashes.packages/webgl/src/new-runtime-file.ts',
+  ].sort());
+  assert.deepEqual(comparison.mismatches.find(row => row.field === 'configuration.timeoutMs').values,
+    { native: 5000, js: 20000, rust: 5000 });
+});
+
+test('unavailable historical evidence preserves complete results and a known mismatch takes priority', () => {
+  const old = build(runs(['conformance/state/a.html'])).summary;
+  assert.equal(old.complete, true);
+  assert.equal(old.comparability.status, 'unavailable');
+  assert.ok(old.comparability.unavailable.some(row => row.field === 'browserVersion' && row.backends.length === 3));
+  const inputs = comparableRuns();
+  delete inputs.rust.environment.configuration.hashes[wasmPath];
+  const partial = build(inputs).summary.comparability;
+  assert.equal(partial.status, 'unavailable');
+  assert.deepEqual(partial.unavailable, [{ field: `hashes.${wasmPath}`, backends: ['rust'] }]);
+  inputs.js.environment.configuration.timeoutMs = 20000;
+  assert.equal(build(inputs).summary.comparability.status, 'mismatch');
+  const env = inputs.native.environment;
+  env.runtimeRevision = 'c'.repeat(40);
+  assert.ok(build(inputs).summary.comparability.mismatches.some(row => row.field === 'runtimeRevision declarations'));
 });

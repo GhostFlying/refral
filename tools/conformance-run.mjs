@@ -47,7 +47,7 @@ await mkdir(output, { recursive: true });
 const sources = JSON.parse(await readFile('artifacts/conformance/sources.json', 'utf8'));
 const hashes = {};
 for (const file of ['artifacts/compiler/compiler.wasm', 'artifacts/core-wasm/refral_core.wasm',
-  'tests/fixtures/conformance.html', 'tests/fixtures/conformance.ts', 'tests/fixtures/conformance-init.ts', 'tools/conformance-assets.ts']) {
+  'tests/fixtures/conformance.html', 'tests/fixtures/conformance.ts', 'tests/fixtures/conformance-init.ts', 'tests/fixtures/conformance-worker.ts', 'tools/conformance-assets.ts']) {
   hashes[file] = createHash('sha256').update(await readFile(file)).digest('hex');
 }
 async function hashRuntime(directory) {

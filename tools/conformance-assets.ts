@@ -20,8 +20,11 @@ export function conformanceAssets(directory = resolve('third_party/cts')): Plugi
     configureServer(server) {
       server.middlewares.use('/third_party/cts', async (request, response) => {
         let file: string;
+        let workerEntry = false;
         try {
-          const pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
+          const url = new URL(request.url ?? '/', 'http://localhost');
+          const pathname = decodeURIComponent(url.pathname);
+          workerEntry = url.searchParams.has('__refral_worker') && pathname.endsWith('.js');
           file = resolve(directory, `.${pathname}`);
         } catch {
           response.writeHead(400).end();
@@ -35,6 +38,16 @@ export function conformanceAssets(directory = resolve('third_party/cts')): Plugi
           const information = await stat(file);
           if (!information.isFile()) {
             response.writeHead(404).end();
+            return;
+          }
+          if (workerEntry) {
+            // Keep the original worker directory as the base for relative importScripts.
+            const body = `import('/tests/fixtures/conformance-worker.ts').then(m => m.runOfficialWorker()).catch(error => {
+              self.postMessage({ __refralWorker: new URL(location.href).searchParams.get('__refral_worker'),
+                detail: { type: 'error', name: error?.name, message: String(error) } });
+            });`;
+            response.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
+            response.end(request.method === 'HEAD' ? undefined : body);
             return;
           }
           const type = contentTypes[extname(file)] ?? 'text/plain; charset=utf-8';

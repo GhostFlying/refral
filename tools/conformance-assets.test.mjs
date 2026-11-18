@@ -13,6 +13,8 @@ test('official source serving preserves bytes, MIME, HEAD and media ranges', asy
   try {
     const html = '<!doctype html><script>var unchanged = true;</script>\n';
     await writeFile(join(directory, 'runner.html'), html);
+    const original = 'importScripts("./original-dependency.js");';
+    await writeFile(join(directory, 'worker.js'), original);
     await writeFile(join(directory, 'movie.webm'), new Uint8Array([0, 1, 2, 3, 4, 5]));
     const plugin = conformanceAssets(directory);
     let handler;
@@ -21,6 +23,8 @@ test('official source serving preserves bytes, MIME, HEAD and media ranges', asy
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
     const origin = `http://127.0.0.1:${server.address().port}`;
+    assert.match(await (await fetch(origin + '/worker.js?__refral_worker=id')).text(), /runOfficialWorker/);
+    assert.equal(await (await fetch(origin + '/worker.js')).text(), original);
     const response = await fetch(origin + '/runner.html');
     assert.equal(await response.text(), html);
     assert.match(response.headers.get('content-type'), /^text\/html/);

@@ -202,6 +202,22 @@ test('provenance mismatches and worker adapter gaps cannot become selected-core 
   assert.equal(summary.files.find(file => file.backend === 'js').paired.native.effectiveStatus, 'pass');
 });
 
+test('completed green originals retain per-backend assertion differences without changing their status', () => {
+  const inventory = ['a.html', 'b.html', 'c.html', 'd.html'].map(name => 'conformance/state/' + name);
+  const inputs = runs(inventory);
+  inputs.js.results[0].passed = 3;
+  inputs.rust.results[1].skipped = 1;
+  Object.assign(inputs.js.results[2], { status: 'timeout', completion: 'timeout', partialCountsUnavailable: true });
+  const { summary } = build(inputs);
+  assert.deepEqual(summary.passingAssertionDifferences.map(row => row.url), inventory.slice(0, 2));
+  const [first, second] = summary.passingAssertionDifferences;
+  assert.equal(first.counters.native.passed, 2);
+  assert.equal(first.counters.js.passed, 3);
+  assert.equal(first.counters.rust.passed, 2);
+  assert.equal(second.counters.rust.skipped, 1);
+  assert.equal(summary.backends.js.effectiveFileStatuses.pass, 3);
+});
+
 test('failure clusters retain transparent overlapping rules and paired native observations', () => {
   const inputs = runs(['conformance/textures/mipmap.html']);
   Object.assign(inputs.native.results[0], { status: 'fail', failed: 1, failures: ['INVALID_ENUM from generateMipmap'] });

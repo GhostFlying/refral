@@ -85,4 +85,6 @@ done
 
 原始 uninitialized-test.html 的独立阻塞是 host 的同步完成能力。用户决定保留 finish 的同步语义和原始失败。空闲返回路径已验证，未完成 GPU 工作须等待提供可验证同步完成原语的 host。该项独立于三个上游断言冲突。[诊断和恢复条件](079-synchronous-queue-completion.md)
 
+第 48 项 HTML canvas 的跨帧 drawImage 另列为已接受的未定义观察。保留原始 971 分母和 4/0、3/1、3/1 三路实测。该分类只适用于非保留画布合成后的 DOM 复制。[适用条件和上游历史](093-opaque-webgpu-canvas-discard.md)
+
 本计划维护范围是本文件和路线图入口。各实现任务拥有自己的代码、验证和结果记录。计划检查使用 `pnpm ci:check`，首批选择器应在每个后端恰好选中上述三个 URL。

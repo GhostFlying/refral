@@ -7,7 +7,7 @@ export const textureRttCases = ['texture-format-rgba', 'texture-format-rgb', 'te
   'texture-packed-565', 'texture-packed-4444', 'texture-packed-5551', 'texture-packed-cube',
   'texture-manual-mip-2d', 'texture-manual-mip-cube', 'texture-generate-mip-from-fbo',
   'texture-updates-reallocation', 'texture-npot-completeness', 'texture-sampler-units', 'texture-invalid-state'] as const;
-export const framebufferRttCases = ['fbo-depth-render-sample', 'fbo-cube-face-render-sample', 'fbo-color-renderbuffer-copy', 'fbo-stencil-attachments', 'fbo-attachment-resize',
+export const framebufferRttCases = ['fbo-depth-render-sample', 'fbo-cube-face-render-sample', 'fbo-color-renderbuffer-copy', 'fbo-stencil-attachments', 'default-stencil-raster', 'fbo-attachment-resize',
   'fbo-deletion-bound-unbound', 'fbo-feedback-loop', 'raster-masks-depth-blend-cull',
   'resources-multiple-contexts', 'canvas-resize-present'] as const;
 export const rttCaseNames = [...uniformRttCases, ...textureRttCases, ...framebufferRttCases] as const;
@@ -27,12 +27,12 @@ export const rttTextureFragment = 'precision mediump float; varying vec2 v_uv; u
 const quad = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
 const identity4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
-export async function prepareRttContext(backend: DrawingBackend, width = 64, height = 64, alpha = false) {
+export async function prepareRttContext(backend: DrawingBackend, width = 64, height = 64, alpha = false, stencil = false) {
   const canvas = document.createElement('canvas');
   canvas.width = width; canvas.height = height;
   canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
   document.body.append(canvas);
-  const attributes: WebGLContextAttributes = { alpha, depth: true, stencil: false, antialias: false,
+  const attributes: WebGLContextAttributes = { alpha, depth: true, stencil, antialias: false,
     premultipliedAlpha: true, preserveDrawingBuffer: true };
   let gl: WebGLRenderingContext | null;
   let hooks: TestingHooks | null = null;
@@ -683,6 +683,34 @@ gl_FragColor=vec4(u_i[0].x==16777217?1.:0.,u_i[1].w==(-2147483647-1)&&u_b[1].z&&
       gl.viewport(0, 0, 64, 64); sample(t.texture); full([0, 255, 0, 255]);
       break;
     }
+    case 'default-stencil-raster': {
+      check('requested default stencil surface has eight bits', gl.getParameter(gl.STENCIL_BITS), 8);
+      check('stencil test starts disabled', gl.isEnabled(gl.STENCIL_TEST), false);
+      gl.stencilMask(0xff);
+      gl.clearStencil(0xff); gl.clear(gl.STENCIL_BUFFER_BIT);
+      gl.stencilMaskSeparate(gl.FRONT, 0x0f);
+      gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 0, 32, 64);
+      gl.clearStencil(0x20); gl.clear(gl.STENCIL_BUFFER_BIT);
+      gl.disable(gl.SCISSOR_TEST);
+      check('clear value remains recorded', gl.getParameter(gl.STENCIL_CLEAR_VALUE), 0x20);
+      check('front stencil write mask remains recorded', gl.getParameter(gl.STENCIL_WRITEMASK), 0x0f);
+      gl.stencilMask(0xff);
+      gl.stencilFuncSeparate(gl.FRONT, gl.EQUAL, 0x1ff, 0xff);
+      gl.stencilFuncSeparate(gl.BACK, gl.NEVER, 0xff, 0x1ff);
+      gl.enable(gl.STENCIL_TEST);
+      error('equal effective parameters allow distinct face functions', () => drawColor([1, 0, 0, 1]), gl.NO_ERROR);
+      gl.stencilFuncSeparate(gl.BACK, gl.EQUAL, 1, 0xff);
+      error('different effective references reject the draw', () => drawColor([0, 0, 1, 1]), gl.INVALID_OPERATION);
+      gl.stencilFunc(gl.EQUAL, 0xf0, 0xff);
+      gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR);
+      gl.colorMask(false, false, false, false); drawColor([0, 0, 1, 1]);
+      gl.colorMask(true, true, true, true);
+      gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+      gl.stencilFunc(gl.EQUAL, 0xf1, 0xff);
+      drawColor([0, 1, 0, 1]);
+      band(0, 32, [0, 255, 0, 255]); band(32, 32, [255, 0, 0, 255]);
+      break;
+    }
     case 'fbo-attachment-resize': {
       const t = target(16, 16, true);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 32, 32, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -774,7 +802,7 @@ export async function runRttCase(name: RttCaseName, backend: DrawingBackend): Pr
     environment: {}, width, height: 64, pixels: [], failure: null, validationErrors: [], cleanupErrors: [] };
   let context: Awaited<ReturnType<typeof prepareRttContext>> | null = null;
   try {
-    context = await prepareRttContext(backend, width, 64, alpha);
+    context = await prepareRttContext(backend, width, 64, alpha, name === 'default-stencil-raster');
     result.selectedCore = context.selectedCore; result.environment = context.environment;
     const actualAttributes = context.gl.getContextAttributes();
     for (const [attribute, expected] of Object.entries(context.requestedAttributes)) {

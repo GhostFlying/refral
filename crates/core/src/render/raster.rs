@@ -1,6 +1,41 @@
 use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StencilFace {
+    pub func: u32,
+    pub reference: i32,
+    pub value_mask: u32,
+    pub write_mask: u32,
+    pub fail: u32,
+    pub depth_fail: u32,
+    pub pass: u32,
+}
+
+impl Default for StencilFace {
+    fn default() -> Self {
+        Self {
+            func: 0x207,
+            reference: 0,
+            value_mask: u32::MAX,
+            write_mask: u32::MAX,
+            fail: 0x1e00,
+            depth_fail: 0x1e00,
+            pass: 0x1e00,
+        }
+    }
+}
+
+impl StencilFace {
+    fn effective_parameters(&self) -> (i32, u32, u32) {
+        (
+            self.reference.clamp(0, 255),
+            self.value_mask & 255,
+            self.write_mask & 255,
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RasterState {
     pub viewport: [i32; 4],
     pub scissor: [i32; 4],
@@ -10,6 +45,10 @@ pub struct RasterState {
     pub depth_mask: bool,
     pub depth_func: u32,
     pub depth_range: [f32; 2],
+    pub stencil_test: bool,
+    pub stencil_clear: i32,
+    pub stencil_front: StencilFace,
+    pub stencil_back: StencilFace,
     pub blend: bool,
     pub blend_color: [f32; 4],
     pub blend_src_rgb: u32,
@@ -33,6 +72,10 @@ impl Default for RasterState {
             depth_mask: true,
             depth_func: 0x201,
             depth_range: [0.0, 1.0],
+            stencil_test: false,
+            stencil_clear: 0,
+            stencil_front: StencilFace::default(),
+            stencil_back: StencilFace::default(),
             blend: false,
             blend_color: [0.0; 4],
             blend_src_rgb: 1,
@@ -45,6 +88,11 @@ impl Default for RasterState {
             cull_face: 0x405,
             front_face: 0x901,
         }
+    }
+}
+impl RasterState {
+    pub(super) fn stencil_parameters_match(&self) -> bool {
+        self.stencil_front.effective_parameters() == self.stencil_back.effective_parameters()
     }
 }
 fn clamped(value: f64) -> f32 {
@@ -64,6 +112,8 @@ fn equation(value: u32) -> bool {
 impl ContextCore {
     pub(super) fn raster_query(&self, parameter: u32) -> Option<Reply> {
         let state = &self.render.raster;
+        let front = &state.stencil_front;
+        let back = &state.stencil_back;
         Some(match parameter {
             0x0ba2 => Reply::Ints(state.viewport.to_vec()),
             0x0c10 => Reply::Ints(state.scissor.to_vec()),
@@ -73,6 +123,21 @@ impl ContextCore {
             0x0b72 => Reply::Boolean(state.depth_mask),
             0x0b74 => Reply::Number(state.depth_func as f64),
             0x0b70 => Reply::Floats(state.depth_range.to_vec()),
+            0x0b91 => Reply::Number(state.stencil_clear as f64),
+            0x0b92 => Reply::Number(front.func as f64),
+            0x0b93 => Reply::Number(front.value_mask as f64),
+            0x0b94 => Reply::Number(front.fail as f64),
+            0x0b95 => Reply::Number(front.depth_fail as f64),
+            0x0b96 => Reply::Number(front.pass as f64),
+            0x0b97 => Reply::Number(front.reference as f64),
+            0x0b98 => Reply::Number(front.write_mask as f64),
+            0x8800 => Reply::Number(back.func as f64),
+            0x8801 => Reply::Number(back.fail as f64),
+            0x8802 => Reply::Number(back.depth_fail as f64),
+            0x8803 => Reply::Number(back.pass as f64),
+            0x8ca3 => Reply::Number(back.reference as f64),
+            0x8ca4 => Reply::Number(back.value_mask as f64),
+            0x8ca5 => Reply::Number(back.write_mask as f64),
             0x8005 => Reply::Floats(state.blend_color.to_vec()),
             0x8009 => Reply::Number(state.blend_equation_rgb as f64),
             0x883d => Reply::Number(state.blend_equation_alpha as f64),
@@ -96,7 +161,8 @@ impl ContextCore {
             0x0b71 => state.depth_test,
             0x0c11 => state.scissor_test,
             0x0bd0 => self.render.dither,
-            0x0b90 | 0x8037 => false,
+            0x0b90 => state.stencil_test,
+            0x8037 => false,
             _ => return None,
         })
     }
@@ -113,10 +179,9 @@ impl ContextCore {
                     0x0b71 => self.render.raster.depth_test = enabled,
                     0x0c11 => self.render.raster.scissor_test = enabled,
                     0x0bd0 => self.render.dither = enabled,
-                    0x0b90 | 0x8037 if enabled => {
-                        return Some(Reply::Unsupported("stencil and polygon offset"))
-                    }
-                    0x0b90 | 0x8037 => {}
+                    0x0b90 => self.render.raster.stencil_test = enabled,
+                    0x8037 if enabled => return Some(Reply::Unsupported("polygon offset")),
+                    0x8037 => {}
                     _ => self.record_error(INVALID_ENUM),
                 }
             }
@@ -174,6 +239,13 @@ impl ContextCore {
                 self.render.clear_color = std::array::from_fn(|index| clamped(number(index)))
             }
             "clearDepth" => self.render.clear_depth = clamped(number(0)),
+            "clearStencil" => self.render.raster.stencil_clear = number(0) as i32,
+            "stencilMask"
+            | "stencilMaskSeparate"
+            | "stencilFunc"
+            | "stencilFuncSeparate"
+            | "stencilOp"
+            | "stencilOpSeparate" => self.set_stencil_state(operation, args),
             "blendColor" => {
                 self.render.raster.blend_color = std::array::from_fn(|index| clamped(number(index)))
             }
@@ -242,5 +314,58 @@ impl ContextCore {
             _ => return None,
         }
         Some(Reply::Null)
+    }
+
+    fn set_stencil_state(&mut self, operation: &str, args: &[Argument]) {
+        let separate = operation.ends_with("Separate");
+        let number = |index: usize| args.get(index).map_or(0.0, Argument::number);
+        let face = if separate { number(0) as u32 } else { 0x408 };
+        if !matches!(face, 0x404 | 0x405 | 0x408) {
+            return self.record_error(INVALID_ENUM);
+        }
+        let first = usize::from(separate);
+        let value = number(first) as u32;
+        let (front, back) = (
+            &mut self.render.raster.stencil_front,
+            &mut self.render.raster.stencil_back,
+        );
+        let faces = [
+            Some(front).filter(|_| face != 0x405),
+            Some(back).filter(|_| face != 0x404),
+        ];
+        match operation {
+            "stencilMask" | "stencilMaskSeparate" => {
+                for face in faces.into_iter().flatten() {
+                    face.write_mask = value;
+                }
+            }
+            "stencilFunc" | "stencilFuncSeparate" => {
+                if !(0x200..=0x207).contains(&value) {
+                    return self.record_error(INVALID_ENUM);
+                }
+                let reference = number(first + 1) as i32;
+                let mask = number(first + 2) as u32;
+                for face in faces.into_iter().flatten() {
+                    face.func = value;
+                    face.reference = reference;
+                    face.value_mask = mask;
+                }
+            }
+            _ => {
+                let depth_fail = number(first + 1) as u32;
+                let pass = number(first + 2) as u32;
+                if [value, depth_fail, pass]
+                    .into_iter()
+                    .any(|op| !matches!(op, 0 | 0x1e00..=0x1e03 | 0x150a | 0x8507 | 0x8508))
+                {
+                    return self.record_error(INVALID_ENUM);
+                }
+                for face in faces.into_iter().flatten() {
+                    face.fail = value;
+                    face.depth_fail = depth_fail;
+                    face.pass = pass;
+                }
+            }
+        }
     }
 }

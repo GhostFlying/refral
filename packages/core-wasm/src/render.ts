@@ -184,6 +184,12 @@ function readRaster(reader: Reader, width: number, height: number): RasterState 
   state.cull = reader.u32() !== 0;
   state.cullFace = reader.u32();
   state.frontFace = reader.u32();
+  state.stencilTest = reader.u32() !== 0;
+  state.stencilClear = reader.i32();
+  const face = () => ({ func: reader.u32(), reference: reader.i32(), valueMask: reader.u32(), writeMask: reader.u32(),
+    fail: reader.u32(), depthFail: reader.u32(), pass: reader.u32() });
+  state.stencilFront = face();
+  state.stencilBack = face();
   return state;
 }
 
@@ -246,12 +252,12 @@ export function createRustDrawingCoreFromModule(
     required.some((name) => typeof exports[name] !== 'function')
   ) {
     throw new Error(
-      'Rust drawing module requires ABI4/resource7/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
+      'Rust drawing module requires ABI5/resource7/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
     );
   }
   const abi = exports as unknown as ABI;
-  if (abi.rf_abi_version() !== 4)
-    throw new Error('Rust drawing ABI version mismatch; expected 4. Rebuild with pnpm rust:build.');
+  if (abi.rf_abi_version() !== 5)
+    throw new Error('Rust drawing ABI version mismatch; expected 5. Rebuild with pnpm rust:build.');
   if (abi.rf_resource_protocol_version() !== 7)
     throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_readback_protocol_version() !== 1)
@@ -499,7 +505,7 @@ export function createRustDrawingCoreFromModule(
   }
   function executeDraw(bytes: Uint8Array): void {
     const reader = new Reader(bytes);
-    if (reader.u32() !== 0x34444652 || reader.u32() !== 4)
+    if (reader.u32() !== 0x35444652 || reader.u32() !== 5)
       throw new Error('Invalid Rust draw snapshot version.');
     const program = services.compiler.executable(reader.u32());
     reader.skip(12 + 8);
@@ -662,6 +668,7 @@ export function createRustDrawingCoreFromModule(
     services.host.limits.maxTextureDimension2D,
     attributes.alpha ?? true,
     attributes.depth ?? true,
+    attributes.stencil ?? false,
   ]);
   return Object.freeze({
     kind: 'rust' as const,

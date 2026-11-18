@@ -1,8 +1,8 @@
-import { GL, componentCount, vertexComponentBytes } from "@refral/core-api";
+import { GL, componentCount, stencilReference, vertexComponentBytes } from "@refral/core-api";
 import { CanvasReadback } from './canvas-readback.js';
 import type {
-  AttributeSnapshot, RasterState, TargetSnapshot, TextureCopy, TextureParameters, TextureStorage,
-  LinkedProgram, DrawOperation, SemanticHost, DomTextureUploadPlan, TextureVersion,
+  AttributeSnapshot, RasterState, StencilFaceState, TargetSnapshot, TextureCopy, TextureParameters, TextureStorage,
+  LinkedProgram, DrawOperation, DrawingSurface, SemanticHost, DomTextureUploadPlan, TextureVersion,
 } from "@refral/core-api";
 
 export type { TextureBinding, DrawOperation } from "@refral/core-api";
@@ -28,9 +28,11 @@ export interface CapturedPixels {
 }
 
 export interface PreparedHostFactory {
-  (canvas: HTMLCanvasElement | OffscreenCanvas, attributes: { alpha: boolean; depth: boolean }, ownsDevice?: boolean): BrowserHost;
+  (canvas: HTMLCanvasElement | OffscreenCanvas, attributes: HostContextAttributes, ownsDevice?: boolean): BrowserHost;
   dispose(): void;
 }
+
+interface HostContextAttributes { alpha: boolean; depth: boolean; stencil?: boolean | undefined }
 
 interface Target {
   color: GPUTexture;
@@ -62,6 +64,23 @@ function compareFunction(value: number): GPUCompareFunction {
   };
   return functions[value] ?? "always";
 }
+
+const stencilOperations: Record<number, GPUStencilOperation> = {
+  [GL.KEEP]: 'keep', [GL.ZERO]: 'zero', [GL.REPLACE]: 'replace', [GL.INVERT]: 'invert',
+  [GL.INCR]: 'increment-clamp', [GL.DECR]: 'decrement-clamp',
+  [GL.INCR_WRAP]: 'increment-wrap', [GL.DECR_WRAP]: 'decrement-wrap',
+};
+
+function stencilFace(face: StencilFaceState): GPUStencilFaceState {
+  return { compare: compareFunction(face.func), failOp: stencilOperations[face.fail]!,
+    depthFailOp: stencilOperations[face.depthFail]!, passOp: stencilOperations[face.pass]! };
+}
+
+function targetHasStencil(target: Target): boolean {
+  return target.depth?.format === 'stencil8' || target.depth?.format === 'depth24plus-stencil8';
+}
+
+const clearStencilFace: GPUStencilFaceState = { compare: 'always', passOp: 'replace' };
 
 function blendFactor(value: number): GPUBlendFactor {
   const factors: Record<number, GPUBlendFactor> = {
@@ -95,6 +114,7 @@ export class BrowserHost implements SemanticHost {
   readonly errors: string[] = [];
   readonly environment: Record<string, unknown>;
   readonly limits: GPUSupportedLimits;
+  readonly surface: DrawingSurface;
   private encoder: GPUCommandEncoder | null = null;
   private pass: GPURenderPassEncoder | null = null;
   private passTarget: Target | null = null;
@@ -141,9 +161,15 @@ export class BrowserHost implements SemanticHost {
     adapter: GPUAdapter,
     readonly alpha: boolean,
     readonly hasDepth: boolean,
+    readonly hasStencil: boolean,
     private readonly ownsDevice = true,
   ) {
     this.limits = device.limits;
+    const dimensionLimit = this.limits.maxTextureDimension2D;
+    this.surface = {
+      get width() { return Math.max(1, Math.min(canvas.width, dimensionLimit)); },
+      get height() { return Math.max(1, Math.min(canvas.height, dimensionLimit)); },
+    };
     this.environment = {
       userAgent: navigator.userAgent,
       adapter: { vendor: adapter.info.vendor, architecture: adapter.info.architecture,
@@ -160,7 +186,7 @@ export class BrowserHost implements SemanticHost {
     device.addEventListener("uncapturederror", this.handleError);
   }
 
-  static async create(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: { alpha: boolean; depth: boolean }): Promise<BrowserHost> {
+  static async create(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: HostContextAttributes): Promise<BrowserHost> {
     const prepared = await BrowserHost.prepare();
     try {
       return prepared(canvas, attributes, true);
@@ -180,7 +206,7 @@ export class BrowserHost implements SemanticHost {
       const context = canvas.getContext("webgpu");
       if (!context) throw new DOMException("Canvas is already bound to another context", "InvalidStateError");
       context.configure({ device, format, alphaMode: attributes.alpha ? "premultiplied" : "opaque" });
-      return new BrowserHost(canvas, device, context, format, adapter, attributes.alpha, attributes.depth, ownsDevice);
+      return new BrowserHost(canvas, device, context, format, adapter, attributes.alpha, attributes.depth, attributes.stencil ?? false, ownsDevice);
     };
     factory.dispose = () => device.destroy();
     return factory;
@@ -412,9 +438,10 @@ export class BrowserHost implements SemanticHost {
           this.retiredTextures.add(this.defaultTarget.color);
           if (this.defaultTarget.depth) this.retiredTextures.add(this.defaultTarget.depth);
         }
+        const depthFormat = this.hasStencil ? (this.hasDepth ? "depth24plus-stencil8" : "stencil8") : "depth24plus";
         this.defaultTarget = {
           color: this.createTexture(snapshot.width, snapshot.height, "rgba8unorm"),
-          depth: this.hasDepth ? this.createTexture(snapshot.width, snapshot.height, "depth24plus") : null,
+          depth: this.hasDepth || this.hasStencil ? this.createTexture(snapshot.width, snapshot.height, depthFormat) : null,
           width: snapshot.width, height: snapshot.height,
           opaque: !this.alpha,
         };
@@ -639,6 +666,10 @@ export class BrowserHost implements SemanticHost {
     const stripIndexFormat = strip && indices ? indexFormat : undefined;
     const target = this.resolveTarget(operation.target);
     const resources = this.programResources(program);
+    const stencil = state.stencilTest && targetHasStencil(target) ? {
+      stencilFront: stencilFace(state.stencilFront), stencilBack: stencilFace(state.stencilBack),
+      stencilReadMask: state.stencilFront.valueMask & 0xff, stencilWriteMask: state.stencilFront.writeMask & 0xff,
+    } : undefined;
     const layouts: GPUVertexBufferLayout[] = operation.attributes.map(attribute => {
       const components = componentCount(attribute.shaderType);
       const format = (components === 1 ? "float32" : `float32x${components}`) as GPUVertexFormat;
@@ -648,7 +679,7 @@ export class BrowserHost implements SemanticHost {
     const key = JSON.stringify([topology, stripIndexFormat, layouts, target.depth?.format, target.opaque, state.depthTest, state.depthMask,
       state.depthFunc, state.colorMask, state.blend, state.blendSrcRGB, state.blendDstRGB,
       state.blendSrcAlpha, state.blendDstAlpha, state.blendEquationRGB, state.blendEquationAlpha,
-      state.cull, state.cullFace, state.frontFace]);
+      state.cull, state.cullFace, state.frontFace, stencil]);
     let pipeline = resources.pipelines.get(key);
     if (!pipeline) {
       const blend: GPUBlendState | undefined = state.blend ? {
@@ -666,6 +697,7 @@ export class BrowserHost implements SemanticHost {
           frontFace: state.frontFace === GL.CCW ? "cw" : "ccw",
           cullMode: !state.cull ? "none" : state.cullFace === GL.FRONT ? "front" : "back" },
         depthStencil: target.depth ? { format: target.depth.format,
+          ...stencil,
           ...(target.depth.format === "stencil8" ? {} : {
             depthWriteEnabled: state.depthTest && state.depthMask,
             depthCompare: state.depthTest ? compareFunction(state.depthFunc) : "always",
@@ -743,6 +775,7 @@ export class BrowserHost implements SemanticHost {
     const pass = this.beginPass(target);
     pass.setPipeline(pipeline);
     pass.setViewport(...state.viewport, ...state.depthRange);
+    if (stencil) pass.setStencilReference(stencilReference(state.stencilFront.reference));
     this.applyScissor(pass, state, target);
     const alphaConstants = [GL.CONSTANT_ALPHA, GL.ONE_MINUS_CONSTANT_ALPHA] as number[];
     const usesConstantAlphaRGB = alphaConstants.includes(state.blendSrcRGB) || alphaConstants.includes(state.blendDstRGB);
@@ -777,9 +810,10 @@ export class BrowserHost implements SemanticHost {
     const target = this.resolveTarget(snapshot);
     const writesColor = !!(mask & GL.COLOR_BUFFER_BIT);
     const writesDepth = !!(mask & GL.DEPTH_BUFFER_BIT) && state.depthMask && !!target.depth && target.depth.format !== "stencil8";
-    if (!writesColor && !writesDepth) return;
+    const stencilWriteMask = (mask & GL.STENCIL_BUFFER_BIT) && targetHasStencil(target) ? state.stencilFront.writeMask & 0xff : 0;
+    if (!writesColor && !writesDepth && !stencilWriteMask) return;
     const writeMask = writesColor ? colorWriteMask(state.colorMask) & (target.opaque ? 7 : 15) : 0;
-    const key = `${target.depth?.format}:${writesDepth}:${writeMask}`;
+    const key = `${target.depth?.format}:${writesDepth}:${writeMask}:${stencilWriteMask}`;
     let pipeline = this.clearPipelines.get(key);
     if (!pipeline) {
       const code = `struct Clear { color: vec4f, depth: f32 };
@@ -794,6 +828,7 @@ export class BrowserHost implements SemanticHost {
         fragment: { module, entryPoint: "fs", targets: [{ format: "rgba8unorm", writeMask }] },
         primitive: { topology: "triangle-list" },
         depthStencil: target.depth ? { format: target.depth.format,
+          ...(stencilWriteMask ? { stencilFront: clearStencilFace, stencilBack: clearStencilFace, stencilWriteMask } : {}),
           ...(target.depth.format === "stencil8" ? {} : { depthWriteEnabled: writesDepth, depthCompare: "always" }),
         } : undefined,
       });
@@ -808,6 +843,7 @@ export class BrowserHost implements SemanticHost {
     const pass = this.beginPass(target);
     pass.setPipeline(pipeline);
     pass.setViewport(0, 0, target.width, target.height, 0, 1);
+    if (stencilWriteMask) pass.setStencilReference(state.stencilClear & 0xff);
     this.applyScissor(pass, state, target);
     pass.setBindGroup(0, group);
     pass.draw(3);
@@ -818,6 +854,8 @@ export class BrowserHost implements SemanticHost {
   private present(): void {
     const target = this.defaultTarget;
     if (!target || !this.defaultDirty || !this.canvas.width || !this.canvas.height) return;
+    if (this.canvas.width !== this.surface.width || this.canvas.height !== this.surface.height
+      || target.width !== this.surface.width || target.height !== this.surface.height) return;
     this.endPass();
     if (!this.presentationPipeline) {
       const module = this.device.createShaderModule({ code: `
@@ -857,7 +895,7 @@ export class BrowserHost implements SemanticHost {
   prepareCanvasSource(): void {
     if (this.disposed || !this.canvas.width || !this.canvas.height) return;
     const target = this.resolveTarget({ color: null, depth: null, depthGeneration: 0,
-      width: this.canvas.width, height: this.canvas.height, isDefault: true });
+      width: this.surface.width, height: this.surface.height, isDefault: true });
     this.beginPass(target);
     this.defaultDirty = true;
     this.flush();

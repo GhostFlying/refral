@@ -137,6 +137,13 @@ export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCap
     method(name, 1, args => [toEnum(args[0])]);
   }
   method('depthMask', 1, args => [Boolean(args[0])]);
+  method('clearStencil', 1, args => [integer(args[0])]);
+  method('stencilMask', 1, args => [toEnum(args[0])]);
+  method('stencilMaskSeparate', 2, args => args.slice(0, 2).map(toEnum));
+  method('stencilFunc', 3, args => [toEnum(args[0]), integer(args[1]), toEnum(args[2])]);
+  method('stencilFuncSeparate', 4, args => [toEnum(args[0]), toEnum(args[1]), integer(args[2]), toEnum(args[3])]);
+  method('stencilOp', 3, args => args.slice(0, 3).map(toEnum));
+  method('stencilOpSeparate', 4, args => args.slice(0, 4).map(toEnum));
   method('colorMask', 4, args => args.slice(0, 4).map(Boolean));
   method('scissor', 4, args => args.slice(0, 4).map(integer));
   method('depthRange', 2, args => args.slice(0, 2).map(float));

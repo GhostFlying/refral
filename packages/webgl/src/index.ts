@@ -55,8 +55,7 @@ function unsupported(operation: string): never {
 export type WebGL1PrototypeContext = WebGLRenderingContext;
 
 function actualAttributes(requested: WebGLContextAttributes): WebGLContextAttributes {
-  if (requested.stencil) return unsupported("stencil context attribute");
-  return { ...defaults, alpha: requested.alpha ?? true, depth: requested.depth ?? true };
+  return { ...defaults, alpha: requested.alpha ?? true, depth: requested.depth ?? true, stencil: requested.stencil ?? false };
 }
 
 function wrapContext(canvas: HTMLCanvasElement, host: BrowserHost,
@@ -111,8 +110,8 @@ function wrapContext(canvas: HTMLCanvasElement, host: BrowserHost,
   };
   const surface = Object.setPrototypeOf({
     get canvas() { return canvas; },
-    get drawingBufferWidth() { return core.isContextLost() ? 0 : canvas.width; },
-    get drawingBufferHeight() { return core.isContextLost() ? 0 : canvas.height; },
+    get drawingBufferWidth() { return core.isContextLost() ? 0 : host.surface.width; },
+    get drawingBufferHeight() { return core.isContextLost() ? 0 : host.surface.height; },
     get drawingBufferColorSpace() { return 'srgb'; },
   }, constants);
   const proxy = new Proxy(surface, {
@@ -152,14 +151,14 @@ export async function createWebGLOnWebGPU(canvas: HTMLCanvasElement,
   if (kind !== 'js' && kind !== 'rust') return unsupported('core selection');
   const attributes = actualAttributes({ ...options, ...options.contextAttributes, ...options.attributes });
   const compiler = options.compiler ?? await createCompiler(options.compilerBaseURL);
-  const host = await BrowserHost.create(canvas, { alpha: attributes.alpha!, depth: attributes.depth! });
+  const host = await BrowserHost.create(canvas, { alpha: attributes.alpha!, depth: attributes.depth!, stencil: attributes.stencil });
   const registry = createCompilerRegistry(compiler);
   const contextId = allocateContextId();
   const resources = new ExecutionResources(contextId, host);
   try {
     const coreOptions = {
       contextId, maxBufferBytes: host.limits.maxBufferSize,
-      surface: canvas, attributes, profile: COMPILER_LIMITS,
+      surface: host.surface, attributes, profile: COMPILER_LIMITS,
     };
     const services = { compiler: registry, host, resources };
     const core = kind === 'rust'
@@ -198,13 +197,13 @@ export async function prepareContextFactory(
   const contexts = new Set<WebGL1PrototypeContext>();
   const factory: PreparedContextFactory = (canvas, requested = {}) => {
     const attributes = actualAttributes(requested);
-    const host = makeHost(canvas, { alpha: attributes.alpha!, depth: attributes.depth! });
+    const host = makeHost(canvas, { alpha: attributes.alpha!, depth: attributes.depth!, stencil: attributes.stencil });
     const registry = createCompilerRegistry(compiler);
     const contextId = allocateContextId();
     const resources = new ExecutionResources(contextId, host);
     const coreOptions = {
       contextId, maxBufferBytes: host.limits.maxBufferSize,
-      surface: canvas, attributes, profile: COMPILER_LIMITS,
+      surface: host.surface, attributes, profile: COMPILER_LIMITS,
     };
     const services = { compiler: registry, host, resources };
     try {

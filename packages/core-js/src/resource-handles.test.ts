@@ -158,7 +158,7 @@ describe("JS typed execution resources", () => {
     core.invoke("framebufferRenderbuffer", [GL.FRAMEBUFFER, GL.DEPTH_ATTACHMENT, GL.RENDERBUFFER, null]);
     expect(host.retireStorage).toHaveBeenCalledExactlyOnceWith(target.color);
     expect(host.retireDepth).toHaveBeenCalledExactlyOnceWith(target.depth!.id, 1);
-    expect(apply.mock.calls.slice(-2).map(([operation]) => operation.kind)).toEqual(["retire-texture", "retire-depth"]);
+    expect(apply.mock.calls.slice(-2).map(([operation]) => operation.kind)).toEqual(["retire-texture", "retire-renderbuffer"]);
     expect(() => resources.texture({ texture, storageGeneration: 1, contentVersion: 1 })).toThrow();
     core.invoke("deleteTexture", [texture]);
     core.invoke("deleteRenderbuffer", [depth]);

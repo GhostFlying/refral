@@ -66,13 +66,16 @@ export class RenderbufferObject extends LogicalObject {
   height = 0;
   generation = 0;
   format: number = GL.RGBA4;
+  colorStorage: TextureStorage | null = null;
 }
 
 export class FramebufferObject extends LogicalObject {
   initialized = false;
-  color: TextureObject | null = null;
+  color: TextureObject | RenderbufferObject | null = null;
   colorTarget: number = GL.TEXTURE_2D;
-  get colorImage(): TextureImage | undefined { return this.color?.image(this.colorTarget); }
+  get colorTexture(): TextureObject | null { return this.color instanceof TextureObject ? this.color : null; }
+  get colorRenderbuffer(): RenderbufferObject | null { return this.color instanceof RenderbufferObject ? this.color : null; }
+  get colorImage(): TextureImage | undefined { return this.colorTexture?.image(this.colorTarget); }
   depth: RenderbufferObject | null = null;
 }
 

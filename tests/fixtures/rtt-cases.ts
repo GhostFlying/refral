@@ -7,7 +7,7 @@ export const textureRttCases = ['texture-format-rgba', 'texture-format-rgb', 'te
   'texture-packed-565', 'texture-packed-4444', 'texture-packed-5551', 'texture-packed-cube',
   'texture-manual-mip-2d', 'texture-manual-mip-cube', 'texture-generate-mip-from-fbo',
   'texture-updates-reallocation', 'texture-npot-completeness', 'texture-sampler-units', 'texture-invalid-state'] as const;
-export const framebufferRttCases = ['fbo-depth-render-sample', 'fbo-cube-face-render-sample', 'fbo-attachment-resize',
+export const framebufferRttCases = ['fbo-depth-render-sample', 'fbo-cube-face-render-sample', 'fbo-color-renderbuffer-copy', 'fbo-attachment-resize',
   'fbo-deletion-bound-unbound', 'fbo-feedback-loop', 'raster-masks-depth-blend-cull',
   'resources-multiple-contexts', 'canvas-resize-present'] as const;
 export const rttCaseNames = [...uniformRttCases, ...textureRttCases, ...framebufferRttCases] as const;
@@ -560,6 +560,98 @@ gl_FragColor=vec4(u_i[0].x==16777217?1.:0.,u_i[1].w==(-2147483647-1)&&u_b[1].z&&
       draw(48, 1);
       band(0, 16, [255, 0, 0, 255]); band(16, 16, [0, 255, 0, 255]);
       band(32, 16, [0, 0, 255, 255]); band(48, 16, [255, 0, 0, 255]);
+      break;
+    }
+    case 'fbo-color-renderbuffer-copy': {
+      const fbo = gl.createFramebuffer()!;
+      const renderbuffer = gl.createRenderbuffer()!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, renderbuffer);
+      check('undefined renderbuffer attachment is incomplete', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGB565, 2, 2);
+      check('RGB565 color renderbuffer is complete', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_COMPLETE);
+      check('attachment reports its wrapper', gl.getFramebufferAttachmentParameter(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+        gl.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME) === renderbuffer, true);
+      check('attachment reports renderbuffer type', gl.getFramebufferAttachmentParameter(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+        gl.FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE), gl.RENDERBUFFER);
+      check('RGB565 has sufficient green bits', gl.getRenderbufferParameter(gl.RENDERBUFFER, gl.RENDERBUFFER_GREEN_SIZE) >= 6, true);
+      check('RGB565 has no alpha bits', gl.getParameter(gl.ALPHA_BITS), 0);
+      const pixel = new Uint8Array(4);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      check('new RGB storage is initialized with implicit alpha', Array.from(pixel), [0, 0, 0, 255]);
+      const depth = gl.createRenderbuffer()!;
+      gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, 2, 2);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
+      gl.bindRenderbuffer(gl.RENDERBUFFER, renderbuffer);
+      check('color and depth renderbuffers form a complete target', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_COMPLETE);
+
+      gl.viewport(0, 0, 2, 2);
+      drawColor([1, 0, 0, 0]);
+      gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 1, 2, 1);
+      drawColor([0, 1, 0, 0]);
+      gl.disable(gl.SCISSOR_TEST);
+      const rgb = rttTexture(gl, 2, 2, null, gl.RGB);
+      error('RGB source cannot define RGBA texture', () => gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, 2, 2, 0),
+        gl.INVALID_OPERATION);
+      gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGB, -1, -1, 2, 2, 0);
+      const drawBand = (x: number, texture: WebGLTexture) => {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(x, 0, 16, 64);
+        sample(texture);
+      };
+      const black = [0, 0, 0, 255]; const red = [255, 0, 0, 255]; const blue = [0, 0, 255, 255];
+      drawBand(0, rgb);
+      band(0, 16, black); region(8, 32, 8, 32, red);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.clearColor(0, 0, 1, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, -1, 1, 2, 1);
+      drawBand(16, rgb);
+      band(16, 16, black); region(24, 0, 8, 32, blue); region(24, 32, 8, 32, red);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA4, 2, 2);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      check('reallocated RGBA4 storage starts transparent', Array.from(pixel), [0, 0, 0, 0]);
+      const rgba = rttTexture(gl, 2, 2, null);
+      gl.clearColor(0, 1, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, 2, 2);
+      drawBand(32, rgba);
+      band(32, 16, [0, 255, 0, 255]);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGB5_A1, 4, 4);
+      check('attached renderbuffer resize follows new storage', gl.getRenderbufferParameter(gl.RENDERBUFFER, gl.RENDERBUFFER_WIDTH), 4);
+      error('copy from mismatched attachments rejects incomplete source',
+        () => gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, 4, 4, 0), gl.INVALID_FRAMEBUFFER_OPERATION);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, null);
+      gl.clearColor(1, 1, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteRenderbuffer(renderbuffer);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      check('unbound renderbuffer deletion retains attachment', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_COMPLETE);
+      gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, 4, 4, 0);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rgba, 0);
+      error('copy to the attached image rejects feedback', () => gl.copyTexSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 0, 0, 1, 1),
+        gl.INVALID_OPERATION);
+      const cube = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_CUBE_MAP, cube);
+      const face = gl.TEXTURE_CUBE_MAP_POSITIVE_X;
+      for (let index = 0; index < 6; index++) {
+        gl.texImage2D(face + index, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      }
+      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.copyTexImage2D(face, 0, gl.RGBA, 0, 0, 1, 1, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(48, 0, 16, 64);
+      const cubeProgram = program('precision mediump float; uniform samplerCube u_cube; void main(){gl_FragColor=textureCube(u_cube,vec3(1,0,0));}');
+      gl.uniform1i(gl.getUniformLocation(cubeProgram, 'u_cube'), 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      band(48, 16, [255, 255, 0, 255]);
       break;
     }
     case 'fbo-attachment-resize': {

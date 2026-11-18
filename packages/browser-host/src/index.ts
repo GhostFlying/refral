@@ -1,7 +1,7 @@
 import { GL, componentCount, vertexComponentBytes } from "@refral/core-api";
 import { CanvasReadback } from './canvas-readback.js';
 import type {
-  AttributeSnapshot, RasterState, TargetSnapshot, TextureParameters, TextureStorage,
+  AttributeSnapshot, RasterState, TargetSnapshot, TextureCopy, TextureParameters, TextureStorage,
   LinkedProgram, DrawOperation, SemanticHost, DomTextureUploadPlan, TextureVersion,
 } from "@refral/core-api";
 
@@ -123,6 +123,7 @@ export class BrowserHost implements SemanticHost {
   private retiredTextures = new Set<GPUTexture>();
   private driverGroups = new WeakMap<LinkedProgram, Map<string, GPUBindGroup>>();
   private mipPipeline: GPURenderPipeline | null = null;
+  private textureCopyPipeline: GPURenderPipeline | null = null;
   private presentationPipeline: GPURenderPipeline | null = null;
   private blackTexture: GPUTexture | null = null;
   private blackCubeTexture: GPUTexture | null = null;
@@ -253,7 +254,80 @@ export class BrowserHost implements SemanticHost {
       const update = storage.update;
       this.uploadTexture(texture, update.data, update.width, update.height, update.x, update.y);
     }
+    if (storage.copy && storage.width && storage.height) {
+      this.copyFramebufferTexture(storage.copy, texture, !!storage.parent);
+    }
     return texture;
+  }
+
+  private copyFramebufferTexture(copy: TextureCopy, destination: GPUTexture, preserve: boolean): void {
+    const sourceX = Math.max(0, copy.sourceX);
+    const sourceY = Math.max(0, copy.sourceY);
+    const width = Math.min(copy.source.width, copy.sourceX + copy.width) - sourceX;
+    const height = Math.min(copy.source.height, copy.sourceY + copy.height) - sourceY;
+    const intersects = width > 0 && height > 0;
+    const opaque = copy.format === GL.RGB || copy.format === GL.LUMINANCE;
+    if (preserve && !intersects) return;
+    const source = intersects ? this.resolveTarget(copy.source) : null;
+    if (source && !this.initialized.has(source.color)) this.beginPass({ ...source, depth: null });
+    this.endPass();
+    const pass = this.getEncoder().beginRenderPass({ colorAttachments: [{
+      view: destination.createView(), loadOp: preserve ? 'load' : 'clear', storeOp: 'store',
+      clearValue: { r: 0, g: 0, b: 0, a: opaque ? 1 : 0 },
+    }] });
+    if (source) {
+      const pipeline = this.framebufferCopyPipeline();
+      const x = copy.x + sourceX - copy.sourceX;
+      const y = copy.y + sourceY - copy.sourceY;
+      const parameters = new Int32Array([sourceX - x, sourceY - y, copy.format, copy.type]);
+      const buffer = this.createBuffer(new Uint8Array(parameters.buffer), GPUBufferUsage.UNIFORM, true);
+      const group = this.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [
+        { binding: 0, resource: source.color.createView() }, { binding: 1, resource: { buffer } },
+      ] });
+      pass.setPipeline(pipeline);
+      pass.setScissorRect(x, y, width, height);
+      pass.setBindGroup(0, group);
+      pass.draw(3);
+      this.stats.bindGroups++;
+      this.stats.copies++;
+    }
+    pass.end();
+    this.stats.passes++;
+    this.initialized.add(destination);
+  }
+
+  private framebufferCopyPipeline(): GPURenderPipeline {
+    if (this.textureCopyPipeline) return this.textureCopyPipeline;
+    const module = this.device.createShaderModule({ code: `
+      @group(0) @binding(0) var source: texture_2d<f32>;
+      @group(0) @binding(1) var<uniform> parameters: vec4i;
+      @vertex fn vertex(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+        let points = array<vec2f, 3>(vec2f(-1,-1), vec2f(3,-1), vec2f(-1,3));
+        return vec4f(points[index], 0, 1);
+      }
+      @fragment fn fragment(@builtin(position) position: vec4f) -> @location(0) vec4f {
+        let pixel = textureLoad(source, vec2i(position.xy) + parameters.xy, 0);
+        var color = pixel;
+        switch parameters.z {
+          case ${GL.RGB}: { color = vec4f(pixel.rgb, 1); }
+          case ${GL.ALPHA}: { color = vec4f(0, 0, 0, pixel.a); }
+          case ${GL.LUMINANCE}: { color = vec4f(pixel.rrr, 1); }
+          case ${GL.LUMINANCE_ALPHA}: { color = vec4f(pixel.rrr, pixel.a); }
+          default: {}
+        }
+        switch parameters.w {
+          case ${GL.UNSIGNED_SHORT_5_6_5}: { let scale = vec4f(31, 63, 31, 1); return round(color * scale) / scale; }
+          case ${GL.UNSIGNED_SHORT_4_4_4_4}: { return round(color * 15) / 15; }
+          case ${GL.UNSIGNED_SHORT_5_5_5_1}: { let scale = vec4f(31, 31, 31, 1); return round(color * scale) / scale; }
+          default: { return color; }
+        }
+      }` });
+    this.textureCopyPipeline = this.device.createRenderPipeline({ layout: 'auto',
+      vertex: { module, entryPoint: 'vertex' }, fragment: { module, entryPoint: 'fragment', targets: [{ format: 'rgba8unorm' }] },
+      primitive: { topology: 'triangle-list' },
+    });
+    this.stats.pipelines++;
+    return this.textureCopyPipeline;
   }
 
   private downsampleTexture(source: GPUTexture, destination: GPUTexture): void {
@@ -359,7 +433,7 @@ export class BrowserHost implements SemanticHost {
     }
     let target = this.targetCache.get(color);
     if (!target || target.depth !== depth) {
-      target = { color, depth, width: snapshot.width, height: snapshot.height, opaque: false };
+      target = { color, depth, width: snapshot.width, height: snapshot.height, opaque: !!snapshot.color!.opaque };
       this.targetCache.set(color, target);
     }
     return target;
@@ -397,12 +471,13 @@ export class BrowserHost implements SemanticHost {
       this.materializeTexture(next);
       delete next.mipSource;
     }
-    if (next.parent) {
+    if (next.parent || next.copy) {
       this.materializeTexture(next);
       // The new GPU image now owns the content dependency through the encoded copy.
       // Drop the CPU history so repeated sub-image uploads have bounded metadata.
       delete next.parent;
       delete next.update;
+      delete next.copy;
     }
     if (previous) this.retireStorage(previous);
   }

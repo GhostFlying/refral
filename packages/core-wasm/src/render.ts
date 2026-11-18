@@ -246,13 +246,13 @@ export function createRustDrawingCoreFromModule(
     required.some((name) => typeof exports[name] !== 'function')
   ) {
     throw new Error(
-      'Rust drawing module requires ABI4/resource5/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
+      'Rust drawing module requires ABI4/resource6/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
     );
   }
   const abi = exports as unknown as ABI;
   if (abi.rf_abi_version() !== 4)
     throw new Error('Rust drawing ABI version mismatch; expected 4. Rebuild with pnpm rust:build.');
-  if (abi.rf_resource_protocol_version() !== 5)
+  if (abi.rf_resource_protocol_version() !== 6)
     throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_readback_protocol_version() !== 1)
     throw new Error('Rust readback protocol mismatch. Rebuild with pnpm rust:build.');
@@ -390,7 +390,7 @@ export function createRustDrawingCoreFromModule(
           slot: reader.u32(),
           generation: reader.u32(),
         };
-        services.resources.apply({ kind: 'retire-depth', renderbuffer, storageGeneration: reader.u64() });
+        services.resources.apply({ kind: 'retire-renderbuffer', renderbuffer, storageGeneration: reader.u64() });
         continue;
       }
       const version = textureVersion(reader);
@@ -417,6 +417,15 @@ export function createRustDrawingCoreFromModule(
       } else if (kind === 6) {
         services.resources.apply({ kind: 'generate-texture-mip', version, source: textureVersion(reader),
           width: reader.u32(), height: reader.u32() });
+      } else if (kind === 7) {
+        const previous = reader.u32() ? textureVersion(reader) : null;
+        const width = reader.u32();
+        const height = reader.u32();
+        const source = readTarget(reader);
+        services.resources.apply({ kind: 'copy-texture', version, previous, width, height, copy: {
+          source, sourceX: reader.i32(), sourceY: reader.i32(), x: reader.u32(), y: reader.u32(),
+          width: reader.u32(), height: reader.u32(), format: reader.u32(), type: reader.u32(),
+        } });
       } else if (kind === 3) {
         services.resources.apply({ kind: 'write-texture', version, previous: textureVersion(reader) });
       } else if (kind === 4) {
@@ -460,7 +469,16 @@ export function createRustDrawingCoreFromModule(
     const width = reader.u32();
     const height = reader.u32();
     const isDefault = reader.u32() !== 0;
-    const color = reader.u32() ? services.resources.texture(textureVersion(reader)) : null;
+    const colorKind = reader.u32();
+    if (colorKind > 2 || (isDefault ? colorKind !== 0 : colorKind === 0)) {
+      throw new Error('Invalid Rust framebuffer color attachment.');
+    }
+    let color: TargetSnapshot['color'] = null;
+    if (colorKind === 1) color = services.resources.texture(textureVersion(reader));
+    else if (colorKind === 2) {
+      const handle = { kind: 'renderbuffer' as const, contextId: reader.u32(), slot: reader.u32(), generation: reader.u32() };
+      color = services.resources.colorRenderbuffer(handle, reader.u64(), width, height, reader.u32());
+    }
     let depth: TargetSnapshot['depth'] = null;
     let depthGeneration = 0;
     if (reader.u32()) {

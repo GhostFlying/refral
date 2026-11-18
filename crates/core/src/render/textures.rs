@@ -86,6 +86,19 @@ pub enum TextureImages {
         images: Vec<TextureVersion>,
     },
 }
+
+pub struct TextureCopy {
+    pub source: TargetSnapshot,
+    pub source_x: i32,
+    pub source_y: i32,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    pub format: u32,
+    pub ty: u32,
+}
+
 pub enum ResourceOperation {
     DefineTexture {
         version: TextureVersion,
@@ -108,6 +121,13 @@ pub enum ResourceOperation {
         width: u32,
         height: u32,
     },
+    CopyTexture {
+        version: TextureVersion,
+        previous: Option<TextureVersion>,
+        width: u32,
+        height: u32,
+        copy: TextureCopy,
+    },
     WriteTexture {
         version: TextureVersion,
         previous: TextureVersion,
@@ -115,7 +135,7 @@ pub enum ResourceOperation {
     RetireTexture {
         version: TextureVersion,
     },
-    RetireDepth {
+    RetireRenderbuffer {
         renderbuffer: ObjectHandle,
         storage_generation: u64,
     },
@@ -597,6 +617,9 @@ impl ContextCore {
             "generateMipmap" => return Some(self.generate_mipmap(arg(0).number() as u32)),
             "texImage2D" => return Some(self.define_texture(args)),
             "texSubImage2D" => return Some(self.update_texture(args)),
+            "copyTexImage2D" | "copyTexSubImage2D" => {
+                return Some(self.copy_framebuffer_texture(args, operation == "copyTexSubImage2D"));
+            }
             "prepareDomTextureUpload" => return Some(self.prepare_dom_texture_upload(args)),
             _ => return None,
         }
@@ -699,7 +722,11 @@ impl ContextCore {
         }
         Some((index, image))
     }
-    fn validate_texture_update(&mut self, args: &[Argument]) -> Option<(usize, usize)> {
+    fn validate_texture_update(
+        &mut self,
+        args: &[Argument],
+        upload: bool,
+    ) -> Option<(usize, usize)> {
         let number = |index: usize| args[index].number();
         let (index, image) = self.bound_texture_image(number(0) as u32)?;
         let level = number(1);
@@ -725,8 +752,6 @@ impl ContextCore {
         let y = number(3);
         let width = number(4);
         let height = number(5);
-        let format = number(6) as u32;
-        let ty = number(7) as u32;
         if !self.image_dimensions(level, width, height, 0.0)
             || x < 0.0
             || y < 0.0
@@ -736,12 +761,16 @@ impl ContextCore {
             self.record_error(INVALID_VALUE);
             return None;
         }
-        if !self.validate_texture_format(format, ty) {
-            return None;
-        }
-        if format != storage.format || ty != storage.ty {
-            self.record_error(INVALID_OPERATION);
-            return None;
+        if upload {
+            let format = number(6) as u32;
+            let ty = number(7) as u32;
+            if !self.validate_texture_format(format, ty) {
+                return None;
+            }
+            if format != storage.format || ty != storage.ty {
+                self.record_error(INVALID_OPERATION);
+                return None;
+            }
         }
         if image_state.content_version == MAX_SAFE_VERSION {
             self.record_error(OUT_OF_MEMORY);
@@ -789,7 +818,7 @@ impl ContextCore {
             ]
         };
         let validated = if sub_image {
-            self.validate_texture_update(&parameters)
+            self.validate_texture_update(&parameters, true)
         } else {
             self.validate_texture_definition(&parameters)
         };
@@ -1046,7 +1075,7 @@ impl ContextCore {
         if dom && !self.validate_dom_source(args[4].number(), args[5].number(), true) {
             return Reply::Null;
         }
-        let Some((index, image)) = self.validate_texture_update(args) else {
+        let Some((index, image)) = self.validate_texture_update(args, true) else {
             return Reply::Null;
         };
         let number = |index: usize| args[index].number();
@@ -1090,6 +1119,123 @@ impl ContextCore {
             });
         Reply::Null
     }
+    fn copy_framebuffer_texture(&mut self, args: &[Argument], subimage: bool) -> Reply {
+        if args.len() != 8 {
+            self.record_error(INVALID_VALUE);
+            return Reply::Null;
+        }
+        let number = |index: usize| args[index].number();
+        let (texture_target, level) = (number(0), number(1));
+        let (source_x, source_y, width, height) = if subimage {
+            (number(4), number(5), number(6), number(7))
+        } else {
+            (number(3), number(4), number(5), number(6))
+        };
+        let sub_format = number(2);
+        let (x, y, index, face) = if subimage {
+            let (x, y) = (number(2), number(3));
+            let parameters = [texture_target, level, x, y, width, height].map(Argument::Number);
+            let Some((index, face)) = self.validate_texture_update(&parameters, false) else {
+                return Reply::Null;
+            };
+            (x as u32, y as u32, index, face)
+        } else {
+            let parameters = [
+                texture_target,
+                level,
+                sub_format,
+                width,
+                height,
+                number(7),
+                sub_format,
+                UNSIGNED_BYTE as f64,
+            ]
+            .map(Argument::Number);
+            let Some((index, face)) = self.validate_texture_definition(&parameters) else {
+                return Reply::Null;
+            };
+            (0, 0, index, face)
+        };
+        let level = level as usize;
+        let (width, height) = (width as u32, height as u32);
+        let old_storage = self.render.textures.slots[index]
+            .value
+            .as_ref()
+            .unwrap()
+            .image(face, level)
+            .and_then(|image| image.storage);
+        let storage = if subimage {
+            old_storage.unwrap()
+        } else {
+            TextureStorage {
+                width,
+                height,
+                format: sub_format as u32,
+                ty: UNSIGNED_BYTE,
+            }
+        };
+        let Some(source) = self.target_snapshot(true) else {
+            return Reply::Null;
+        };
+        if (!self.source_has_alpha(&source) && !matches!(storage.format, RGB | LUMINANCE))
+            || source.color.is_some_and(|image| {
+                image.texture.slot as usize == index + 1
+                    && image.image_target == image_target(face)
+                    && image.level as usize == level
+            })
+        {
+            self.record_error(INVALID_OPERATION);
+            return Reply::Null;
+        }
+        if subimage
+            && (width == 0
+                || height == 0
+                || source_x >= source.width as f64
+                || source_y >= source.height as f64
+                || source_x + width as f64 <= 0.0
+                || source_y + height as f64 <= 0.0)
+        {
+            return Reply::Null;
+        }
+        if !self.reserve_texture_operation() {
+            return Reply::Null;
+        }
+        let previous = subimage.then(|| self.texture_image_version(index, face, level));
+        let texture = self.render.textures.slots[index].value.as_mut().unwrap();
+        if !texture.ensure_level(level) {
+            self.record_error(OUT_OF_MEMORY);
+            return Reply::Null;
+        }
+        let image = texture.image_mut(face, level);
+        if !subimage {
+            image.storage_generation += 1;
+        }
+        image.content_version += 1;
+        image.storage = Some(storage);
+        let version = self.texture_image_version(index, face, level);
+        self.render
+            .textures
+            .before
+            .push(ResourceOperation::CopyTexture {
+                version,
+                previous,
+                width: storage.width,
+                height: storage.height,
+                copy: TextureCopy {
+                    source,
+                    source_x: source_x as i32,
+                    source_y: source_y as i32,
+                    x,
+                    y,
+                    width,
+                    height,
+                    format: storage.format,
+                    ty: storage.ty,
+                },
+            });
+        Reply::Null
+    }
+
     fn generate_mipmap(&mut self, target: u32) -> Reply {
         let Some(index) = self.bound_texture(target) else {
             return Reply::Null;

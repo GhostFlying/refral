@@ -56,7 +56,9 @@ Task 043 accepts explicit texture mip levels for Texture2D and CubeMap. The orig
 
 Task 044 accepts ordered 2D/CubeMap mipmap generation. The original texture-mips and cube upload-order files pass, and the shared same-task FBO write/generate/downsample scene verifies exact pixels. [Mip generation results](tasks/044-generate-mipmap.md)
 
-Task 045 covers level-zero RGBA CubeMap framebuffer attachments through both cores. The next framebuffer dependency is color renderbuffer storage and attachment, followed by ordered copyTexImage2D and copyTexSubImage2D. Both are exercised by the original tex-input-validation file. [Cube face framebuffer task](tasks/045-cubemap-framebuffer-attachments.md)
+Task 045 covers level-zero RGBA CubeMap framebuffer attachments through both cores. [Cube face framebuffer task](tasks/045-cubemap-framebuffer-attachments.md)
+
+Task 046 covers color renderbuffers and ordered framebuffer-to-texture copies through both cores. The original tex-input-validation and copy pixel cases pass through all three backends. The broader framebuffer attachment file depends on stencil and packed depth-stencil renderbuffers. [Color renderbuffer and copy results](tasks/046-color-renderbuffers-and-texture-copy.md)
 
 The completed milestones and subsequent compatibility dependencies follow.
 

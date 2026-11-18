@@ -10,6 +10,8 @@ const FRAMEBUFFER_BINDING: u32 = 0x8ca6;
 const RENDERBUFFER_BINDING: u32 = 0x8ca7;
 const COLOR_ATTACHMENT0: u32 = 0x8ce0;
 const DEPTH_ATTACHMENT: u32 = 0x8d00;
+const STENCIL_ATTACHMENT: u32 = 0x8d20;
+const DEPTH_STENCIL_ATTACHMENT: u32 = 0x821a;
 const TEXTURE_2D: u32 = 0x0de1;
 const TEXTURE: u32 = 0x1702;
 const RGBA: u32 = 0x1908;
@@ -18,6 +20,8 @@ const RGBA4: u32 = 0x8056;
 const RGB5_A1: u32 = 0x8057;
 const RGB565: u32 = 0x8d62;
 const DEPTH_COMPONENT16: u32 = 0x81a5;
+const STENCIL_INDEX8: u32 = 0x8d48;
+const DEPTH_STENCIL: u32 = 0x84f9;
 const COMPLETE: u32 = 0x8cd5;
 const INCOMPLETE_ATTACHMENT: u32 = 0x8cd6;
 const MISSING_ATTACHMENT: u32 = 0x8cd7;
@@ -28,6 +32,7 @@ const UNSUPPORTED: u32 = 0x8cdd;
 pub struct DepthAttachment {
     pub renderbuffer: ObjectHandle,
     pub storage_generation: u64,
+    pub format: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,6 +58,32 @@ struct Framebuffer {
     color: Option<ObjectHandle>,
     color_face: usize,
     depth: Option<ObjectHandle>,
+    stencil: Option<ObjectHandle>,
+    depth_stencil: Option<ObjectHandle>,
+}
+
+impl Framebuffer {
+    fn attachment(&self, point: u32) -> Option<ObjectHandle> {
+        match point {
+            COLOR_ATTACHMENT0 => self.color,
+            DEPTH_ATTACHMENT => self.depth,
+            STENCIL_ATTACHMENT => self.stencil,
+            DEPTH_STENCIL_ATTACHMENT => self.depth_stencil,
+            _ => None,
+        }
+    }
+
+    fn attachments(&self) -> [Option<ObjectHandle>; 4] {
+        [self.color, self.depth, self.stencil, self.depth_stencil]
+    }
+
+    fn auxiliary(&self) -> [(Option<ObjectHandle>, u32); 3] {
+        [
+            (self.depth, DEPTH_COMPONENT16),
+            (self.stencil, STENCIL_INDEX8),
+            (self.depth_stencil, DEPTH_STENCIL),
+        ]
+    }
 }
 
 struct Renderbuffer {
@@ -346,7 +377,7 @@ impl ContextCore {
             .value
             .as_ref()
             .unwrap();
-        if framebuffer.color.is_none() && framebuffer.depth.is_none() {
+        if framebuffer.attachments().iter().all(Option::is_none) {
             return MISSING_ATTACHMENT;
         }
         let color = if let Some(handle) = framebuffer
@@ -386,29 +417,23 @@ impl ContextCore {
         } else {
             None
         };
-        if let Some(handle) = framebuffer.depth {
-            let Some(index) = slot_index(
-                &self.render.framebuffers.renderbuffers,
-                handle,
-                ObjectKind::Renderbuffer,
-                self.context_id,
-            ) else {
+        let mut auxiliary = None;
+        for (handle, format) in framebuffer.auxiliary() {
+            let Some(handle) = handle else {
+                continue;
+            };
+            let Some(storage) = self.renderbuffer_value(handle) else {
                 return INCOMPLETE_ATTACHMENT;
             };
-            let depth = self.render.framebuffers.renderbuffers[index]
-                .value
-                .as_ref()
-                .unwrap();
-            if depth.width == 0
-                || depth.height == 0
-                || depth.storage_generation == 0
-                || depth.format != DEPTH_COMPONENT16
-            {
+            if storage.width == 0 || storage.height == 0 || storage.format != format {
                 return INCOMPLETE_ATTACHMENT;
             }
-            if color
-                .is_some_and(|(width, height, _)| width != depth.width || height != depth.height)
-            {
+            if auxiliary.replace(storage).is_some() {
+                return UNSUPPORTED;
+            }
+        }
+        if let (Some((width, height, _)), Some(storage)) = (color, auxiliary) {
+            if width != storage.width || height != storage.height {
                 return INCOMPLETE_DIMENSIONS;
             }
         }
@@ -478,21 +503,18 @@ impl ContextCore {
                     None,
                 )
             };
-        let depth = framebuffer.depth.and_then(|handle| {
-            let index = slot_index(
-                &self.render.framebuffers.renderbuffers,
-                handle,
-                ObjectKind::Renderbuffer,
-                self.context_id,
-            )?;
-            Some(DepthAttachment {
-                renderbuffer: handle,
-                storage_generation: self.render.framebuffers.renderbuffers[index]
-                    .value
-                    .as_ref()?
-                    .storage_generation,
-            })
-        });
+        let depth = framebuffer
+            .auxiliary()
+            .into_iter()
+            .find_map(|(handle, _)| handle)
+            .and_then(|handle| {
+                let storage = self.renderbuffer_value(handle)?;
+                Some(DepthAttachment {
+                    renderbuffer: handle,
+                    storage_generation: storage.storage_generation,
+                    format: storage.format,
+                })
+            });
         Some(TargetSnapshot {
             width,
             height,
@@ -617,29 +639,21 @@ impl ContextCore {
             .value
             .as_ref()
             .unwrap();
-        if parameter == 0x0d56 {
-            let depth = framebuffer.depth.and_then(|handle| {
-                let index = slot_index(
-                    &self.render.framebuffers.renderbuffers,
-                    handle,
-                    ObjectKind::Renderbuffer,
-                    self.context_id,
-                )?;
-                self.render.framebuffers.renderbuffers[index].value.as_ref()
-            });
-            return if depth.is_some_and(|depth| {
-                depth.storage_generation > 0
-                    && depth.width > 0
-                    && depth.height > 0
-                    && depth.format == DEPTH_COMPONENT16
-            }) {
-                24
+        if matches!(parameter, 0x0d56 | 0x0d57) {
+            let (handle, format, bits) = if parameter == 0x0d56 {
+                (framebuffer.depth, DEPTH_COMPONENT16, 24)
             } else {
-                0
+                (framebuffer.stencil, STENCIL_INDEX8, 8)
             };
-        }
-        if parameter == 0x0d57 {
-            return 0;
+            return handle
+                .or(framebuffer.depth_stencil)
+                .and_then(|handle| self.renderbuffer_value(handle))
+                .filter(|value| {
+                    value.width > 0
+                        && value.height > 0
+                        && (value.format == DEPTH_STENCIL || value.format == format)
+                })
+                .map_or(0, |_| bits);
         }
         if let Some(handle) = framebuffer
             .color
@@ -816,12 +830,11 @@ impl ContextCore {
                     return Some(Reply::Null);
                 }
                 let format = arg(1).number() as u32;
-                if !is_color_format(format) && !matches!(format, DEPTH_COMPONENT16 | 0x8d48) {
+                if !is_color_format(format)
+                    && !matches!(format, DEPTH_COMPONENT16 | STENCIL_INDEX8 | DEPTH_STENCIL)
+                {
                     self.record_error(INVALID_ENUM);
                     return Some(Reply::Null);
-                }
-                if format == 0x8d48 {
-                    return Some(Reply::Unsupported("stencil renderbuffer storage"));
                 }
                 let generation = self.render.framebuffers.renderbuffers[index]
                     .value
@@ -874,9 +887,19 @@ impl ContextCore {
                     0x8d43 => value.height,
                     0x8d44 => value.format,
                     0x8d50..=0x8d53 => value.color_component_bits(arg(1).number() as u32 == 0x8d53),
-                    0x8d55 => 0,
+                    0x8d55 => {
+                        if value.storage_generation > 0
+                            && matches!(value.format, STENCIL_INDEX8 | DEPTH_STENCIL)
+                        {
+                            8
+                        } else {
+                            0
+                        }
+                    }
                     0x8d54 => {
-                        if value.storage_generation > 0 && value.format == DEPTH_COMPONENT16 {
+                        if value.storage_generation > 0
+                            && matches!(value.format, DEPTH_COMPONENT16 | DEPTH_STENCIL)
+                        {
                             24
                         } else {
                             0
@@ -959,7 +982,12 @@ impl ContextCore {
         };
         let textarget = arg(2).number() as u32;
         let cube_face = texture_attachment && (0x8515..=0x851a).contains(&textarget);
-        if !(color_attachment || !texture_attachment && attachment == DEPTH_ATTACHMENT)
+        if !(color_attachment
+            || !texture_attachment
+                && matches!(
+                    attachment,
+                    DEPTH_ATTACHMENT | STENCIL_ATTACHMENT | DEPTH_STENCIL_ATTACHMENT
+                ))
             || textarget != resource_target && !cube_face
         {
             self.record_error(INVALID_ENUM);
@@ -994,11 +1022,7 @@ impl ContextCore {
             .value
             .as_ref()
             .unwrap();
-        let previous = if color_attachment {
-            framebuffer.color
-        } else {
-            framebuffer.depth
-        };
+        let previous = framebuffer.attachment(attachment);
         let color_face = if texture_attachment && handle.is_some() {
             textures::image_index(textarget).unwrap()
         } else {
@@ -1055,11 +1079,15 @@ impl ContextCore {
             .value
             .as_mut()
             .unwrap();
-        if color_attachment {
-            framebuffer.color = handle;
-            framebuffer.color_face = color_face;
-        } else {
-            framebuffer.depth = handle;
+        match attachment {
+            COLOR_ATTACHMENT0 => {
+                framebuffer.color = handle;
+                framebuffer.color_face = color_face;
+            }
+            DEPTH_ATTACHMENT => framebuffer.depth = handle,
+            STENCIL_ATTACHMENT => framebuffer.stencil = handle,
+            DEPTH_STENCIL_ATTACHMENT => framebuffer.depth_stencil = handle,
+            _ => unreachable!(),
         }
         if let Some(previous) = previous {
             self.release_attachment(previous);
@@ -1070,7 +1098,10 @@ impl ContextCore {
     fn attachment_parameter(&mut self, args: &[Argument]) -> Reply {
         let arg = |index: usize| args.get(index).unwrap_or(&Argument::Null);
         let attachment = arg(1).number() as u32;
-        if attachment != COLOR_ATTACHMENT0 && attachment != DEPTH_ATTACHMENT {
+        if !matches!(
+            attachment,
+            COLOR_ATTACHMENT0 | DEPTH_ATTACHMENT | STENCIL_ATTACHMENT | DEPTH_STENCIL_ATTACHMENT
+        ) {
             self.record_error(INVALID_ENUM);
             return Reply::Null;
         }
@@ -1081,11 +1112,7 @@ impl ContextCore {
             .value
             .as_ref()
             .unwrap();
-        let object = if attachment == COLOR_ATTACHMENT0 {
-            framebuffer.color
-        } else {
-            framebuffer.depth
-        };
+        let object = framebuffer.attachment(attachment);
         let parameter = arg(2).number() as u32;
         if parameter == 0x8cd0 {
             return Reply::Number(if object.is_none() {
@@ -1158,18 +1185,15 @@ impl ContextCore {
                 .as_ref()
                 .unwrap()
                 .color;
-            if !self.reserve_framebuffer_operations(self.attachment_retirement_count(color) + 1) {
+            if !self.reserve_framebuffer_operations(self.attachment_retirement_count(color) + 3) {
                 return;
             }
             let value = self.render.framebuffers.slots[index].value.take().unwrap();
             if self.render.framebuffers.bound == Some(handle) {
                 self.render.framebuffers.bound = None;
             }
-            if let Some(color) = value.color {
-                self.release_attachment(color);
-            }
-            if let Some(depth) = value.depth {
-                self.release_renderbuffer_attachment(depth);
+            for attachment in value.attachments().into_iter().flatten() {
+                self.release_attachment(attachment);
             }
         } else {
             if self.render.framebuffers.renderbuffers[index]
@@ -1204,7 +1228,12 @@ impl ContextCore {
                     .as_mut()
                     .unwrap();
                 let mut detached = 0;
-                for point in [&mut framebuffer.color, &mut framebuffer.depth] {
+                for point in [
+                    &mut framebuffer.color,
+                    &mut framebuffer.depth,
+                    &mut framebuffer.stencil,
+                    &mut framebuffer.depth_stencil,
+                ] {
                     if *point == Some(handle) {
                         *point = None;
                         detached += 1;

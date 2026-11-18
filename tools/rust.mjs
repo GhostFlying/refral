@@ -45,8 +45,8 @@ if (operation === 'check') {
   const resourceProtocol = exports.rf_resource_protocol_version?.();
   const readbackProtocol = exports.rf_readback_protocol_version?.();
   const domUploadProtocol = exports.rf_dom_upload_protocol_version?.();
-  if (abi !== 4 || resourceProtocol !== 6 || readbackProtocol !== 1 || domUploadProtocol !== 2)
-    throw new Error('The formal Rust module requires ABI4/resource6/readback1/DOM upload2.');
+  if (abi !== 4 || resourceProtocol !== 7 || readbackProtocol !== 1 || domUploadProtocol !== 2)
+    throw new Error('The formal Rust module requires ABI4/resource7/readback1/DOM upload2.');
   await writeFile(resolve(dirname(output), 'build.json'), JSON.stringify({
     channel, target: 'wasm32-unknown-unknown', profile: 'release', bytes,
     sha256: createHash('sha256').update(binary).digest('hex'), abi, resourceProtocol, readbackProtocol, domUploadProtocol, imports,

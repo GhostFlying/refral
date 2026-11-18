@@ -1647,7 +1647,7 @@
             "artifacts/rtt/fbo-color-renderbuffer-copy/result.json"
           ],
           "limits": [
-            "A color renderbuffer can be paired with a DEPTH_COMPONENT16 attachment. Stencil and packed depth-stencil are separate capabilities."
+            "A color renderbuffer can be paired with a DEPTH_COMPONENT16 attachment. See framebuffer-stencil-attachments for stencil and packed depth-stencil targets."
           ],
           "unsupportedBehavior": "Empty storage or a non-color format in COLOR_ATTACHMENT0 returns FRAMEBUFFER_INCOMPLETE_ATTACHMENT. Stencil storage retains a profile diagnostic."
         },
@@ -1668,7 +1668,7 @@
             "artifacts/rtt/fbo-color-renderbuffer-copy/result.json"
           ],
           "limits": [
-            "A color renderbuffer can be paired with a DEPTH_COMPONENT16 attachment. Stencil and packed depth-stencil are separate capabilities."
+            "A color renderbuffer can be paired with a DEPTH_COMPONENT16 attachment. See framebuffer-stencil-attachments for stencil and packed depth-stencil targets."
           ],
           "unsupportedBehavior": "Empty storage or a non-color format in COLOR_ATTACHMENT0 returns FRAMEBUFFER_INCOMPLETE_ATTACHMENT. Stencil storage retains a profile diagnostic."
         }
@@ -1723,6 +1723,50 @@
             "The framebuffer copy format file conditionally skips the RGB texture attachment branch under this profile."
           ],
           "unsupportedBehavior": "Incompatible source channels or an exact-image feedback loop produces INVALID_OPERATION. An incomplete framebuffer produces INVALID_FRAMEBUFFER_OPERATION."
+        }
+      }
+    },
+    {
+      "id": "framebuffer-stencil-attachments",
+      "api": "renderbufferStorage STENCIL_INDEX8/DEPTH_STENCIL and framebufferRenderbuffer STENCIL_ATTACHMENT/DEPTH_STENCIL_ATTACHMENT",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Standalone stencil and packed depth-stencil storage, attachment and component queries, conflicts, dimensions, retained references and packed depth rendering.",
+          "tests": [
+            "sdk/tests/conformance/renderbuffers/framebuffer-object-attachment.html",
+            "tests/chrome/rtt.spec.ts::RTT fbo-stencil-attachments"
+          ],
+          "evidence": [
+            "artifacts/stencil-attachments/official-final",
+            "artifacts/rtt/fbo-stencil-attachments/result.json"
+          ],
+          "limits": [
+            "This entry covers framebuffer storage and attachment behavior. The raster operations and default stencil buffer are tracked by task 048."
+          ],
+          "unsupportedBehavior": "An invalid or undefined attachment image makes the attachment incomplete. Conflicting depth and stencil attachment points give FRAMEBUFFER_UNSUPPORTED."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome-macos-arm64"
+          ],
+          "coverage": "Standalone stencil and packed depth-stencil storage, attachment and component queries, conflicts, dimensions, retained references and packed depth rendering.",
+          "tests": [
+            "sdk/tests/conformance/renderbuffers/framebuffer-object-attachment.html",
+            "tests/chrome/rtt.spec.ts::RTT fbo-stencil-attachments"
+          ],
+          "evidence": [
+            "artifacts/stencil-attachments/official-final",
+            "artifacts/rtt/fbo-stencil-attachments/result.json"
+          ],
+          "limits": [
+            "This entry covers framebuffer storage and attachment behavior. The raster operations and default stencil buffer are tracked by task 048."
+          ],
+          "unsupportedBehavior": "An invalid or undefined attachment image makes the attachment incomplete. Conflicting depth and stencil attachment points give FRAMEBUFFER_UNSUPPORTED."
         }
       }
     },

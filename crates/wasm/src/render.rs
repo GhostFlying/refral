@@ -10,7 +10,7 @@ const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
 
 #[no_mangle]
 pub extern "C" fn rf_resource_protocol_version() -> u32 {
-    6
+    7
 }
 
 #[no_mangle]
@@ -746,7 +746,7 @@ mod tests {
 
     #[test]
     fn command_transport_preserves_utf16_and_owns_output() {
-        assert_eq!(rf_resource_protocol_version(), 6);
+        assert_eq!(rf_resource_protocol_version(), 7);
         assert_eq!(rf_readback_protocol_version(), 1);
         assert_eq!(rf_dom_upload_protocol_version(), 2);
         assert_eq!(rf_init(7, 4096.0), 1);

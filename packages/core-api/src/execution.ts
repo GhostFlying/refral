@@ -59,6 +59,7 @@ export interface TargetSnapshot {
   color: TextureStorage | null;
   depth: { readonly id: number } | null;
   depthGeneration: number;
+  depthFormat?: number;
   width: number;
   height: number;
   isDefault: boolean;

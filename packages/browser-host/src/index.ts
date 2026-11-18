@@ -194,7 +194,7 @@ export class BrowserHost implements SemanticHost {
   private createTexture(width: number, height: number, format: GPUTextureFormat, layers = 1, mipLevelCount = 1): GPUTexture {
     const texture = this.device.createTexture({
       size: { width: Math.max(1, width), height: Math.max(1, height), depthOrArrayLayers: layers }, format, mipLevelCount,
-      usage: format === "depth24plus" ? GPUTextureUsage.RENDER_ATTACHMENT : TEXTURE_USAGE,
+      usage: format === "rgba8unorm" ? TEXTURE_USAGE : GPUTextureUsage.RENDER_ATTACHMENT,
     });
     this.textures.add(texture);
     this.stats.allocatedTextureBytes += textureAllocationBytes(texture);
@@ -427,7 +427,9 @@ export class BrowserHost implements SemanticHost {
       const key = `${snapshot.depth.id}:${snapshot.depthGeneration}`;
       depth = this.depthCache.get(key) ?? null;
       if (!depth) {
-        depth = this.createTexture(snapshot.width, snapshot.height, "depth24plus");
+        const format = snapshot.depthFormat === GL.DEPTH_STENCIL ? "depth24plus-stencil8"
+          : snapshot.depthFormat === GL.STENCIL_INDEX8 ? "stencil8" : "depth24plus";
+        depth = this.createTexture(snapshot.width, snapshot.height, format);
         this.depthCache.set(key, depth);
       }
     }
@@ -448,9 +450,13 @@ export class BrowserHost implements SemanticHost {
         storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: target.opaque ? 1 : 0 } }],
     };
     if (target.depth) {
-      descriptor.depthStencilAttachment = { view: target.depth.createView(),
-        depthLoadOp: this.initialized.has(target.depth) ? "load" : "clear",
-        depthStoreOp: "store", depthClearValue: 1 };
+      const format = target.depth.format;
+      const loadOp = this.initialized.has(target.depth) ? "load" : "clear";
+      descriptor.depthStencilAttachment = {
+        view: target.depth.createView(),
+        ...(format !== "stencil8" ? { depthLoadOp: loadOp, depthStoreOp: "store", depthClearValue: 1 } as const : {}),
+        ...(format !== "depth24plus" ? { stencilLoadOp: loadOp, stencilStoreOp: "store", stencilClearValue: 0 } as const : {}),
+      };
       this.initialized.add(target.depth);
     }
     this.initialized.add(target.color);
@@ -622,6 +628,9 @@ export class BrowserHost implements SemanticHost {
 
   draw(operation: DrawOperation): void {
     const { program, state, indices } = operation;
+    const [x, y, width, height] = state.viewport;
+    if (!width || !height || x >= operation.target.width || y >= operation.target.height
+      || x + width <= 0 || y + height <= 0 || !operation.target.width || !operation.target.height) return;
     const strip = operation.mode === GL.TRIANGLE_STRIP;
     const topology = strip ? 'triangle-strip' : 'triangle-list';
     // WebGL1 index 65535 remains a vertex index. WebGPU uint16 strips reserve it for restart.
@@ -636,7 +645,7 @@ export class BrowserHost implements SemanticHost {
       return { arrayStride: components * 4,
         attributes: [{ shaderLocation: attribute.location, offset: 0, format }] };
     });
-    const key = JSON.stringify([topology, stripIndexFormat, layouts, !!target.depth, target.opaque, state.depthTest, state.depthMask,
+    const key = JSON.stringify([topology, stripIndexFormat, layouts, target.depth?.format, target.opaque, state.depthTest, state.depthMask,
       state.depthFunc, state.colorMask, state.blend, state.blendSrcRGB, state.blendDstRGB,
       state.blendSrcAlpha, state.blendDstAlpha, state.blendEquationRGB, state.blendEquationAlpha,
       state.cull, state.cullFace, state.frontFace]);
@@ -656,9 +665,11 @@ export class BrowserHost implements SemanticHost {
         primitive: { topology, stripIndexFormat,
           frontFace: state.frontFace === GL.CCW ? "cw" : "ccw",
           cullMode: !state.cull ? "none" : state.cullFace === GL.FRONT ? "front" : "back" },
-        depthStencil: target.depth ? { format: "depth24plus",
-          depthWriteEnabled: state.depthTest && state.depthMask,
-          depthCompare: state.depthTest ? compareFunction(state.depthFunc) : "always" } : undefined,
+        depthStencil: target.depth ? { format: target.depth.format,
+          ...(target.depth.format === "stencil8" ? {} : {
+            depthWriteEnabled: state.depthTest && state.depthMask,
+            depthCompare: state.depthTest ? compareFunction(state.depthFunc) : "always",
+          }) } : undefined,
       });
       resources.pipelines.set(key, pipeline);
       this.stats.pipelines++;
@@ -730,14 +741,8 @@ export class BrowserHost implements SemanticHost {
       }
     }
     const pass = this.beginPass(target);
-    const viewport = state.viewport;
-    if (viewport[0] < 0 || viewport[1] < 0 || viewport[0] + viewport[2] > target.width ||
-        viewport[1] + viewport[3] > target.height) {
-      throw new DOMException("Out-of-target viewport requires an emulation path", "NotSupportedError");
-    }
-    if (!viewport[2] || !viewport[3]) return;
     pass.setPipeline(pipeline);
-    pass.setViewport(...viewport, ...state.depthRange);
+    pass.setViewport(...state.viewport, ...state.depthRange);
     this.applyScissor(pass, state, target);
     const alphaConstants = [GL.CONSTANT_ALPHA, GL.ONE_MINUS_CONSTANT_ALPHA] as number[];
     const usesConstantAlphaRGB = alphaConstants.includes(state.blendSrcRGB) || alphaConstants.includes(state.blendDstRGB);
@@ -771,10 +776,10 @@ export class BrowserHost implements SemanticHost {
     color: readonly number[], depth: number): void {
     const target = this.resolveTarget(snapshot);
     const writesColor = !!(mask & GL.COLOR_BUFFER_BIT);
-    const writesDepth = !!(mask & GL.DEPTH_BUFFER_BIT) && state.depthMask && !!target.depth;
+    const writesDepth = !!(mask & GL.DEPTH_BUFFER_BIT) && state.depthMask && !!target.depth && target.depth.format !== "stencil8";
     if (!writesColor && !writesDepth) return;
     const writeMask = writesColor ? colorWriteMask(state.colorMask) & (target.opaque ? 7 : 15) : 0;
-    const key = `${!!target.depth}:${writesDepth}:${writeMask}`;
+    const key = `${target.depth?.format}:${writesDepth}:${writeMask}`;
     let pipeline = this.clearPipelines.get(key);
     if (!pipeline) {
       const code = `struct Clear { color: vec4f, depth: f32 };
@@ -788,8 +793,9 @@ export class BrowserHost implements SemanticHost {
       pipeline = this.device.createRenderPipeline({ layout: "auto", vertex: { module, entryPoint: "vs" },
         fragment: { module, entryPoint: "fs", targets: [{ format: "rgba8unorm", writeMask }] },
         primitive: { topology: "triangle-list" },
-        depthStencil: target.depth ? { format: "depth24plus", depthWriteEnabled: writesDepth,
-          depthCompare: "always" } : undefined,
+        depthStencil: target.depth ? { format: target.depth.format,
+          ...(target.depth.format === "stencil8" ? {} : { depthWriteEnabled: writesDepth, depthCompare: "always" }),
+        } : undefined,
       });
       this.clearPipelines.set(key, pipeline);
       this.stats.pipelines++;

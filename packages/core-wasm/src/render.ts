@@ -246,13 +246,13 @@ export function createRustDrawingCoreFromModule(
     required.some((name) => typeof exports[name] !== 'function')
   ) {
     throw new Error(
-      'Rust drawing module requires ABI4/resource6/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
+      'Rust drawing module requires ABI4/resource7/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
     );
   }
   const abi = exports as unknown as ABI;
   if (abi.rf_abi_version() !== 4)
     throw new Error('Rust drawing ABI version mismatch; expected 4. Rebuild with pnpm rust:build.');
-  if (abi.rf_resource_protocol_version() !== 6)
+  if (abi.rf_resource_protocol_version() !== 7)
     throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_readback_protocol_version() !== 1)
     throw new Error('Rust readback protocol mismatch. Rebuild with pnpm rust:build.');
@@ -481,7 +481,11 @@ export function createRustDrawingCoreFromModule(
     }
     let depth: TargetSnapshot['depth'] = null;
     let depthGeneration = 0;
-    if (reader.u32()) {
+    const depthFormat = reader.u32();
+    if (depthFormat) {
+      if (depthFormat !== GL.DEPTH_COMPONENT16 && depthFormat !== GL.STENCIL_INDEX8 && depthFormat !== GL.DEPTH_STENCIL) {
+        throw new Error('Invalid Rust depth/stencil format.');
+      }
       const handle = {
         kind: 'renderbuffer' as const,
         contextId: reader.u32(),
@@ -491,7 +495,7 @@ export function createRustDrawingCoreFromModule(
       depthGeneration = reader.u64();
       depth = services.resources.depth(handle, depthGeneration);
     }
-    return { color, depth, depthGeneration, width, height, isDefault };
+    return { color, depth, depthGeneration, ...(depthFormat ? { depthFormat } : {}), width, height, isDefault };
   }
   function executeDraw(bytes: Uint8Array): void {
     const reader = new Reader(bytes);

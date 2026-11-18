@@ -7,7 +7,7 @@ export const textureRttCases = ['texture-format-rgba', 'texture-format-rgb', 'te
   'texture-packed-565', 'texture-packed-4444', 'texture-packed-5551', 'texture-packed-cube',
   'texture-manual-mip-2d', 'texture-manual-mip-cube', 'texture-generate-mip-from-fbo',
   'texture-updates-reallocation', 'texture-npot-completeness', 'texture-sampler-units', 'texture-invalid-state'] as const;
-export const framebufferRttCases = ['fbo-depth-render-sample', 'fbo-cube-face-render-sample', 'fbo-color-renderbuffer-copy', 'fbo-attachment-resize',
+export const framebufferRttCases = ['fbo-depth-render-sample', 'fbo-cube-face-render-sample', 'fbo-color-renderbuffer-copy', 'fbo-stencil-attachments', 'fbo-attachment-resize',
   'fbo-deletion-bound-unbound', 'fbo-feedback-loop', 'raster-masks-depth-blend-cull',
   'resources-multiple-contexts', 'canvas-resize-present'] as const;
 export const rttCaseNames = [...uniformRttCases, ...textureRttCases, ...framebufferRttCases] as const;
@@ -652,6 +652,35 @@ gl_FragColor=vec4(u_i[0].x==16777217?1.:0.,u_i[1].w==(-2147483647-1)&&u_b[1].z&&
       gl.uniform1i(gl.getUniformLocation(cubeProgram, 'u_cube'), 0);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       band(48, 16, [255, 255, 0, 255]);
+      break;
+    }
+    case 'fbo-stencil-attachments': {
+      const t = target(8, 8);
+      const packed = gl.createRenderbuffer()!;
+      gl.bindRenderbuffer(gl.RENDERBUFFER, packed);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_STENCIL, 8, 8);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, packed);
+      check('packed attachment is complete', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_COMPLETE);
+      check('packed attachment reports both aspects', gl.getParameter(gl.DEPTH_BITS) >= 16 && gl.getParameter(gl.STENCIL_BITS) === 8, true);
+      check('packed attachment wrapper', gl.getFramebufferAttachmentParameter(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT,
+        gl.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME) === packed, true);
+      gl.viewport(-8, -8, 24, 24);
+      gl.enable(gl.DEPTH_TEST);
+      drawColor([0, 1, 0, 1], 0);
+      const separate = gl.createRenderbuffer()!;
+      gl.bindRenderbuffer(gl.RENDERBUFFER, separate);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.STENCIL_INDEX8, 8, 8);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.STENCIL_ATTACHMENT, gl.RENDERBUFFER, separate);
+      check('conflicting attachments are unsupported', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_UNSUPPORTED);
+      error('conflict blocks clear', () => gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT), gl.INVALID_FRAMEBUFFER_OPERATION);
+      const pixel = new Uint8Array([7, 7, 7, 7]);
+      error('conflict blocks read', () => gl.readPixels(1, 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel), gl.INVALID_FRAMEBUFFER_OPERATION);
+      check('blocked read leaves its destination untouched', Array.from(pixel), [7, 7, 7, 7]);
+      gl.deleteRenderbuffer(separate);
+      check('deletion restores earlier packed attachment', gl.checkFramebufferStatus(gl.FRAMEBUFFER), gl.FRAMEBUFFER_COMPLETE);
+      drawColor([1, 0, 0, 1], 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.disable(gl.DEPTH_TEST);
+      gl.viewport(0, 0, 64, 64); sample(t.texture); full([0, 255, 0, 255]);
       break;
     }
     case 'fbo-attachment-resize': {

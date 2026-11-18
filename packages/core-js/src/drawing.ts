@@ -7,6 +7,7 @@ import type {
 } from "@refral/core-api";
 import { JsBufferCore } from "./buffers.js";
 import { SemanticContext } from "./context.js";
+import { framebufferAttachmentPoint } from "./resources.js";
 
 type ShaderObject = NonNullable<ReturnType<SemanticContext["createShader"]>>;
 type ProgramObject = NonNullable<ReturnType<SemanticContext["createProgram"]>>;
@@ -257,13 +258,11 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
       const value = this.resolveDeletion(args[0], kind);
       if (!value) return;
       const framebuffer = kind === "framebuffer" ? value as FramebufferObject : null;
-      const color = framebuffer?.color ?? null;
-      const depth = framebuffer?.depth ?? null;
+      const attachments = framebuffer ? [framebuffer.color, framebuffer.depth, framebuffer.stencil, framebuffer.depthStencil] : [];
       this.context.invoke(operation, [value]);
       if (framebuffer) {
         this.retire(framebuffer);
-        this.retireAttachment(color);
-        this.retireAttachment(depth);
+        for (const attachment of new Set(attachments)) this.retireAttachment(attachment);
       } else this.retireAttachment(value as TextureObject | RenderbufferObject);
       return;
     }
@@ -272,7 +271,8 @@ export class JsDrawingCore extends JsBufferCore implements DrawingCore {
       const value = args[3] === null ? null : this.resolveObject(args[3], texture ? "texture" : "renderbuffer");
       if (args[3] !== null && !value) return;
       const framebuffer = this.context.getParameter(GL.FRAMEBUFFER_BINDING) as FramebufferObject | null;
-      const previous = args[1] === GL.COLOR_ATTACHMENT0 ? framebuffer?.color ?? null : framebuffer?.depth ?? null;
+      const point = framebufferAttachmentPoint(args[1] as number);
+      const previous = point ? framebuffer?.[point] ?? null : null;
       const result = this.context.invoke(operation, [args[0], args[1], args[2], value, ...args.slice(4)]);
       this.retireAttachment(previous);
       return result;

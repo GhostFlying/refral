@@ -107,6 +107,22 @@ function colorWriteMask(mask: readonly boolean[]): GPUColorWriteFlags {
   return mask.reduce((bits, enabled, index) => bits | (enabled ? 1 << index : 0), 0);
 }
 
+// Device listeners outlive individual canvases when a prepared factory shares its device.
+function errorListener(errors: string[]) {
+  return (event: Event) => { errors.push((event as GPUUncapturedErrorEvent).error.message); };
+}
+
+const abandonedHosts = new FinalizationRegistry<{
+  device: GPUDevice; listener: EventListener; textures: Set<GPUTexture>; buffers: Set<GPUBuffer>; ownsDevice: boolean;
+}>(resources => {
+  resources.device.removeEventListener('uncapturederror', resources.listener);
+  void resources.device.queue.onSubmittedWorkDone().catch(() => {}).then(() => {
+    for (const buffer of resources.buffers) buffer.destroy();
+    for (const texture of resources.textures) texture.destroy();
+    if (resources.ownsDevice) resources.device.destroy();
+  });
+});
+
 export class BrowserHost implements SemanticHost {
   readonly stats: HostStats = {
     draws: 0, passes: 0, submits: 0, copies: 0, uploadedBytes: 0,
@@ -153,9 +169,7 @@ export class BrowserHost implements SemanticHost {
   private blackCubeTexture: GPUTexture | null = null;
   private disposed = false;
   private canvasReadback: CanvasReadback | null = null;
-  private readonly handleError = (event: Event): void => {
-    this.errors.push((event as GPUUncapturedErrorEvent).error.message);
-  };
+  private readonly handleError = errorListener(this.errors);
 
   private constructor(
     readonly canvas: HTMLCanvasElement | OffscreenCanvas,
@@ -190,6 +204,8 @@ export class BrowserHost implements SemanticHost {
     };
     this.configurePresentation();
     device.addEventListener("uncapturederror", this.handleError);
+    abandonedHosts.register(this, { device, listener: this.handleError, textures: this.textures,
+      buffers: this.buffers, ownsDevice }, this);
   }
 
   static async create(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: HostContextAttributes): Promise<BrowserHost> {
@@ -958,6 +974,15 @@ export class BrowserHost implements SemanticHost {
     this.flush();
   }
 
+  /** Discard the default attachments without changing bindings, write masks or the GL viewport. */
+  resetDefaultDrawingBuffer(): void {
+    const target = this.defaultTarget;
+    if (!target) return;
+    this.endPass();
+    this.initialized.delete(target.color);
+    if (target.depth) this.initialized.delete(target.depth);
+  }
+
   private submitEncoded(): void {
     this.endPass();
     this.present();
@@ -1077,6 +1102,7 @@ export class BrowserHost implements SemanticHost {
     if (this.disposed) return;
     this.flush();
     this.disposed = true;
+    abandonedHosts.unregister(this);
     await this.device.queue.onSubmittedWorkDone().catch(() => {});
     this.canvasReadback?.dispose();
     this.canvasReadback = null;

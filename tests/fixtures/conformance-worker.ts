@@ -8,16 +8,21 @@ interface OfficialWorkerGlobal {
   postMessage(value: unknown): void;
 }
 
-export async function runOfficialWorker(): Promise<void> {
+export async function runOfficialWorker(blobEntry?: {
+  source: string; token: string; backend: ConformanceBackend;
+}): Promise<void> {
   const worker = globalThis as unknown as OfficialWorkerGlobal;
-  const source = new URL(location.href);
-  const token = source.searchParams.get('__refral_worker');
-  const backend = source.searchParams.get('__refral_backend') as ConformanceBackend;
+  const source = new URL(blobEntry?.source ?? location.href);
+  const token = blobEntry?.token ?? source.searchParams.get('__refral_worker');
+  const backend = blobEntry?.backend ?? source.searchParams.get('__refral_backend') as ConformanceBackend;
   if (!token || !['native', 'js', 'rust'].includes(backend)) throw new Error('Invalid official worker entry.');
   source.searchParams.delete('__refral_worker');
   source.searchParams.delete('__refral_backend');
   const send = (detail: WorkerObservation) => worker.postMessage({ __refralWorker: token, detail });
-  const factory = backend === 'native' ? null : await prepareContextFactory({ core: backend });
+  const factory = backend === 'native' ? null : await prepareContextFactory({ core: backend,
+    compilerBaseURL: new URL('/artifacts/compiler/', location.origin).href,
+    coreWasmURL: new URL('/artifacts/core-wasm/refral_core.wasm', location.origin).href });
+  const children: (() => Promise<void>)[] = [];
   const canvases = new WeakMap<HTMLCanvasElement | OffscreenCanvas, WebGLRenderingContext>();
   const contexts = new Set<WebGLRenderingContext>();
   function record(context: WebGLRenderingContext, kind: string) {
@@ -48,6 +53,11 @@ export async function runOfficialWorker(): Promise<void> {
       record(context, kind);
       return context;
     },
+    worker(_url, script, finish) {
+      const id = children.push(finish) - 1;
+      send({ type: 'nested', id, script });
+      return event => send({ type: 'nested', id, script, event });
+    },
     context: record,
     error: value => send({ type: 'error', name: value.name, message: value.message }),
     gap: value => send({ type: 'gap', message: value.message }),
@@ -57,6 +67,7 @@ export async function runOfficialWorker(): Promise<void> {
     if (event.data?.__refralFinish !== token) return;
     event.stopImmediatePropagation();
     void (async () => {
+      await Promise.all(children.map(finish => finish()));
       if (factory) {
         for (const context of contexts) {
           context.flush();
@@ -77,6 +88,7 @@ export async function runOfficialWorker(): Promise<void> {
     send({ type: 'exit', reason: 'self-closed' });
     return originalClose.call(this);
   };
+  // Native posted events cannot run until the synchronous original entry has returned.
   send({ type: 'ready' });
   worker.importScripts(source.href);
 }

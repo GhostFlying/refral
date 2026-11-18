@@ -36,16 +36,19 @@ interface CaseResult {
   lateDiagnostics?: ConformanceDiagnostic[];
   contexts: ContextRecord[];
   adapterGaps: ConformanceGap[];
-  workers?: { script: string; ready: boolean; exit?: WorkerExit; contexts: number }[];
+  workers?: { script: string; depth: number; ready: boolean; exit?: WorkerExit; contexts: number }[];
   durationMs: number;
   realmTransfers: number;
+  collectedWindowContexts?: number;
   screenshot?: CaseScreenshot;
 }
 interface Scope {
   factory: PreparedContextFactory | null;
-  workers: { script: string; ready: boolean; exit?: WorkerExit; contexts: ContextRecord[]; finish(): Promise<void> }[];
+  workers: { script: string; depth: number; ready: boolean; exit?: WorkerExit; contexts: ContextRecord[]; finish(): Promise<void> }[];
   canvases: WeakMap<HTMLCanvasElement | OffscreenCanvas, WebGLRenderingContext>;
-  contexts: Map<WebGLRenderingContext, ContextRecord>;
+  contexts: { native?: WebGLRenderingContext; selected?: WeakRef<WebGLRenderingContext>;
+    errors?: string[]; device?: GPUDevice; record: ContextRecord }[];
+  seenContexts: WeakSet<WebGLRenderingContext>;
   errors: ConformanceDiagnostic[];
   adapterGaps: ConformanceGap[];
   realmTransfers: number;
@@ -91,7 +94,7 @@ const readyPromise = new Promise<string[]>((resolve, reject) => {
 void readyPromise.catch(() => {});
 
 function scope(factory: PreparedContextFactory | null = null): Scope {
-  return { factory, workers: [], canvases: new WeakMap(), contexts: new Map(), errors: [], adapterGaps: [], realmTransfers: 0 };
+  return { factory, workers: [], canvases: new WeakMap(), contexts: [], seenContexts: new WeakSet(), errors: [], adapterGaps: [], realmTransfers: 0 };
 }
 const probe = scope();
 
@@ -171,11 +174,12 @@ function addGap(target: Scope, value: ConformanceGap): void {
 
 function captureContext(target: Scope, context: WebGLRenderingContext, kind: string,
   url: string, surface: CanvasSurface): void {
-  if (target.contexts.has(context)) return;
+  if (target.seenContexts.has(context)) return;
+  target.seenContexts.add(context);
   let actualCore: ConformanceBackend = 'native';
   let adapter: Record<string, unknown> = {};
-  if (backend !== 'native') {
-    const hooks = getTestingHooks(context);
+  const hooks = backend === 'native' ? null : getTestingHooks(context);
+  if (hooks) {
     actualCore = hooks.core;
     adapter = hooks.environment.adapter as Record<string, unknown>;
     if (actualCore !== backend) addError(target, { kind: 'core-selection', name: 'CoreSelectionError',
@@ -185,8 +189,8 @@ function captureContext(target: Scope, context: WebGLRenderingContext, kind: str
         message: info.message, url });
     });
   }
-  target.contexts.set(context, { requestedCore: backend, actualCore, surface, kind,
-    attributes: context.getContextAttributes(), adapter, url });
+  target.contexts.push({ ...(hooks ? { selected: new WeakRef(context), device: hooks.device, errors: hooks.errors } : { native: context }),
+    record: { requestedCore: backend, actualCore, surface, kind, attributes: context.getContextAttributes(), adapter, url } });
   activity();
 }
 
@@ -205,7 +209,8 @@ async function finalizeResources(target: Scope, url: string, beforeDispose?: () 
       message: `Worker did not acknowledge execution of its original entry: ${worker.script}` });
   }));
   if (backend === 'native') {
-    for (const [context, record] of target.contexts) {
+    for (const { native: context, record } of target.contexts) {
+      if (!context) continue;
       try {
         const debug = context.getExtension('WEBGL_debug_renderer_info');
         record.adapter = { version: context.getParameter(context.VERSION),
@@ -219,17 +224,16 @@ async function finalizeResources(target: Scope, url: string, beforeDispose?: () 
     await beforeDispose?.();
     return;
   }
-  for (const context of target.contexts.keys()) {
-    const hooks = getTestingHooks(context);
+  for (const entry of target.contexts) {
     try {
-      context.flush();
-      await hooks.device.queue.onSubmittedWorkDone();
+      entry.selected?.deref()?.flush();
+      await entry.device?.queue.onSubmittedWorkDone();
     } catch (error) { addError(target, diagnostic(error, 'gpu-completion', url)); }
   }
   // Allow queued uncaptured validation diagnostics to arrive before disposal.
   await new Promise(resolve => setTimeout(resolve, 0));
-  for (const context of target.contexts.keys()) {
-    for (const message of getTestingHooks(context).errors) {
+  for (const entry of target.contexts) {
+    for (const message of entry.errors ?? []) {
       addError(target, { kind: 'gpu-validation', name: 'GPUValidationError', message, url });
     }
   }
@@ -278,9 +282,10 @@ async function finishCase(instance: OfficialHarness, original: (argument: never)
     skipped: active.skipped, skippedFailures: active.skippedFailures,
     assertionTimeouts: active.assertionTimeouts,
     failures: active.failures.slice(), failuresTruncated: active.failuresTruncated,
-    errors: active.errors.slice(), contexts: [...active.contexts.values(), ...active.workers.flatMap(worker => worker.contexts)],
-    ...(active.workers.length ? { workers: active.workers.map(({ script, ready, exit, contexts }) =>
-      ({ script, ready, ...(exit ? { exit } : {}), contexts: contexts.length })) } : {}),
+    errors: active.errors.slice(), contexts: [...active.contexts.map(entry => entry.record), ...active.workers.flatMap(worker => worker.contexts)],
+    collectedWindowContexts: active.contexts.filter(entry => entry.selected && !entry.selected.deref()).length,
+    ...(active.workers.length ? { workers: active.workers.map(({ script, depth, ready, exit, contexts }) =>
+      ({ script, depth, ready, ...(exit ? { exit } : {}), contexts: contexts.length })) } : {}),
     adapterGaps: active.adapterGaps.slice(), durationMs: performance.now() - active.started - captureDuration,
     realmTransfers: active.realmTransfers, ...(screenshot ? { screenshot } : {}) };
   results.push(result);
@@ -370,21 +375,34 @@ const bridge: ConformanceBridge = {
   worker(url, script, finish) {
     const target = selectedScope(url);
     if (!target) throw new Error('Missing scope for official worker.');
-    const worker: Scope['workers'][number] = { script, ready: false, contexts: [] as ContextRecord[], finish };
-    target.workers.push(worker);
-    return (event: WorkerObservation) => {
-      if (event.type === 'ready') worker.ready = true;
-      else if (event.type === 'exit') worker.exit ??= event.reason;
-      else if (event.type === 'error') addError(target, { kind: 'worker', name: event.name ?? 'WorkerError', message: event.message, url });
-      else if (event.type === 'gap') addGap(target, { kind: 'worker-webgl-provenance', message: event.message, url });
-      else if (event.type === 'context') {
-        if (event.context.actualCore !== backend) addError(target, { kind: 'core-selection', name: 'CoreSelectionError',
-          message: `Worker requested ${backend}, received ${event.context.actualCore}.`, url });
-        worker.contexts.push({ ...event.context, requestedCore: backend, realm: 'dedicated-worker',
-          surface: 'offscreen-canvas', url: script });
-      }
-      activity();
-    };
+    function observeWorker(scriptURL: string, depth: number, finishWorker: () => Promise<void>) {
+      const worker: Scope['workers'][number] = { script: scriptURL, depth, ready: false, contexts: [] as ContextRecord[], finish: finishWorker };
+      const nested = new Map<number, (event: WorkerObservation) => void>();
+      target!.workers.push(worker);
+      return (event: WorkerObservation) => {
+        if (event.type === 'ready') worker.ready = true;
+        else if (event.type === 'exit') worker.exit ??= event.reason;
+        else if (event.type === 'nested') {
+          let observer = nested.get(event.id);
+          if (!observer) {
+            // Its parent worker drains the child before acknowledging its own finish.
+            observer = observeWorker(event.script, depth + 1, async () => {});
+            nested.set(event.id, observer);
+          }
+          if (event.event) observer(event.event);
+        } else if (event.type === 'error') {
+          addError(target!, { kind: 'worker', name: event.name ?? 'WorkerError', message: event.message, url });
+        } else if (event.type === 'gap') addGap(target!, { kind: 'worker-webgl-provenance', message: event.message, url });
+        else if (event.type === 'context') {
+          if (event.context.actualCore !== backend) addError(target!, { kind: 'core-selection', name: 'CoreSelectionError',
+            message: `Worker requested ${backend}, received ${event.context.actualCore}.`, url });
+          worker.contexts.push({ ...event.context, requestedCore: backend, realm: 'dedicated-worker',
+            surface: 'offscreen-canvas', url: scriptURL });
+        }
+        activity();
+      };
+    }
+    return observeWorker(script, 1, finish);
   },
   error: routeError,
   gap(value) { addGap(selectedScope(value.url) ?? probe, value); },

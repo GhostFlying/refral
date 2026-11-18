@@ -1,0 +1,7 @@
+# Uploading a canvas before it has a rendering context
+
+The original tex-image-and-uniform-binding-bugs and tex-sub-image-2d-bad-args files upload a new nonzero-size HTMLCanvasElement. WebGL1 uses its current dimensions and the untouched canvas bitmap is transparent black. The host currently calls WebGPU copyExternalImageToTexture directly and Chrome throws OperationError when the source has no rendering context.
+
+Keep validation and origin checks in order. If the platform cannot directly copy the canvas bitmap, use a private origin-propagating Canvas2D drawImage snapshot for the external copy. Avoid acquiring a context on the caller's source and preserve external upload settings. The selected core still validates the destination before consuming pixels. Verify both unmodified originals and a shared regression for transparent data, unchanged source context mode, nonzero destination, and later selection of a source context. Use headless Chrome, deterministic checks, and preserve genuine DOM and GL errors.
+
+On Chrome 158 the original tex-image-and-uniform-binding-bugs and tex-sub-image-2d-bad-args files passed 6/0 and 37/0 on each backend. The public differential initialized the destination to white, observed all sixteen source bytes as zero after the update and then acquired a bitmaprenderer on the same source. All three implementations passed, with six original screenshots under the campaign’s official directory.

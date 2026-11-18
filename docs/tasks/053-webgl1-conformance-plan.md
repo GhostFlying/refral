@@ -12,7 +12,7 @@
 | Refral JS | 850 | 51 | 39 | 14 | 17 |
 | Refral Rust/Wasm | 853 | 48 | 39 | 14 | 17 |
 
-两套核心尚有 121 个不同文件要追踪，其中 118 个两路均未通过，另外 3 个只在 JS 失败。完整原始记录在 `artifacts/conformance/case-screenshots/summary.json`，可按 URL 关联三路断言和图像。`failure-clusters.json` 的标签会重叠，工作量按唯一 URL 和后端计算。完整基线须包含 2,913 条有效记录；缺文件、缺断言、适配器错误和中途退出分别保留。
+这一轮基线有 121 个不同文件待追踪，其中 118 个两路均未通过，另外 3 个只在 JS 失败。后续各次完整扫描的版本、三路成绩及已接受的差异见[阶段报告](../validation/2026-11-19-conformance-campaign.md)。完整原始记录在 `artifacts/conformance/case-screenshots/summary.json`，可按 URL 关联三路断言和图像。`failure-clusters.json` 的标签会重叠，工作量按唯一 URL 和后端计算。完整基线须包含 2,913 条有效记录；缺文件、缺断言、适配器错误和中途退出分别保留。
 
 首批选择器已在 1bb6537 上用 headless Chrome 实跑。三个文件都走到上游完成回调，Chrome 原生通过 246 条断言，JS 通过 106 条、失败 18 条，Rust 通过 124 条。两个名称错误文件还会按 `WEBGL_lose_context` 是否可用执行丢失分支，Chrome 各执行 118 条，当前两套核心各执行 57 条。第一批先修正 JS 的 18 条失败，丢失分支留入生命周期任务。九份逐文件结果及截图在 `artifacts/conformance/campaign/baseline-1bb6537-names/`。
 

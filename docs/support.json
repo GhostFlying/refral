@@ -1,8 +1,8 @@
 {
   "version": 2,
   "profile": "webgl1-prototype",
-  "updated": "2026-11-18",
-  "implementationRevision": "task-039 WebGL1 operation detection and typed triangle-strip drawing from main ce0566a",
+  "updated": "2026-11-19",
+  "implementationRevision": "f1dac24d856c7c96dbf6be8402e0198872d7e2e2",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
     "chrome158-macos-arm64": {
@@ -10,7 +10,7 @@
       "osArchitecture": "macOS arm64",
       "adapterVendor": "apple",
       "adapterArchitecture": "metal-3",
-      "scope": "Headless task 039 vertex input and strip checks on a hardware adapter.",
+      "scope": "Headless Chrome with the Apple Metal hardware adapter. Includes the task 039 vertex checks and the current integration run.",
       "evidence": "artifacts/dual-core-drawing/triangle-strip-modes/result.json"
     },
     "chrome-macos-arm64": {
@@ -2312,6 +2312,8 @@
           "coverage": "The loss extension queues cancelable loss, supports restoration after cancellation and invalidates earlier generations while preserving peer contexts. Resize and resource disposal paths are implemented. Device loss dispatches the browser context event and marks the semantic context lost.",
           "tests": [
             "tests/chrome/lifecycle.spec.ts",
+            "tests/chrome/canvas-resize.spec.ts",
+            "sdk/tests/conformance/canvas/render-after-resize-test.html",
             "sdk/tests/conformance/context/context-lost.html",
             "sdk/tests/conformance/context/context-lost-restored.html",
             "tests/chrome/differential.spec.ts::WebGL1 differential resize-framebuffer",
@@ -2328,8 +2330,8 @@
           ],
           "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "limits": [
-            "Full context restoration is future coverage",
-            "Same-size canvas reset and complete lost-context API behavior require dedicated tests"
+            "Recovery after physical GPU device loss remains unverified.",
+            "A same-stack Canvas2D copy after an equal-size HTML canvas assignment can observe a transparent bitmap before subsequent GL access or mutation delivery. See task 100."
           ],
           "gpuVerification": {
             "test": "tests/chrome/lifecycle.spec.ts::device loss notifies the context and invalidates new resources",
@@ -2339,9 +2341,11 @@
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "The loss extension queues cancelable loss, supports restoration after cancellation and invalidates earlier generations while preserving peer contexts. Default-target drawing/capture follows canvas dimensions. Shared Buffer loss fixtures verify neutral state and one loss error. Device recovery and context restoration remain outside this milestone.",
+          "coverage": "The loss extension queues cancelable loss, supports restoration after cancellation and invalidates earlier generations while preserving peer contexts. Default-target drawing/capture follows canvas dimensions. Shared Buffer loss fixtures verify neutral state and one loss error. Simulated restoration creates a fresh semantic generation.",
           "tests": [
             "tests/chrome/lifecycle.spec.ts",
+            "tests/chrome/canvas-resize.spec.ts",
+            "sdk/tests/conformance/canvas/render-after-resize-test.html",
             "sdk/tests/conformance/context/context-lost.html",
             "sdk/tests/conformance/context/context-lost-restored.html",
             "tests/chrome/dual-core-drawing.spec.ts",
@@ -2360,7 +2364,8 @@
           ],
           "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
           "limits": [
-            "See buffer-lifecycle-contract for the independently verified common Buffer scope."
+            "Recovery after physical GPU device loss remains unverified.",
+            "A same-stack Canvas2D copy after an equal-size HTML canvas assignment can observe a transparent bitmap before subsequent GL access or mutation delivery. See task 100."
           ]
         }
       }
@@ -2697,17 +2702,17 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "General completion and additional GPU-dependent public API coverage follows the accepted readPixels slice.",
+          "coverage": "These WebGL2 operations are outside the WebGL1 interface. The separate WebGL1 readPixels and finish entries document their supported behavior.",
           "tests": [],
           "evidence": [],
-          "unsupportedBehavior": "Missing completion methods report NotSupportedError."
+          "unsupportedBehavior": "The WebGL1 context has no getBufferSubData, fenceSync or clientWaitSync method. Reading these properties yields undefined."
         },
         "rust": {
           "status": "unimplemented",
-          "coverage": "General completion and additional GPU-dependent public API coverage follows the accepted readPixels slice.",
+          "coverage": "These WebGL2 operations are outside the WebGL1 interface. The separate WebGL1 readPixels and finish entries document their supported behavior.",
           "tests": [],
           "evidence": [],
-          "unsupportedBehavior": "Missing completion methods report NotSupportedError."
+          "unsupportedBehavior": "The WebGL1 context has no getBufferSubData, fenceSync or clientWaitSync method. Reading these properties yields undefined."
         }
       }
     },
@@ -3171,6 +3176,72 @@
       "rust"
     ]
   },
+  "currentIntegration": {
+    "compilerLoaderSha256": "1349a9a5f5d16d510988071ad6b1ab262a7c3faff2552ca4d03eb988a3c783bb",
+    "runtimeRevision": "f1dac24d856c7c96dbf6be8402e0198872d7e2e2",
+    "environment": "chrome158-macos-arm64",
+    "headless": true,
+    "wasmSha256": {
+      "rustWasm": "e6095830f652136494b8ca6fa851f8de58a9e027a178e2b48bf6547a7e4057b1",
+      "compilerWasm": "70c16657373e9265ed7dc6a40cfc70eac0f96b2055d9c66cbef283c756950c06"
+    },
+    "checks": {
+      "typescript": "passed",
+      "vitest": 243,
+      "nodeToolTests": 72,
+      "rustNative": 76,
+      "actualRustWasm": 55,
+      "compilerCorpus": 73,
+      "headlessChrome": 202
+    },
+    "production": {
+      "selectedCores": [
+        "native",
+        "js",
+        "rust"
+      ],
+      "demoPixelComparisons": [
+        {
+          "reference": "native",
+          "candidate": "js",
+          "tolerance": 2,
+          "radius": 1,
+          "differingPixels": 0,
+          "unmatchedPixels": 0
+        },
+        {
+          "reference": "native",
+          "candidate": "rust",
+          "tolerance": 2,
+          "radius": 1,
+          "differingPixels": 0,
+          "unmatchedPixels": 0
+        },
+        {
+          "reference": "js",
+          "candidate": "rust",
+          "tolerance": 0,
+          "radius": 0,
+          "differingPixels": 0,
+          "unmatchedPixels": 0
+        }
+      ],
+      "pageErrors": [],
+      "rustAbi": 6,
+      "resourceProtocol": 8,
+      "readbackProtocol": 1,
+      "domUploadProtocol": 2
+    },
+    "evidence": [
+      "artifacts/conformance/campaign/final-html-resize/integration/runtime-artifacts.json",
+      "artifacts/conformance/campaign/final-html-resize/integration/check.log",
+      "artifacts/conformance/campaign/final-html-resize/integration/wasm.log",
+      "artifacts/conformance/campaign/final-html-resize/integration/compiler.log",
+      "artifacts/conformance/campaign/final-html-resize/integration/chrome.log",
+      "artifacts/conformance/campaign/final-html-resize/integration/dist.log",
+      "artifacts/conformance/campaign/final-html-resize/integration/deployment/result.json"
+    ]
+  },
   "verificationSummary": {
     "chromeTests": 26,
     "chromeResult": "passed",
@@ -3211,12 +3282,12 @@
       "fragmentOutputPixelSamples": 28
     },
     "profileSource": "packages/compiler/profile-limits.json",
-    "note": "The shared profile passes45 compiler cases in Node and headless Chrome. Ten direct pipelines validate final WGSL, including vertex texture sampling and original CTS gl_FragData outputs with array reads and early returns."
+    "note": "At the CubeMap milestone the shared profile passed 45 compiler cases in Node and headless Chrome. Ten direct pipelines validate final WGSL, including vertex texture sampling and original CTS gl_FragData outputs with array reads and early returns."
   },
   "deploymentVerification": {
     "status": "passed",
     "evidence": "artifacts/cubemap/pr3/dist-result.json",
-    "scope": "Built probe, three-path RTT/triangles, synchronous readPixels, DOM uploads and58 CubeMap draw samples per backend, matching packaged hashes and ABI3/resource3/readback1/DOM2."
+    "scope": "Historical CubeMap deployment. The built probe, three-path RTT/triangles, synchronous readPixels, DOM uploads and 58 CubeMap draw samples per backend passed with packaged ABI3/resource3/readback1/DOM2."
   },
   "defaultCore": "js",
   "cores": {
@@ -3225,7 +3296,7 @@
       "implementation": "packages/core-js",
       "contract": "packages/core-api",
       "facade": "packages/webgl",
-      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT and 8-/16-bit integer vertex inputs, triangle lists/strips, typed uniforms/matrices, level-zero five-format Texture2D/CubeMap, RGBA/depth FBO and raster profile. Public synchronous RGBA/UNSIGNED_BYTE readPixels through Canvas2D."
+      "scope": "ESSL 1.00 shaders, structured uniforms and sampler arrays, all seven WebGL1 primitive modes, matrix vertex attributes, 8-/16-bit indices and vertex arrays. Texture2D and CubeMap support mip levels and mipmap generation. Extension-dependent paths cover FLOAT textures and sRGB formats. The shared host supports framebuffer color, depth, stencil and synchronous RGBA/UNSIGNED_BYTE readPixels. Per-entry limits describe supported formats and operations."
     },
     "rust": {
       "profile": "webgl1-render-to-texture",
@@ -3233,7 +3304,7 @@
       "binding": "crates/wasm + packages/core-wasm",
       "contract": "packages/core-api",
       "facade": "packages/webgl",
-      "scope": "Shared Buffer, ESSL100 shader/program, FLOAT and 8-/16-bit integer vertex inputs, triangle lists/strips, typed uniforms/matrices, level-zero five-format Texture2D/CubeMap, RGBA/depth FBO and raster profile. Public synchronous RGBA/UNSIGNED_BYTE readPixels through Canvas2D."
+      "scope": "ESSL 1.00 shaders, structured uniforms and sampler arrays, all seven WebGL1 primitive modes, matrix vertex attributes, 8-/16-bit indices and vertex arrays. Texture2D and CubeMap support mip levels and mipmap generation. Extension-dependent paths cover FLOAT textures and sRGB formats. The shared host supports framebuffer color, depth, stencil and synchronous RGBA/UNSIGNED_BYTE readPixels. Per-entry limits describe supported formats and operations."
     }
   },
   "officialConformance": {
@@ -3286,8 +3357,143 @@
     "evidence": "artifacts/conformance/baseline/summary.json",
     "dependencies": "artifacts/conformance/baseline/failure-clusters.json",
     "report": "docs/validation/2026-11-18-official-conformance.md",
-    "scope": "Exploratory outcomes for the full original file inventory. Capability termination, timeouts and adapter gaps remain visible.",
+    "scope": "Historical first full inventory on the listed runtimeBase. Subsequent complete runs are tracked under latestRefresh.",
     "latestRefresh": {
+      "runtimeBase": "f1dac24d856c7c96dbf6be8402e0198872d7e2e2",
+      "browserVersion": "158.0.8127.36",
+      "ctsRevision": "39443210f7f81db4773eb104facadfb85d05dfa4",
+      "inventoryFilesPerBackend": 971,
+      "headless": true,
+      "idleTimeoutMs": 20000,
+      "hardTimeoutMs": 600000,
+      "comparability": "verified",
+      "results": {
+        "native": {
+          "pass": 968,
+          "fail": 3,
+          "skip": 0,
+          "unsupported": 0,
+          "timeout": 0,
+          "harness-error": 0
+        },
+        "js": {
+          "pass": 965,
+          "fail": 4,
+          "skip": 0,
+          "unsupported": 1,
+          "timeout": 1,
+          "harness-error": 0
+        },
+        "rust": {
+          "pass": 965,
+          "fail": 4,
+          "skip": 0,
+          "unsupported": 1,
+          "timeout": 1,
+          "harness-error": 0
+        }
+      },
+      "passingAllThree": 963,
+      "differentCoreFileStatuses": 0,
+      "passingFilesWithDifferentAssertionCounts": 72,
+      "screenshots": {
+        "native": {
+          "case-page": 971
+        },
+        "js": {
+          "case-page": 970,
+          "case-page/running": 1
+        },
+        "rust": {
+          "case-page": 970,
+          "case-page/running": 1
+        }
+      },
+      "remainingFiles": [
+        {
+          "url": "conformance/context/context-attribute-preserve-drawing-buffer.html",
+          "index": 48,
+          "classification": "accepted-undefined-read",
+          "affectedBackends": [
+            "js",
+            "rust"
+          ],
+          "reference": "docs/tasks/093-opaque-webgpu-canvas-discard.md"
+        },
+        {
+          "url": "conformance/glsl/misc/shader-with-double-underscore.html",
+          "index": 332,
+          "classification": "upstream-assertion",
+          "affectedBackends": [
+            "native",
+            "js",
+            "rust"
+          ],
+          "reference": "docs/tasks/067-shader-double-underscores.md"
+        },
+        {
+          "url": "conformance/glsl/misc/shader-with-reserved-words.html",
+          "index": 371,
+          "classification": "upstream-assertion",
+          "affectedBackends": [
+            "js",
+            "rust"
+          ],
+          "reference": "docs/validation/2026-11-19-conformance-campaign.md#fixed-suite-conflicts"
+        },
+        {
+          "url": "conformance/misc/uninitialized-test.html",
+          "index": 455,
+          "classification": "synchronous-host-capability",
+          "affectedBackends": [
+            "js",
+            "rust"
+          ],
+          "reference": "docs/tasks/079-synchronous-queue-completion.md"
+        },
+        {
+          "url": "conformance/offscreencanvas/methods.html",
+          "index": 606,
+          "classification": "native-interface-difference",
+          "affectedBackends": [
+            "native"
+          ],
+          "reference": "docs/validation/2026-11-19-conformance-campaign.md#fixed-suite-conflicts"
+        },
+        {
+          "url": "conformance/offscreencanvas/methods-worker.html",
+          "index": 607,
+          "classification": "native-interface-difference",
+          "affectedBackends": [
+            "native"
+          ],
+          "reference": "docs/validation/2026-11-19-conformance-campaign.md#fixed-suite-conflicts"
+        },
+        {
+          "url": "conformance/rendering/many-draw-calls.html",
+          "index": 656,
+          "classification": "production-timeout",
+          "affectedBackends": [
+            "js",
+            "rust"
+          ],
+          "reference": "docs/tasks/104-submission-batching-control.md"
+        },
+        {
+          "url": "conformance/textures/misc/tex-image-svg-image-no-natural-width-and-height.html",
+          "index": 708,
+          "classification": "upstream-assertion",
+          "affectedBackends": [
+            "js",
+            "rust"
+          ],
+          "reference": "docs/tasks/076-zero-size-svg-uploads.md"
+        }
+      ],
+      "report": "docs/validation/2026-11-19-conformance-campaign.md",
+      "evidence": "artifacts/conformance/campaign/final-html-resize/full/summary.json"
+    },
+    "stencilRgbRefresh": {
       "runtimeBase": "2a519f2cbc701328df85e2b4c523b1a4cf9b9b34",
       "browserVersion": "158.0.8127.36",
       "idleTimeoutMs": 5000,
@@ -3346,6 +3552,7 @@
     "evidence": "artifacts/vertex-input/geometry-summary.json"
   },
   "coreVerification": {
+    "scope": "Historical CubeMap integration and per-core checks at the revision of the linked report.",
     "report": "docs/validation/2026-11-18-cubemap.md",
     "environment": "chrome-macos-arm64",
     "allChromeTests": {
@@ -3413,7 +3620,7 @@
     "deployment": {
       "status": "passed",
       "evidence": "artifacts/cubemap/pr3/dist-result.json",
-      "scope": "Built probe, three-path RTT/triangles, synchronous readPixels, DOM uploads and58 CubeMap draw samples per backend, matching packaged hashes and ABI3/resource3/readback1/DOM2."
+      "scope": "Historical CubeMap deployment. The built probe, three-path RTT/triangles, synchronous readPixels, DOM uploads and 58 CubeMap draw samples per backend passed with packaged ABI3/resource3/readback1/DOM2."
     }
   },
   "specifications": {

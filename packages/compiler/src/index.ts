@@ -80,6 +80,8 @@ export function linkShaders(vertex: CompiledShader, fragment: CompiledShader,
     return failedProgram("A vertex shader and a fragment shader are required.");
   }
   if (vertex.version !== fragment.version) return failedProgram("Shader language versions differ.");
+  const uniformPackingErrors = [vertex.uniformPackingError, fragment.uniformPackingError].filter(Boolean);
+  if (uniformPackingErrors.length) return failedProgram(uniformPackingErrors.join("\n"));
   const vertexVaryings = active(vertex.varyings);
   for (const varying of active(fragment.varyings)) {
     const output = vertexVaryings.find((candidate) => candidate.name === varying.name);
@@ -241,7 +243,7 @@ export async function createCompiler(baseURL = "/artifacts/compiler/"): Promise<
         : JSON.parse(module.ccall("RefralCompile", "string", ["string", "number", "number"],
           [source, stage === "vertex" ? 0 : 1, version]));
       return { source, stage, version, success: raw.success ?? false, log: raw.log ?? "",
-        wgsl: raw.wgsl ?? "", attributes: raw.attributes ?? [], uniforms: raw.uniforms ?? [],
+        wgsl: raw.wgsl ?? "", uniformPackingError: raw.uniformPackingError, attributes: raw.attributes ?? [], uniforms: raw.uniforms ?? [],
         varyings: raw.varyings ?? [], outputs: raw.outputs ?? [], uniformBufferSize: raw.uniformBufferSize ?? 0 };
     },
     link: linkShaders,

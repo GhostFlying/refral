@@ -10,6 +10,41 @@ export interface CompilerCaseResult {
   log: string;
 }
 
+function uniformPackingCases(compiler: Compiler): CompilerCaseResult[] {
+  const vertexRows = COMPILER_LIMITS.vertexUniformVectors;
+  const fragmentRows = COMPILER_LIMITS.fragmentUniformVectors;
+  const cases = [
+    { name: "vertex-array-boundary", stage: "vertex", uniforms: `uniform vec4 v[${vertexRows}];`,
+      expression: "v[0]", fits: true },
+    { name: "vertex-array-overflow-at-first-element", stage: "vertex", uniforms: `uniform bool v[${vertexRows + 1}];`,
+      expression: "vec4(v[0])", fits: false },
+    { name: "fragment-matrix-overflow", stage: "fragment", uniforms: `uniform mat2 v[${Math.floor(fragmentRows / 2) + 1}];`,
+      expression: "vec4(v[0][0],0.0,1.0)", fits: false },
+    { name: "shared-columns", stage: "fragment", uniforms: `uniform vec2 a[${fragmentRows}], b[${fragmentRows}];`,
+      expression: "vec4(a[0],b[0])", fits: true },
+    { name: "inactive-declaration", stage: "vertex", uniforms: `uniform vec4 unused[${vertexRows + 1}];`,
+      expression: "vec4(1.0)", fits: true },
+    { name: "separate-sampler-budget", stage: "fragment",
+      uniforms: `uniform vec4 v[${fragmentRows}]; uniform sampler2D image;`,
+      expression: "v[0]+texture2D(image,vec2(0.0))", fits: true },
+    { name: "active-built-in", stage: "fragment", uniforms: `uniform vec4 v[${fragmentRows}];`,
+      expression: "v[0]+vec4(gl_DepthRange.near)", fits: false },
+    { name: "struct-array-fields", stage: "vertex",
+      uniforms: `struct S { vec4 values[2]; }; uniform S records[${Math.floor(vertexRows / 2) + 1}];`,
+      expression: "records[0].values[0]", fits: false },
+  ] as const;
+  const vertex = compiler.compile("void main(){gl_Position=vec4(1.0);}", "vertex");
+  const fragment = compiler.compile("precision mediump float; void main(){gl_FragColor=vec4(1.0);}", "fragment");
+  return cases.map(({ name, stage, uniforms, expression, fits }) => {
+    const output = stage === "vertex" ? "gl_Position" : "gl_FragColor";
+    const shader = compiler.compile(`precision mediump float; ${uniforms} void main(){${output}=${expression};}`, stage);
+    const linked = stage === "vertex" ? compiler.link(shader, fragment) : compiler.link(vertex, shader);
+    const limit = stage === "vertex" ? "MAX_VERTEX_UNIFORM_VECTORS" : "MAX_FRAGMENT_UNIFORM_VECTORS";
+    return { name: `uniform-packing-${name}`, passed: shader.success && linked.success === fits &&
+      (fits || linked.log.includes(limit)), log: [shader.log, linked.log].filter(Boolean).join("\n") };
+  });
+}
+
 export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
   const vertexSource = "attribute vec3 position; uniform mat4 matrix; varying vec2 uv; void main() { uv=position.xy; gl_Position=matrix*vec4(position,1.0); }";
   const fragmentSource = "precision mediump float; varying vec2 uv; uniform sampler2D image; uniform vec4 color; void main() { gl_FragColor=texture2D(image,uv)*color; }";
@@ -93,6 +128,7 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
   const vertexFields = fields(arrayInterface.vertexWGSL);
   const fragmentFields = fields(arrayInterface.fragmentWGSL);
   return [
+    ...uniformPackingCases(compiler),
     { name: "varying-arrays-matching-stage-locations", passed: arrayInterface.success &&
       vertexFields.size === 7 && fragmentFields.size === 7 && new Set(vertexFields.values()).size === 7 &&
       [...vertexFields].every(([name, location]) => fragmentFields.get(name) === location),

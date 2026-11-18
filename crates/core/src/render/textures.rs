@@ -15,25 +15,32 @@ const UNSIGNED_SHORT_4_4_4_4: u32 = 0x8033;
 const UNSIGNED_SHORT_5_5_5_1: u32 = 0x8034;
 const UNSIGNED_SHORT_5_6_5: u32 = 0x8363;
 
+fn expand_component(value: u16, mask: u16) -> u8 {
+    ((value * 255 + mask / 2) / mask) as u8
+}
+
+fn quantize_channel(value: u8, bits: u32) -> u8 {
+    expand_component(u16::from(value >> (8 - bits)), (1 << bits) - 1)
+}
+
 fn unpack_word(word: u16, ty: u32) -> (u8, u8, u8, u8) {
-    let expand = |value: u16, mask: u16| ((value * 255 + mask / 2) / mask) as u8;
     match ty {
         UNSIGNED_SHORT_5_6_5 => (
-            expand(word >> 11, 31),
-            expand((word >> 5) & 63, 63),
-            expand(word & 31, 31),
+            expand_component(word >> 11, 31),
+            expand_component((word >> 5) & 63, 63),
+            expand_component(word & 31, 31),
             255,
         ),
         UNSIGNED_SHORT_4_4_4_4 => (
-            expand(word >> 12, 15),
-            expand((word >> 8) & 15, 15),
-            expand((word >> 4) & 15, 15),
-            expand(word & 15, 15),
+            expand_component(word >> 12, 15),
+            expand_component((word >> 8) & 15, 15),
+            expand_component((word >> 4) & 15, 15),
+            expand_component(word & 15, 15),
         ),
         UNSIGNED_SHORT_5_5_5_1 => (
-            expand(word >> 11, 31),
-            expand((word >> 6) & 31, 31),
-            expand((word >> 1) & 31, 31),
+            expand_component(word >> 11, 31),
+            expand_component((word >> 6) & 31, 31),
+            expand_component((word >> 1) & 31, 31),
             ((word & 1) * 255) as u8,
         ),
         _ => unreachable!("non-packed pixel type passed to unpack_word"),
@@ -616,7 +623,6 @@ impl ContextCore {
     fn validate_texture_definition(
         &mut self,
         args: &[Argument],
-        dom: bool,
     ) -> Result<(usize, usize), TextureUploadError> {
         let number = |index: usize| args[index].number();
         let Some((index, image)) = self.bound_texture_image(number(0) as u32) else {
@@ -647,11 +653,6 @@ impl ContextCore {
         if level != 0.0 {
             return Err(TextureUploadError::Unsupported("texture mip levels"));
         }
-        if dom && ty != UNSIGNED_BYTE {
-            return Err(TextureUploadError::Unsupported(
-                "packed DOM texture uploads",
-            ));
-        }
         let image_state = &self.render.textures.slots[index]
             .value
             .as_ref()
@@ -668,7 +669,6 @@ impl ContextCore {
     fn validate_texture_update(
         &mut self,
         args: &[Argument],
-        dom: bool,
     ) -> Result<(usize, usize), TextureUploadError> {
         let number = |index: usize| args[index].number();
         let Some((index, image)) = self.bound_texture_image(number(0) as u32) else {
@@ -709,11 +709,6 @@ impl ContextCore {
         }
         if level != 0.0 {
             return Err(TextureUploadError::Unsupported("texture mip levels"));
-        }
-        if dom && ty != UNSIGNED_BYTE {
-            return Err(TextureUploadError::Unsupported(
-                "packed DOM texture uploads",
-            ));
         }
         if self.render.textures.slots[index]
             .value
@@ -768,9 +763,9 @@ impl ContextCore {
             ]
         };
         let validated = if sub_image {
-            self.validate_texture_update(&parameters, true)
+            self.validate_texture_update(&parameters)
         } else {
-            self.validate_texture_definition(&parameters, true)
+            self.validate_texture_definition(&parameters)
         };
         if let Err(error) = validated {
             return error.reply();
@@ -799,10 +794,20 @@ impl ContextCore {
                 ..
             }
         );
-        let packed = ty != UNSIGNED_BYTE;
+        let packed_view = !dom && ty != UNSIGNED_BYTE;
+        let dom_bits = if dom {
+            match ty {
+                UNSIGNED_SHORT_5_6_5 => Some([5, 6, 5, 1]),
+                UNSIGNED_SHORT_4_4_4_4 => Some([4, 4, 4, 4]),
+                UNSIGNED_SHORT_5_5_5_1 => Some([5, 5, 5, 1]),
+                _ => None,
+            }
+        } else {
+            None
+        };
         let pixel_bytes = if dom {
             4
-        } else if packed {
+        } else if packed_view {
             2
         } else {
             match format {
@@ -843,7 +848,7 @@ impl ContextCore {
                 return None;
             }
             Argument::Pixels { data, view } | Argument::DomPixels { data, view, .. } => {
-                let expected_view = if packed {
+                let expected_view = if packed_view {
                     PixelView::U16
                 } else {
                     PixelView::U8
@@ -879,7 +884,7 @@ impl ContextCore {
                 };
                 let offset = source_y * stride + x * pixel_bytes;
                 let (mut r, mut g, mut b, a) = if let Some(bytes) = source {
-                    if packed {
+                    if packed_view {
                         let word = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
                         unpack_word(word, ty)
                     } else {
@@ -940,7 +945,18 @@ impl ContextCore {
                     a
                 };
                 let destination = (y * width as usize + x) * 4;
-                pixels[destination..destination + 4].copy_from_slice(&[r, g, b, a]);
+                let rgba = [r, g, b, a];
+                let rgba = if let Some([red, green, blue, alpha]) = dom_bits {
+                    [
+                        quantize_channel(r, red),
+                        quantize_channel(g, green),
+                        quantize_channel(b, blue),
+                        quantize_channel(a, alpha),
+                    ]
+                } else {
+                    rgba
+                };
+                pixels[destination..destination + 4].copy_from_slice(&rgba);
             }
         }
         Some(pixels)
@@ -953,7 +969,7 @@ impl ContextCore {
         if dom && !self.validate_dom_source(args[3].number(), args[4].number(), true) {
             return Reply::Null;
         }
-        let (index, image) = match self.validate_texture_definition(args, dom) {
+        let (index, image) = match self.validate_texture_definition(args) {
             Ok(index) => index,
             Err(error) => return error.reply(),
         };
@@ -1003,7 +1019,7 @@ impl ContextCore {
         if dom && !self.validate_dom_source(args[4].number(), args[5].number(), true) {
             return Reply::Null;
         }
-        let (index, image) = match self.validate_texture_update(args, dom) {
+        let (index, image) = match self.validate_texture_update(args) {
             Ok(index) => index,
             Err(error) => return error.reply(),
         };

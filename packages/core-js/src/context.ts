@@ -769,6 +769,7 @@ export class SemanticContext {
     const typedSource = ArrayBuffer.isView(source) || upload !== null;
     const domSource = upload?.source === "dom" || upload?.source === "dom-converted";
     const converted = upload?.source === "dom-converted";
+    const packedView = packed && !domSource;
     const pixelBytes = domSource ? 4 : packed ? 2 : components;
     if (source === null) {
       const pixels = this.allocatePixels(width, height); if (!pixels) return null;
@@ -779,7 +780,7 @@ export class SemanticContext {
     }
     if (typedSource) {
       const tag = upload?.viewType ?? Object.prototype.toString.call(source).slice(8, -1);
-      if (packed ? tag !== "Uint16Array" : tag !== "Uint8Array" && tag !== "Uint8ClampedArray") {
+      if (packedView ? tag !== "Uint16Array" : tag !== "Uint8Array" && tag !== "Uint8ClampedArray") {
         this.error(GL.INVALID_OPERATION); return null;
       }
       bytes = upload?.bytes ?? bytesOf(source as ArrayBufferView);
@@ -793,8 +794,12 @@ export class SemanticContext {
       this.error(GL.INVALID_VALUE); return null;
     }
     const pixels = this.allocatePixels(width, height); if (!pixels) return null;
-    const words = packed ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength) : null;
+    const words = packedView ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength) : null;
     const expand = (value: number, mask: number) => Math.round(value * 255 / mask);
+    const quantize = (value: number, bits: number) => expand(value >>> (8 - bits), (1 << bits) - 1);
+    const rgbBits = type === GL.UNSIGNED_SHORT_4_4_4_4 ? 4 : 5;
+    const greenBits = type === GL.UNSIGNED_SHORT_5_6_5 ? 6 : rgbBits;
+    const alphaBits = type === GL.UNSIGNED_SHORT_4_4_4_4 ? 4 : 1;
     const wordLittleEndian = upload !== null || littleEndian;
     for (let y = 0; y < height; y++) {
       const sourceY = this.unpackFlipY && !converted ? height - 1 - y : y;
@@ -837,8 +842,14 @@ export class SemanticContext {
         }
         const alpha = domSource ? sourceAlpha : a;
         const factor = this.unpackPremultiply && !converted ? alpha / 255 : 1;
-        pixels[destination] = Math.round(r * factor); pixels[destination + 1] = Math.round(g * factor);
-        pixels[destination + 2] = Math.round(b * factor); pixels[destination + 3] = a;
+        r = Math.round(r * factor); g = Math.round(g * factor); b = Math.round(b * factor);
+        // DOM extraction delivers RGBA8 even when the upload requests fewer bits per channel.
+        if (domSource && packed) {
+          r = quantize(r, rgbBits); g = quantize(g, greenBits);
+          b = quantize(b, rgbBits); a = quantize(a, alphaBits);
+        }
+        pixels[destination] = r; pixels[destination + 1] = g;
+        pixels[destination + 2] = b; pixels[destination + 3] = a;
       }
     }
     return pixels;
@@ -901,7 +912,6 @@ export class SemanticContext {
         request.width, request.height, request.format, request.type)
       : this.validateTextureImage(request.target, request.level, request.internalFormat,
         request.width, request.height, 0, request.format, request.type);
-    if (texture && request.type !== GL.UNSIGNED_BYTE) return unsupported("packed DOM texture uploads");
     return texture ? { flipY: this.unpackFlipY, premultiplyAlpha: this.unpackPremultiply,
       colorSpaceConversion: this.unpackColorSpace } : null;
   }
@@ -920,7 +930,6 @@ export class SemanticContext {
     if (upload?.source && !this.validateDomSource(width, height, true)) return;
     const texture = this.validateTextureImage(target!, level!, internalFormat!, width, height, border, format, type);
     if (!texture) return;
-    if (upload?.source && type !== GL.UNSIGNED_BYTE) return unsupported("packed DOM texture uploads");
     const data = this.pixelData(width, height, format, type, source); if (!data) return;
     const image: TextureImage = texture.image(target!) ?? { storage: null, generation: 0, version: 0, format, type };
     const previous = image.storage;
@@ -951,7 +960,6 @@ export class SemanticContext {
     const texture = this.validateTextureSubImage(target!, level!, x!, y!, width, height, format, type);
     if (!texture) return;
     if (source === null) return this.error(GL.INVALID_VALUE);
-    if (upload?.source && type !== GL.UNSIGNED_BYTE) return unsupported("packed DOM texture uploads");
     const data = this.pixelData(width, height, format, type, source); if (!data) return;
     if (width === 0 || height === 0) return;
     const image = texture.image(target!)!;

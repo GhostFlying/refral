@@ -7,6 +7,7 @@ export const domCanvasImageCaseNames = [
   'source-context-ordering',
   'source-context-alpha-and-loss',
   'png-palette-transforms',
+  'packed-formats',
   'image-dimensions',
   'intrinsic-and-cross-realm',
   'invalid-and-security-sources',
@@ -494,6 +495,78 @@ async function icc(gl: WebGLRenderingContext, assets: DomCanvasImageAssets,
   result.observations.defaultColorSpaceExpectation = 'Current browser-selected ICC conversion is compared byte-exactly with the public native backend.';
 }
 
+async function packedFormats(gl: WebGLRenderingContext, assets: DomCanvasImageAssets,
+  result: DomCanvasImageResult, check: CheckValue): Promise<void> {
+  const image = await loadImage(assets.palettePng);
+  const alternate = await loadImage(assets.alternatePng);
+  const alternateBytes = pixels(4, 2, [19, 211, 73, 255]);
+  const imageData = new ImageData(new Uint8ClampedArray(domCanvasImagePalette), 4, 2);
+  const canvasPalette = [
+    53, 123, 199, 255, 170, 102, 85, 255, 221, 153, 34, 255, 69, 123, 187, 255,
+    69, 123, 187, 255, 221, 153, 34, 255, 170, 102, 85, 255, 53, 123, 199, 255,
+  ];
+  const canvasUpdate = pixels(4, 2, canvasPalette.slice(0, 4));
+  const canvasSources = [false, true].map(offscreen => {
+    const { canvas, context } = sourceCanvas(offscreen);
+    return {
+      name: offscreen ? 'OffscreenCanvas' : 'Canvas',
+      first: canvasPalette, second: canvasUpdate,
+      reset() { paint(context, 4, 2, canvasPalette); return canvas; },
+      update() { paint(context, 4, 2, canvasUpdate); return canvas; },
+    };
+  });
+  const sourceCases = [
+    { name: 'ImageData', first: domCanvasImagePalette, second: alternateBytes,
+      reset() { imageData.data.set(domCanvasImagePalette); return imageData; },
+      update() { imageData.data.set(alternateBytes); return imageData; } },
+    { name: 'PNG', first: domCanvasImagePalette, second: alternateBytes,
+      reset: () => image, update: () => alternate },
+    ...canvasSources,
+  ];
+
+  const texture = makeTexture(gl);
+  const program = rttProgram(gl, undefined, rttTextureFragment);
+  gl.uniform1i(gl.getUniformLocation(program, 'u_texture'), 0);
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.disable(gl.DITHER);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 8);
+  gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+  for (const [label, format, type, steps] of [
+    ['565', gl.RGB, gl.UNSIGNED_SHORT_5_6_5, [8, 4, 8, 256]],
+    ['4444', gl.RGBA, gl.UNSIGNED_SHORT_4_4_4_4, [16, 16, 16, 16]],
+    ['5551', gl.RGBA, gl.UNSIGNED_SHORT_5_5_5_1, [8, 8, 8, 128]],
+  ] as const) {
+    const expected = (data: readonly number[], flipY: boolean, premultiply: boolean) =>
+      transform(data, 4, 2, flipY, premultiply).map((value, index) => {
+        const channel = index % 4;
+        if (channel === 3 && format === gl.RGB) return 255;
+        const step = steps[channel]!;
+        return Math.round(Math.floor(value / step) * 255 / (256 / step - 1));
+      });
+    for (const source of sourceCases) {
+      const name = `${source.name} packed ${label}`;
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, format, format, type, source.reset());
+      check(`${name} define`, gl.getError(), gl.NO_ERROR);
+      const update = source.update();
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, format, gl.UNSIGNED_BYTE, update);
+      check(`${name} incompatible subimage type`, gl.getError(), gl.INVALID_OPERATION);
+      gl.viewport(0, 0, 4, 2);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, format, type, update);
+      check(`${name} update`, gl.getError(), gl.NO_ERROR);
+      source.reset();
+      gl.viewport(4, 0, 4, 2);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      capture(gl, result, check, name, horizontal(
+        expected(source.first, true, true), expected(source.second, false, false)), 8, 2);
+    }
+  }
+}
+
 export async function runDomCanvasImageCase(name: DomCanvasImageCaseName, backend: DrawingBackend,
   assets: DomCanvasImageAssets): Promise<DomCanvasImageResult> {
   const result: DomCanvasImageResult = { name, backend, selectedCore: null, checks: [], captures: [],
@@ -514,6 +587,7 @@ export async function runDomCanvasImageCase(name: DomCanvasImageCaseName, backen
       case 'source-context-ordering': await sourceOrdering(context, result, check, contexts); break;
       case 'source-context-alpha-and-loss': await sourceAlphaAndLoss(context, result, check, contexts); break;
       case 'png-palette-transforms': await pngTransforms(gl, assets, result, check); break;
+      case 'packed-formats': await packedFormats(gl, assets, result, check); break;
       case 'image-dimensions': await dimensions(gl, assets, result, check); break;
       case 'intrinsic-and-cross-realm': await brands(gl, assets, result, check); break;
       case 'invalid-and-security-sources': await invalid(context, assets, result, check); break;

@@ -525,19 +525,25 @@
       "api": "drawArrays and drawElements",
       "cores": {
         "js": {
-          "status": "differential-verified",
+          "status": "cts-verified",
           "environments": [
             "chrome-macos-arm64",
             "chrome158-macos-arm64"
           ],
-          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels. LINES, LINE_STRIP, LINE_LOOP and TRIANGLE_FAN are implemented for both draw calls. All four original topology and range files and the three-way line/fan pixel differential passed (task 058).",
+          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels. LINES, LINE_STRIP, LINE_LOOP and TRIANGLE_FAN are implemented for both draw calls. Task 058 passed the original loop/fan, line-quality and array/index bounds cases and an exact three-backend pixel comparison.",
           "tests": [
+            "sdk/tests/conformance/rendering/line-loop-tri-fan.html",
+            "sdk/tests/conformance/rendering/line-rendering-quality.html",
+            "sdk/tests/conformance/rendering/draw-arrays-out-of-bounds.html",
+            "sdk/tests/conformance/rendering/draw-elements-out-of-bounds.html",
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/differential.spec.ts::WebGL1 differential vertex-index-update",
             "tests/chrome/differential.spec.ts::WebGL1 differential index-format-cache",
             "tests/chrome/dual-core-drawing.spec.ts"
           ],
           "evidence": [
+            { "path": "artifacts/conformance/campaign/nonpoint-topology/9943fbe/js/results.json", "passed": true },
+            { "path": "artifacts/conformance/campaign/nonpoint-topology/9943fbe/dual-core/result.json", "passed": true },
             {
               "path": "artifacts/differential/uniform-snapshot/result.json",
               "passed": true,
@@ -571,14 +577,20 @@
           ]
         },
         "rust": {
-          "status": "differential-verified",
-          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels. LINES, LINE_STRIP, LINE_LOOP and TRIANGLE_FAN are implemented for both draw calls. All four original topology and range files and the three-way line/fan pixel differential passed (task 058).",
+          "status": "cts-verified",
+          "coverage": "TRIANGLES and TRIANGLE_STRIP arrays and UNSIGNED_BYTE/UNSIGNED_SHORT index draws with owned state, resources and typed uniforms. Strip winding and first/offset are verified on the default framebuffer. Index 65535 is checked against explicit WebGL1 pixels. LINES, LINE_STRIP, LINE_LOOP and TRIANGLE_FAN are implemented for both draw calls. Task 058 passed the original loop/fan, line-quality and array/index bounds cases and an exact three-backend pixel comparison.",
           "tests": [
+            "sdk/tests/conformance/rendering/line-loop-tri-fan.html",
+            "sdk/tests/conformance/rendering/line-rendering-quality.html",
+            "sdk/tests/conformance/rendering/draw-arrays-out-of-bounds.html",
+            "sdk/tests/conformance/rendering/draw-elements-out-of-bounds.html",
             "tests/chrome/dual-core-drawing.spec.ts",
             "tests/chrome/buffers.spec.ts",
             "packages/core-wasm/tests/render.integration.ts"
           ],
           "evidence": [
+            { "path": "artifacts/conformance/campaign/nonpoint-topology/9943fbe/rust/results.json", "passed": true },
+            { "path": "artifacts/conformance/campaign/nonpoint-topology/9943fbe/dual-core/result.json", "passed": true },
             {
               "path": "artifacts/dual-core-drawing/",
               "passed": true

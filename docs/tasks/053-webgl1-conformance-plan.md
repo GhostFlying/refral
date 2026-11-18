@@ -16,6 +16,21 @@
 
 首批选择器已在 1bb6537 上用 headless Chrome 实跑。三个文件都走到上游完成回调，Chrome 原生通过 246 条断言，JS 通过 106 条、失败 18 条，Rust 通过 124 条。两个名称错误文件还会按 `WEBGL_lose_context` 是否可用执行丢失分支，Chrome 各执行 118 条，当前两套核心各执行 57 条。第一批先修正 JS 的 18 条失败，丢失分支留入生命周期任务。九份逐文件结果及截图在 `artifacts/conformance/campaign/baseline-1bb6537-names/`。
 
+## 已交付的批次
+
+名称校验后首次全量复测使用 035a959，三路各跑完 971 个文件。原生 968、JS 854、Rust 854。JS 新增四个通过，Rust 新增一个，均无退步。两个核心未通过的 117 个 URL 完全相同。三路共 2,913 张有效页面截图，结果在 `artifacts/conformance/campaign/location-names/full`。之后的记录列出各批实际复测的原始文件，全量分母始终为 971。
+
+| 合入 | 行为 | 原始用例与实测 |
+| --- | --- | --- |
+| [#41](https://github.com/GhostFlying/refral/pull/41) | location 名称验证 | 三个原始文件三路全部通过。JS 的 18 条失败断言归零。 |
+| [#42](https://github.com/GhostFlying/refral/pull/42) | 压缩纹理无扩展分支 | 10 个文件全过。Chrome 2,942 条断言，JS、Rust 各 115 条。 |
+| [#43](https://github.com/GhostFlying/refral/pull/43) | hint、lineWidth 与状态查询 | hint、gl-line-width、gl-enum-tests 三路通过。gl-get-calls 仍有独立状态缺口。 |
+| [#44](https://github.com/GhostFlying/refral/pull/44) | 零尺寸与超限 canvas 的 GPU 配置和恢复 | 两个文件三路各过 40 条，未出现 GPU validation error。 |
+| [#45](https://github.com/GhostFlying/refral/pull/45)、[#46](https://github.com/GhostFlying/refral/pull/46) | ANGLE varying 数组与阶段 uniform packing | 三个原始文件三路各过 43、181、5 条。OGLES build 组仍有一条链接失败。 |
+| [#47](https://github.com/GhostFlying/refral/pull/47) | 同线程 OffscreenCanvas 上下文和纹理源 | 10 个文件三路各过 9,876 条，实际核心、可选分支及截图见任务 061。 |
+| [#48](https://github.com/GhostFlying/refral/pull/48) | 不完整纹理的采样反馈判断 | 原始文件 Chrome 11 条，JS、Rust 各 5 条。差分检查了回退颜色和恢复完整后的错误。 |
+| [#49](https://github.com/GhostFlying/refral/pull/49) | 线图元、三角扇与空索引绘制 | 四个原始文件每路 97 条断言均通过；三路 64×64 图像逐通道一致。 |
+
 ## 下一批从哪里开始
 
 | 顺序 | 范围与依赖 | 首组选用的原始文件和验收行为 |

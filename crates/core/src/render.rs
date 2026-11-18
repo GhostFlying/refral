@@ -253,6 +253,17 @@ struct Executable {
     vertex: Vec<u8>,
     fragment: Vec<u8>,
 }
+
+impl Executable {
+    fn sampled_units(&self) -> impl Iterator<Item = (u32, usize)> + '_ {
+        self.layout
+            .samplers
+            .iter()
+            .zip(&self.values[self.layout.uniforms.len()..])
+            .flat_map(|(sampler, units)| units.iter().map(move |&unit| (sampler.ty, unit as usize)))
+    }
+}
+
 struct Program {
     shaders: Vec<ObjectHandle>,
     bindings: Vec<(String, u32)>,

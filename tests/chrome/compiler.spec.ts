@@ -252,3 +252,86 @@ test("the vertex uniform limit renders the last element of all four packed colum
     }
   }
 });
+
+test("sampler array elements retain independent units and draw bindings", async ({ page }) => {
+  await page.goto("/packages/compiler/test/browser.html");
+  const reports = await page.evaluate(async () => {
+    const path = "/packages/webgl/src/index.ts";
+    const { createWebGLOnWebGPU, getTestingHooks } = await import(/* @vite-ignore */ path) as typeof import("../../packages/webgl/src/index.js");
+    const reports = [];
+    for (const backend of ["native", "js", "rust"] as const) {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 4;
+      const gl = backend === "native" ? canvas.getContext("webgl", { antialias: false })! :
+        await createWebGLOnWebGPU(canvas, { version: 1, core: backend, antialias: false });
+      const hooks = backend === "native" ? undefined : getTestingHooks(gl);
+      try {
+        const program = gl.createProgram()!;
+        const shaders = [
+          [gl.VERTEX_SHADER, "attribute vec2 p; void main(){gl_Position=vec4(p,0.,1.);}"],
+          [gl.FRAGMENT_SHADER, `precision mediump float;
+            struct S { sampler2D images[2]; }; uniform S t; uniform samplerCube sky;
+            void main(){vec4 v=vec4(0); for(int i=0;i<2;++i) v+=texture2D(t.images[i],vec2(.5));
+              gl_FragColor=vec4(v.rgb+textureCube(sky,vec3(1,0,0)).rgb,1.);}`],
+        ] as const;
+        for (const [stage, source] of shaders) {
+          const shader = gl.createShader(stage)!;
+          gl.shaderSource(shader, source);
+          gl.compileShader(shader);
+          gl.attachShader(program, shader);
+        }
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? backend);
+        gl.useProgram(program);
+        const image = gl.getUniformLocation(program, "t.images")!;
+        const last = gl.getUniformLocation(program, "t.images[1]")!;
+        const query = () => [gl.getUniform(program, image), gl.getUniform(program, last)];
+        const initial = query();
+        gl.validateProgram(program);
+        const defaultConflict = !gl.getProgramParameter(program, gl.VALIDATE_STATUS);
+        gl.uniform1iv(image, [1, 2]);
+        const assigned = query();
+        gl.uniform1iv(image, [3, gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS)]);
+        const invalid = gl.getError();
+        const afterError = query();
+        gl.uniform1i(last, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        const conflict = gl.getError();
+        gl.uniform1i(last, 2);
+        for (const [unit, pixels] of [[1, [17, 0, 0, 255]], [2, [0, 81, 0, 255]]] as const) {
+          gl.activeTexture(gl.TEXTURE0 + unit);
+          gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(pixels));
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+        const position = gl.getAttribLocation(program, "p");
+        gl.enableVertexAttribArray(position);
+        gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        const pixel = new Uint8Array(4);
+        gl.readPixels(2, 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        reports.push({ backend, actual: hooks?.core ?? "native", initial, assigned, afterError, defaultConflict,
+          invalid, conflict, pixel: [...pixel], error: gl.getError(), diagnostics: hooks?.errors ?? [] });
+      } finally {
+        await hooks?.dispose();
+      }
+    }
+    return reports;
+  });
+  await mkdir("artifacts/compiler", { recursive: true });
+  await writeFile("artifacts/compiler/sampler-aggregates.json", JSON.stringify(reports, null, 2) + "\n");
+  for (const report of reports) {
+    expect(report.actual).toBe(report.backend);
+    expect(report.initial).toEqual([0, 0]);
+    expect(report.assigned).toEqual([1, 2]);
+    expect(report.afterError).toEqual([1, 2]);
+    expect(report.invalid).toBe(0x0501);
+    expect(report.defaultConflict).toBe(true);
+    expect(report.conflict).toBe(0x0502);
+    expect(report.pixel).toEqual([17, 81, 0, 255]);
+    expect(report.error).toBe(0);
+    expect(report.diagnostics).toEqual([]);
+  }
+});

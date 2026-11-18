@@ -316,7 +316,7 @@
             "sdk/tests/conformance/programs/gl-get-active-attribute.html"
           ],
           "limits": [
-            "Numeric structure uniforms expose qualified scalar, vector, matrix and basic-array fields with per-stage offsets. Samplers inside structures, sampler arrays and attribute arrays return explicit link diagnostics. ESSL100 scalar/vector/matrix varying arrays occupy distinct WGSL locations per element and column. The linker checks ESSL100 varying static use and invariance and supplies matching WGSL inputs for declared, unwritten vertex outputs. Independent varyings do not share a physical location.",
+            "Numeric structure uniforms expose qualified scalar, vector, matrix and basic-array fields with per-stage offsets. WebGL1 sampler2D/samplerCube arrays and structure fields use individual texture/sampler bindings. Attribute arrays and other opaque types return explicit link diagnostics. ESSL100 scalar/vector/matrix varying arrays occupy distinct WGSL locations per element and column. The linker checks ESSL100 varying static use and invariance and supplies matching WGSL inputs for declared, unwritten vertex outputs. Independent varyings do not share a physical location.",
             "WebGL1 link checks each stage with ANGLE uniform packing against 256 MAX_VERTEX_UNIFORM_VECTORS or 64 MAX_FRAGMENT_UNIFORM_VECTORS from packages/compiler/profile-limits.json"
           ],
           "ctsEvidence": {
@@ -621,7 +621,7 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Float/int/bool scalar/vector and array updates, typed queries, exact i32 values, scalar sampler2D assignment and multiple-unit sampling. Original uniform CTS and shared three-path state/pixel scenes pass.",
+          "coverage": "Float/int/bool scalar/vector and array updates, typed queries, exact i32 values, sampler2D/samplerCube scalar and array assignment, structure-field lookup and multiple-unit sampling. Original uniform CTS and shared three-path state/pixel scenes pass.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential uniform-snapshot",
             "tests/chrome/differential.spec.ts::WebGL1 differential render-to-texture",
@@ -679,7 +679,7 @@
         },
         "rust": {
           "status": "cts-verified",
-          "coverage": "Float/int/bool scalar/vector and array updates, typed queries, exact i32 values, scalar sampler2D assignment and multiple-unit sampling. Original uniform CTS and shared three-path state/pixel scenes pass.",
+          "coverage": "Float/int/bool scalar/vector and array updates, typed queries, exact i32 values, sampler2D/samplerCube scalar and array assignment, structure-field lookup and multiple-unit sampling. Original uniform CTS and shared three-path state/pixel scenes pass.",
           "tests": [
             "tests/chrome/rtt.spec.ts",
             "tests/chrome/cts.spec.ts",

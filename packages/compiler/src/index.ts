@@ -42,8 +42,49 @@ function sameType(left: ShaderVariable, right: ShaderVariable, matchPrecision = 
     });
 }
 
-function containsSampler(variable: ShaderVariable): boolean {
-  return isSampler(variable) || variable.fields.some(containsSampler);
+interface SamplerLeaf {
+  name: string;
+  type: number;
+  symbols: string[];
+}
+
+// ANGLE extracts one typed sampler per field path. Its flattened index runs through
+// arrays of enclosing structures from the outermost declaration to the leaf.
+function stageSamplers(shader: CompiledShader, limit: number): SamplerLeaf[] {
+  const result: SamplerLeaf[] = [];
+  let count = 0;
+  function visit(variable: ShaderVariable, name: string, path: string[], index: number, inArray: boolean) {
+    if (variable.fields.length) {
+      if (!variable.fields.some(hasActiveSampler)) return;
+      if (variable.size > limit) throw new Error("Stage sampler count exceeds the texture unit limit.");
+      for (let i = 0; i < variable.size; ++i) {
+        const element = variable.isArray ? `${name}[${i}]` : name;
+        for (const field of variable.fields.filter(hasActiveSampler)) {
+          visit(field, `${element}.${field.name}`, [...path, field.name],
+            index * variable.size + i, inArray || variable.isArray);
+        }
+      }
+      return;
+    }
+    if (!isSampler(variable)) return;
+    if (variable.type !== 0x8b5e && variable.type !== 0x8b60) {
+      throw new Error(`Sampler ${name} has an unsupported type.`);
+    }
+    count += variable.size;
+    if (count > limit) throw new Error("Stage sampler count exceeds the texture unit limit.");
+    const symbol = path.length === 1 ? variable.name :
+      "gl_RefralField" + path.map(part => `_${part.length}_${part}`).join("");
+    const symbols = Array.from({ length: variable.size }, (_, i) => inArray || variable.isArray
+      ? `gl_RefralElement${index * variable.size + i}_${symbol}` : symbol);
+    result.push({ name: variable.isArray ? `${name}[0]` : name, type: variable.type, symbols });
+  }
+  function hasActiveSampler(variable: ShaderVariable): boolean {
+    return variable.active && (isSampler(variable) || variable.fields.some(hasActiveSampler));
+  }
+  for (const variable of active(shader.uniforms).filter(hasActiveSampler)) {
+    visit(variable, variable.name, [variable.name], 0, false);
+  }
+  return result;
 }
 
 function numericUniforms(shader: CompiledShader) {
@@ -119,16 +160,8 @@ export function linkShaders(vertex: CompiledShader, fragment: CompiledShader,
     if (previous && !sameType(previous, variable, true)) {
       return failedProgram(`Uniform interface mismatch for ${variable.name}.`);
     }
-    if (variable.fields.some(containsSampler)) {
-      return failedProgram(`Samplers inside struct uniform ${variable.name} require an unsupported binding layout.`);
-    }
-    if (isSampler(variable) && (variable.size !== 1 ||
-        (variable.type !== 0x8b5e && variable.type !== 0x8b60))) {
-      return failedProgram(`Sampler ${variable.name} requires an unsupported type or array layout.`);
-    }
     allUniforms.set(variable.name, variable);
   }
-  // A one-element sampler array has scalar-sized reflection in the pinned ANGLE API.
   // Reject the backend's explicit unsupported operation marker before final WGSL is exposed.
   if (unsupportedTextureOperation.test(vertex.wgsl) ||
       unsupportedTextureOperation.test(fragment.wgsl)) {
@@ -201,16 +234,32 @@ export function linkShaders(vertex: CompiledShader, fragment: CompiledShader,
   for (const output of active(fragment.outputs)) setLocation(fragmentLocations, output, outputLocation++);
   const uniforms: ProgramUniform[] = [];
   const samplers: ProgramSampler[] = [];
-  for (const variable of allUniforms.values()) {
-    if (isSampler(variable)) {
-      const samplerBinding = samplers.length * 2;
-      const textureBinding = samplerBinding + 1;
-      samplers.push({ name: variable.name, type: variable.type, size: variable.size, samplerBinding, textureBinding });
-      for (const map of [locations, fragmentLocations]) {
-        map.set(`ANGLE_sampler_${variable.name}`, samplerBinding);
-        map.set(`ANGLE_texture_${variable.name}`, textureBinding);
+  try {
+    const physicalBindings = new Map<string, ProgramSampler>();
+    let nextBinding = 0;
+    let totalUnits = 0;
+    for (const [stage, map, limit] of [[vertex, locations, COMPILER_LIMITS.vertexTextureUnits],
+      [fragment, fragmentLocations, COMPILER_LIMITS.fragmentTextureUnits]] as const) {
+      for (const { name, type, symbols } of stageSamplers(stage, limit)) {
+        totalUnits += symbols.length;
+        if (totalUnits > COMPILER_LIMITS.combinedTextureUnits) {
+          return failedProgram("Combined texture count exceeds the initial profile limit.");
+        }
+        let sampler = physicalBindings.get(name);
+        if (!sampler) {
+          sampler = { name, type, size: symbols.length, samplerBinding: nextBinding, textureBinding: nextBinding + 1 };
+          physicalBindings.set(name, sampler);
+          samplers.push(sampler);
+          nextBinding += 2 * symbols.length;
+        }
+        symbols.forEach((symbol, i) => {
+          map.set(`ANGLE_sampler_${symbol}`, sampler.samplerBinding + 2 * i);
+          map.set(`ANGLE_texture_${symbol}`, sampler.textureBinding + 2 * i);
+        });
       }
     }
+  } catch (error) {
+    return failedProgram(error instanceof Error ? error.message : String(error));
   }
   const vertexUniforms = numericUniforms(vertex);
   const fragmentUniforms = numericUniforms(fragment);
@@ -227,9 +276,6 @@ export function linkShaders(vertex: CompiledShader, fragment: CompiledShader,
       uniforms.push({ name: `gl_DepthRange.${field.name}`, type: field.type, size: field.size,
         vertexOffset: null, fragmentOffset: null, arrayStride: 0, matrixStride: 0 });
     }
-  }
-  if (samplers.length > COMPILER_LIMITS.combinedTextureUnits) {
-    return failedProgram("Combined texture count exceeds the initial profile limit.");
   }
   try {
     const additionalOutputs = new Set<string>();

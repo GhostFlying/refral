@@ -90,7 +90,9 @@
             "sdk/tests/conformance/offscreencanvas/context-creation-worker.html",
             "sdk/tests/conformance/offscreencanvas/context-creation.html",
             "tests/chrome/offscreen-discard.spec.ts",
-            "sdk/tests/conformance/offscreencanvas/context-attribute-preserve-drawing-buffer.html"
+            "sdk/tests/conformance/offscreencanvas/context-attribute-preserve-drawing-buffer.html",
+            "tests/chrome/canvas-resize.spec.ts",
+            "sdk/tests/conformance/canvas/render-after-resize-test.html"
           ],
           "evidence": [
             {
@@ -112,7 +114,8 @@
           "limits": [
             "WebGL-like structural context identity",
             "Antialias is reported false",
-            "The transferred OffscreenCanvas discard probe is verified on Chrome 158 Metal. Ambiguous texture expiry preserves the attachments. The accepted HTML post-composite drawImage difference is listed under acceptedDifferences."
+            "The transferred OffscreenCanvas discard probe is verified on Chrome 158 Metal. Ambiguous texture expiry preserves the attachments. The accepted HTML post-composite drawImage difference is listed under acceptedDifferences.",
+            "Assigning an equal HTML canvas dimension preserves the GL attachments. A synchronous Canvas2D copy before any subsequent GL access or mutation observer callback can still see a transparent public bitmap. See docs/tasks/100-render-after-resize.md."
           ]
         },
         "rust": {
@@ -127,7 +130,9 @@
             "sdk/tests/conformance/offscreencanvas/context-creation-worker.html",
             "sdk/tests/conformance/offscreencanvas/context-creation.html",
             "tests/chrome/offscreen-discard.spec.ts",
-            "sdk/tests/conformance/offscreencanvas/context-attribute-preserve-drawing-buffer.html"
+            "sdk/tests/conformance/offscreencanvas/context-attribute-preserve-drawing-buffer.html",
+            "tests/chrome/canvas-resize.spec.ts",
+            "sdk/tests/conformance/canvas/render-after-resize-test.html"
           ],
           "evidence": [
             {
@@ -150,7 +155,8 @@
           "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
           "limits": [
             "See buffer-lifecycle-contract for the independently verified common Buffer scope.",
-            "The transferred OffscreenCanvas discard probe is verified on Chrome 158 Metal. Ambiguous texture expiry preserves the attachments. The accepted HTML post-composite drawImage difference is listed under acceptedDifferences."
+            "The transferred OffscreenCanvas discard probe is verified on Chrome 158 Metal. Ambiguous texture expiry preserves the attachments. The accepted HTML post-composite drawImage difference is listed under acceptedDifferences.",
+            "Assigning an equal HTML canvas dimension preserves the GL attachments. A synchronous Canvas2D copy before any subsequent GL access or mutation observer callback can still see a transparent public bitmap. See docs/tasks/100-render-after-resize.md."
           ]
         }
       }

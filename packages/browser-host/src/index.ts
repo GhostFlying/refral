@@ -188,6 +188,8 @@ export class BrowserHost implements SemanticHost {
   private textureCopyPipeline: GPURenderPipeline | null = null;
   private presentationConfigured = false;
   private lastPresentedTexture: GPUTexture | null = null;
+  private lastPresentationTime: DocumentTimeline['currentTime'] = null;
+  private readonly sizeObserver: MutationObserver | null;
   private readonly offscreenDiscard: OffscreenDiscard | null;
   private presentationPipeline: GPURenderPipeline | null = null;
   private blackTexture: GPUTexture | null = null;
@@ -233,6 +235,11 @@ export class BrowserHost implements SemanticHost {
       canvasFormat: format,
       coordinateConvention: "GL row zero in offscreen surfaces, flipped on presentation",
     };
+    this.sizeObserver = null;
+    if ('ownerDocument' in canvas) {
+      this.sizeObserver = new MutationObserver(records => this.observeCanvasSize(canvas, records));
+      this.sizeObserver.observe(canvas, { attributes: true, attributeFilter: ['width', 'height'], attributeOldValue: true });
+    }
     this.configurePresentation();
     device.addEventListener("uncapturederror", this.handleError);
     abandonedHosts.register(this, { device, listener: this.handleError, textures: this.textures,
@@ -531,8 +538,36 @@ export class BrowserHost implements SemanticHost {
     return texture;
   }
 
+  private observeCanvasSize(canvas: HTMLCanvasElement, records: MutationRecord[]): void {
+    if (!records.length || !this.defaultTarget || this.disposed) return;
+    let parser: HTMLCanvasElement | undefined;
+    const resized = records.some(({ attributeName, oldValue }) => {
+      const dimension = attributeName === 'width' ? 'width' : 'height';
+      if (oldValue === canvas.getAttribute(dimension)) return false;
+      // Use HTML's own parsing and dimension limits for absent or noncanonical attribute values.
+      parser ??= canvas.ownerDocument.createElement('canvas');
+      if (oldValue === null) parser.removeAttribute(dimension);
+      else parser.setAttribute(dimension, oldValue);
+      return parser[dimension] !== canvas[dimension];
+    });
+    if (resized) {
+      this.resetDefaultDrawingBuffer();
+      return;
+    }
+    // Replacing the public bitmap at equal dimensions can change its WebGPU texture in the
+    // same frame. Republish the canonical attachments before the next GL use or compositor.
+    if (this.retained || (this.lastPresentedTexture && (this.lastPresentationTime === canvas.ownerDocument.timeline.currentTime
+        || !canvas.isConnected || !canvas.checkVisibility({ visibilityProperty: true })))) {
+      this.beginPass(this.defaultTarget);
+      this.publishDefaultColor();
+    }
+  }
+
   private resolveTarget(snapshot: TargetSnapshot): Target {
     if (snapshot.isDefault) {
+      if (this.sizeObserver && 'ownerDocument' in this.canvas) {
+        this.observeCanvasSize(this.canvas, this.sizeObserver.takeRecords());
+      }
       if (this.offscreenDiscard && this.defaultTarget?.width === snapshot.width &&
           this.defaultTarget.height === snapshot.height && this.offscreenDiscard.discarded()) {
         this.resetDefaultDrawingBuffer();
@@ -1078,7 +1113,10 @@ export class BrowserHost implements SemanticHost {
     }
     const presentationTexture = this.context.getCurrentTexture();
     if (this.offscreenDiscard) this.offscreenDiscard.published(presentationTexture);
-    else if (!this.retained) this.lastPresentedTexture = presentationTexture;
+    else if (!this.retained && 'ownerDocument' in this.canvas) {
+      this.lastPresentedTexture = presentationTexture;
+      this.lastPresentationTime = this.canvas.ownerDocument.timeline.currentTime;
+    }
     const pass = this.getEncoder().beginRenderPass({ colorAttachments: [{
       view: this.attachmentView(presentationTexture), loadOp: "clear", storeOp: "store",
       clearValue: { r: 0, g: 0, b: 0, a: this.alpha ? 0 : 1 },
@@ -1248,6 +1286,7 @@ export class BrowserHost implements SemanticHost {
     if (this.disposed) return;
     this.flush();
     this.disposed = true;
+    this.sizeObserver?.disconnect();
     abandonedHosts.unregister(this);
     await this.device.queue.onSubmittedWorkDone().catch(() => {});
     this.offscreenDiscard?.dispose();

@@ -111,6 +111,20 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
   const vertexCubeBias = compiler.compile('attribute vec3 position; uniform samplerCube cube; void main(){gl_Position=vec4(position,1.0)+textureCube(cube,vec3(1.0,0.0,0.0),0.5)*0.01;}', 'vertex');
   const markerNamedFunction = compiler.compile('precision mediump float; vec4 TODO_UNHANDLED_TEXTURE_FUNCTION(){return vec4(0.25,0.5,0.75,1.0);} void main(){gl_FragColor=TODO_UNHANDLED_TEXTURE_FUNCTION();}', 'fragment');
   const markerNamedProgram = compiler.link(vertex, markerNamedFunction);
+  const indexedLodSource = `#extension GL_EXT_shader_texture_lod : require
+    precision mediump float;
+    uniform sampler2D textures[2];
+    void main() {
+      vec4 color = vec4(0.0);
+      for (int i = 0; i < 2; ++i) {
+        color += texture2DGradEXT(textures[i], vec2(0.5), vec2(0.01), vec2(0.01));
+        color += texture2DLodEXT(textures[i], vec2(0.5), 0.0);
+      }
+      gl_FragColor = color;
+    }`;
+  const disabledLod = compiler.compile(indexedLodSource, "fragment");
+  const indexedLod = compiler.compile(indexedLodSource, "fragment", 1, 4);
+  const indexedLodProgram = compiler.link(vertex, indexedLod);
   const { simpleTextureVertexShader, simpleCubeMapTextureFragmentShader,
     fragDataReadFragmentShader } = fragmentOutputShaders;
   const ctsCubeVertex = compiler.compile(simpleTextureVertexShader, "vertex");
@@ -171,6 +185,12 @@ export function runCompilerCorpus(compiler: Compiler): CompilerCaseResult[] {
   const invariantMismatch = compiler.link(declaredVertex, invariantInput);
   return [
     ...uniformPackingCases(compiler),
+    { name: "extension-lod-and-gradient-on-indexed-samplers",
+      passed: !disabledLod.success && disabledLod.log.includes("extension is not supported") &&
+        indexedLod.success && indexedLodProgram.success &&
+        indexedLodProgram.fragmentWGSL.includes("textureSampleLevel(") &&
+        indexedLodProgram.fragmentWGSL.includes("textureSampleGrad("),
+      log: [indexedLod.log, indexedLodProgram.log].filter(Boolean).join("\n") },
     { name: "unwritten-varying-matrix-array-pipeline", passed: declaredProgram.success && [0, 1, 2, 3].every(location =>
       declaredProgram.vertexWGSL.includes(`@location(${location}) ANGLE_unwritten_${location} : vec2<f32>`)) &&
       declaredProgram.vertexWGSL.includes("@invariant @builtin(position) gl_Position_"), log: declaredProgram.log },

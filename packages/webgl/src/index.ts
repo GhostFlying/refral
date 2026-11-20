@@ -1,6 +1,6 @@
 import { createContextInterface, webglInterfaces } from './interfaces.js';
 import { createVertexArrayExtension } from './vertex-arrays.js';
-import { GL, SRGB, BLEND_MINMAX, VERTEX_ARRAY_BINDING_OES, allocateContextId, ExecutionResources } from "@refral/core-api";
+import { GL, SRGB, BLEND_MINMAX, SHADER_EXTENSIONS, DERIVATIVE_HINT_OES, VERTEX_ARRAY_BINDING_OES, allocateContextId, ExecutionResources } from "@refral/core-api";
 import type { BufferHandle, BufferSnapshot, CoreKind, DrawingCore } from "@refral/core-api";
 import { createJsDrawingCore } from "@refral/core-js";
 import { prepareRustDrawingCores, prepareRustModule } from "@refral/core-wasm";
@@ -86,7 +86,8 @@ function trackBitmapTransfer(canvas: HTMLCanvasElement | OffscreenCanvas, curren
   };
 }
 
-function createGeneration(realm: typeof globalThis, host: BrowserHost, core: DrawingCore, releaseResources: () => void) {
+function createGeneration(realm: typeof globalThis, host: BrowserHost, core: DrawingCore, releaseResources: () => void,
+  shaderExtensionMask: number) {
   const interfaces = webglInterfaces(realm);
   const bufferFacade = createBufferFacade(core, interfaces);
   const programFacade = createProgramFacade(core, interfaces);
@@ -99,11 +100,23 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
   let floatExtension: object | undefined;
   const supportsArrays = core.invoke('supportsVertexArrayObjects', []) === true;
   let arrays: ReturnType<typeof createVertexArrayExtension> | undefined;
-  const coreExtensions = core.invoke('supportsCoreExtensions', []) === true ? {
+  const coreExtensions: Record<string, { name: string; operation: string; enums: Record<string, number>; args?: number[] }>
+    = core.invoke('supportsCoreExtensions', []) === true ? {
     ext_blend_minmax: { name: 'EXT_blend_minmax', operation: 'enableBlendMinmax', enums: BLEND_MINMAX },
     oes_element_index_uint: { name: 'OES_element_index_uint', operation: 'enableElementIndexUint', enums: {} },
     oes_fbo_render_mipmap: { name: 'OES_fbo_render_mipmap', operation: 'enableFramebufferMipmaps', enums: {} },
   } : {};
+  if (shaderExtensionMask && core.invoke('supportsShaderExtensions', []) === true) {
+    for (const [name, bit, enums] of [
+      ['OES_standard_derivatives', SHADER_EXTENSIONS.derivatives, { FRAGMENT_SHADER_DERIVATIVE_HINT_OES: DERIVATIVE_HINT_OES }],
+      ['EXT_frag_depth', SHADER_EXTENSIONS.fragmentDepth, {}],
+      ['EXT_shader_texture_lod', SHADER_EXTENSIONS.textureLod, {}],
+    ] as const) {
+      if (shaderExtensionMask & bit) coreExtensions[name.toLowerCase()] = {
+        name, operation: 'enableShaderExtension', args: [bit], enums,
+      };
+    }
+  }
   const enabledCoreExtensions = new Map<string, object>();
   let releasing: Promise<void> | undefined;
   let disposed = false;
@@ -116,10 +129,10 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
     coreExtensionNames: Object.values(coreExtensions).map(extension => extension.name),
     enableCoreExtension(name: string): object | null {
       if (!Object.hasOwn(coreExtensions, name)) return null;
-      const spec = coreExtensions[name as keyof typeof coreExtensions]!;
+      const spec = coreExtensions[name]!;
       let extension = enabledCoreExtensions.get(name);
       if (!extension) {
-        core.invoke(spec.operation, []);
+        core.invoke(spec.operation, spec.args ?? []);
         extension = new realm.Object();
         for (const [key, value] of Object.entries(spec.enums))
           Object.defineProperty(extension, key, { value, enumerable: true });
@@ -321,7 +334,8 @@ async function prepareRuntime(options: RuntimeOptions) {
       const services = { compiler: registry, host, resources };
       try {
         const core = makeCore(coreOptions, services);
-        return createGeneration(realm, host, core, () => { resources.dispose(); registry.dispose(); });
+        return createGeneration(realm, host, core, () => { resources.dispose(); registry.dispose(); },
+          compiler.shaderExtensionMask ?? 0);
       } catch (error) {
         registry.dispose();
         resources.dispose();

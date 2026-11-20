@@ -19,7 +19,7 @@ target_link_options(compiler PRIVATE
   -O2 --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1
   -sEXPORT_NAME=RefralCompiler -sALLOW_MEMORY_GROWTH=1
   -sINITIAL_MEMORY=33554432 -sSTACK_SIZE=4194304
-  "-sEXPORTED_FUNCTIONS=['_RefralCompile']"
+  "-sEXPORTED_FUNCTIONS=['_RefralCompile','_RefralCompileWithExtensions','_RefralShaderExtensionMask']"
   "-sEXPORTED_RUNTIME_METHODS=['ccall']"
   -sENVIRONMENT=web,node -sFILESYSTEM=0)
 set_target_properties(compiler PROPERTIES SUFFIX ".mjs"

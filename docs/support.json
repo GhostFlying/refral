@@ -1373,6 +1373,138 @@
       }
     },
     {
+      "id": "standard-derivatives",
+      "api": "OES_standard_derivatives",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Per-context ESSL derivatives map to WGSL dpdx, dpdy and fwidth. The derivative hint starts at DONT_CARE and remains queryable after valid updates.",
+          "tests": [
+            "sdk/tests/conformance/extensions/oes-standard-derivatives.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-shader-extensions/verified-final/js/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 79
+            }
+          ],
+          "unsupportedBehavior": "Compilation requiring the extension fails before enabling it. Artifacts without the required compiler or core authoring protocol omit the extension."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Per-context ESSL derivatives map to WGSL dpdx, dpdy and fwidth. The derivative hint starts at DONT_CARE and remains queryable after valid updates.",
+          "tests": [
+            "sdk/tests/conformance/extensions/oes-standard-derivatives.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-shader-extensions/verified-final/rust/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 79
+            }
+          ],
+          "unsupportedBehavior": "Compilation requiring the extension fails before enabling it. Artifacts without the required compiler or core authoring protocol omit the extension."
+        }
+      }
+    },
+    {
+      "id": "fragment-depth",
+      "api": "EXT_frag_depth",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Per-context ESSL gl_FragDepthEXT compiles to the WGSL frag_depth output and participates in WebGPU depth testing.",
+          "tests": [
+            "sdk/tests/conformance/extensions/ext-frag-depth.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-shader-extensions/verified-final/js/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 27
+            }
+          ],
+          "unsupportedBehavior": "Compilation requiring the extension fails before enabling it. Artifacts without the required compiler or core authoring protocol omit the extension."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Per-context ESSL gl_FragDepthEXT compiles to the WGSL frag_depth output and participates in WebGPU depth testing.",
+          "tests": [
+            "sdk/tests/conformance/extensions/ext-frag-depth.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-shader-extensions/verified-final/rust/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 27
+            }
+          ],
+          "unsupportedBehavior": "Compilation requiring the extension fails before enabling it. Artifacts without the required compiler or core authoring protocol omit the extension."
+        }
+      }
+    },
+    {
+      "id": "shader-texture-lod",
+      "api": "EXT_shader_texture_lod",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Per-context explicit LOD and gradients for 2D, projected and cube texture sampling, including sampler arrays indexed by loop variables.",
+          "tests": [
+            "sdk/tests/conformance/extensions/ext-shader-texture-lod.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-shader-extensions/verified-final/js/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 43
+            }
+          ],
+          "unsupportedBehavior": "Compilation requiring the extension fails before enabling it. Artifacts without the required compiler or core authoring protocol omit the extension."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Per-context explicit LOD and gradients for 2D, projected and cube texture sampling, including sampler arrays indexed by loop variables.",
+          "tests": [
+            "sdk/tests/conformance/extensions/ext-shader-texture-lod.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-shader-extensions/verified-final/rust/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 43
+            }
+          ],
+          "unsupportedBehavior": "Compilation requiring the extension fails before enabling it. Artifacts without the required compiler or core authoring protocol omit the extension."
+        }
+      }
+    },
+    {
       "id": "texture-unpack-color-space",
       "api": "unpackColorSpace",
       "cores": {

@@ -177,6 +177,7 @@ pub struct CompileRequest {
     pub shader: ObjectHandle,
     pub stage: u32,
     pub source: Vec<u16>,
+    pub extensions: u32,
 }
 pub struct LinkRequest {
     pub request_id: u32,
@@ -330,6 +331,8 @@ pub(crate) struct RenderState {
     element_index_uint: bool,
     blend_minmax: bool,
     framebuffer_mipmaps: bool,
+    shader_extensions: u32,
+    derivative_hint: u32,
     mipmap_hint: u32,
     texture_unit_limit: usize,
     texture_dimension_limit: u32,
@@ -364,6 +367,8 @@ impl Default for RenderState {
             element_index_uint: false,
             blend_minmax: false,
             framebuffer_mipmaps: false,
+            shader_extensions: 0,
+            derivative_hint: 0x1100,
             mipmap_hint: 0x1100,
             texture_unit_limit: 8,
             texture_dimension_limit: 4096,
@@ -624,6 +629,7 @@ impl ContextCore {
             shader: handle.unwrap(),
             stage: shader.stage,
             source,
+            extensions: self.render.shader_extensions,
         })
     }
     pub fn commit_compile(
@@ -1272,6 +1278,7 @@ impl ContextCore {
             }
             "enableElementIndexUint" => self.render.element_index_uint = true,
             "enableBlendMinmax" => self.render.blend_minmax = true,
+            "enableShaderExtension" => self.render.shader_extensions |= arg(0).number() as u32 & 7,
             "enableFramebufferMipmaps" => self.render.framebuffer_mipmaps = true,
             "drawArrays" | "drawElements" => return self.draw_snapshot(operation, args),
             "flush" => {}

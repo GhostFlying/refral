@@ -9,6 +9,7 @@ export type * from "./types.js";
 export const COMPILER_LIMITS = Object.freeze(profileLimits);
 
 interface AngleModule {
+  _RefralShaderExtensionMask?: () => number;
   ccall(name: string, returnType: string, parameterTypes: string[], parameters: unknown[]): string;
 }
 
@@ -310,12 +311,18 @@ export async function createCompiler(baseURL = "/artifacts/compiler/"): Promise<
     default: (options?: Record<string, unknown>) => Promise<AngleModule>;
   };
   const module = await imported.default();
+  const shaderExtensionMask = module._RefralShaderExtensionMask?.() ?? 0;
   return {
-    compile(source: string, stage: ShaderStage, version: 1 | 2 = 1): CompiledShader {
+    shaderExtensionMask,
+    compile(source: string, stage: ShaderStage, version: 1 | 2 = 1, extensions = 0): CompiledShader {
+      const enabledExtensions = extensions & shaderExtensionMask;
+      const argumentsForStage = [source, stage === "vertex" ? 0 : 1, version];
       const raw: Partial<CompiledShader> = source.includes("\0")
         ? { success: false, log: "Shader source contains an embedded NUL character." }
-        : JSON.parse(module.ccall("RefralCompile", "string", ["string", "number", "number"],
-          [source, stage === "vertex" ? 0 : 1, version]));
+        : JSON.parse(enabledExtensions === 0
+          ? module.ccall("RefralCompile", "string", ["string", "number", "number"], argumentsForStage)
+          : module.ccall("RefralCompileWithExtensions", "string", ["string", "number", "number", "number"],
+            [...argumentsForStage, enabledExtensions]));
       return { source, stage, version, success: raw.success ?? false, log: raw.log ?? "",
         wgsl: raw.wgsl ?? "", uniformPackingError: raw.uniformPackingError, structUniforms: raw.structUniforms,
         attributes: raw.attributes ?? [], uniforms: raw.uniforms ?? [],
@@ -339,9 +346,9 @@ export function createCompilerRegistry(compiler: Compiler): CompilerRegistry {
   }
 
   return {
-    compile(source: string, stage: ShaderStage) {
+    compile(source: string, stage: ShaderStage, extensions = 0) {
       const artifactId = allocate();
-      const result = compiler.compile(source, stage, 1);
+      const result = compiler.compile(source, stage, 1, extensions);
       shaders.set(artifactId, result);
       return { artifactId, result };
     },

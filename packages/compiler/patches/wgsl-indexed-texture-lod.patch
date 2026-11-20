@@ -1,0 +1,37 @@
+diff --git a/src/compiler/translator/wgsl/TranslatorWGSL.cpp b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
+--- a/src/compiler/translator/wgsl/TranslatorWGSL.cpp
++++ b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
+@@ -1642 +1642,2 @@
+-                           op == EOpTexture2DProjLodVS;
++                           op == EOpTexture2DProjLodVS || op == EOpTexture2DProjLodEXTFS ||
++                           op == EOpTexture2DProjGradEXT;
+@@ -1644 +1645,4 @@
+-                     op == EOpTextureCubeLodVS;
++                     op == EOpTextureCubeLodVS || op == EOpTexture2DLodEXTFS ||
++                     op == EOpTexture2DProjLodEXTFS || op == EOpTextureCubeLodEXTFS;
++    const bool grad = op == EOpTexture2DGradEXT || op == EOpTexture2DProjGradEXT ||
++                      op == EOpTextureCubeGradEXT;
+@@ -1648 +1652 @@
+-        (!projected && !lod && !bias && op != EOpTexture2D && op != EOpTextureCube)) {
++        (!projected && !lod && !bias && !grad && op != EOpTexture2D && op != EOpTextureCube)) {
+@@ -1658,0 +1663,5 @@
++      if (grad) {
++        const unsigned int dimensions = cube ? 3 : 2;
++        samplerFunctions << ", dx : vec" << dimensions << "<f32>, dy : vec" << dimensions
++                         << "<f32>";
++      }
+@@ -1665,2 +1674,8 @@
+-        samplerFunctions << "    case " << element << ": { return "
+-                         << (bias ? "textureSampleBias" : explicitLevel ? "textureSampleLevel" : "textureSample")
++        const char *operation = "textureSample";
++        if (grad)
++          operation = "textureSampleGrad";
++        else if (bias)
++          operation = "textureSampleBias";
++        else if (explicitLevel)
++          operation = "textureSampleLevel";
++        samplerFunctions << "    case " << element << ": { return " << operation
+@@ -1670 +1685,2 @@
+-        if (bias || lod) samplerFunctions << ", level";
++        if (grad) samplerFunctions << ", dx, dy";
++        else if (bias || lod) samplerFunctions << ", level";

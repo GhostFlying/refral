@@ -37,3 +37,7 @@ The unmodified quickCheckAPI-D_G and quickCheckAPI-L_S originals now each pass 1
 The campaign directory `artifacts/conformance/campaign/queue-completion/` contains `idle-originals/{native,js,rust}/results.json` and screenshots, `trace-{js,rust}.jsonl`, the CDP preload `trace-finish.mjs` and `integrated-{check,wasm,realms}.log`. To repeat a trace, set `FINISH_TRACE` to an output JSONL path and run `node --import ./artifacts/conformance/campaign/queue-completion/trace-finish.mjs tools/conformance-run.mjs --backend js --include 'conformance/misc/uninitialized-test' --screenshots --output artifacts/conformance/finish-trace`, then repeat for Rust.
 
 The campaign owner accepted the synchronous contract on 2026-11-19. A confirmed idle queue may return immediately. Pending GPU work requires a verified synchronous host completion primitive and currently raises NotSupportedError. Keep the unmodified uninitialized-test.html result as a host capability blocker until such a primitive is available. Its original run completed 39/0 on Chrome and recorded 1/1 on each selected core. Independent conformance work continues.
+
+## Disposition on 2026-11-20
+
+Record synchronous waiting for pending GPU work as a known missing capability of the default browser host. Defer the worker and server transport options. Keep confirmed-idle completion as the verified subset for both cores. Check the support matrix and campaign report against the frozen #455 results with `pnpm ci:check` and the original three backend records.

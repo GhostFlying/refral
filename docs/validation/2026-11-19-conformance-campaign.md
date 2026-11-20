@@ -87,7 +87,7 @@ The following rows include every URL with a nonpassing result on any backend. Co
 | 48 | `conformance/context/context-attribute-preserve-drawing-buffer.html` | pass 4/0 | fail 3/1 | fail 3/1 | Post-composite HTML canvas copy |
 | 332 | `conformance/glsl/misc/shader-with-double-underscore.html` | fail 1/2 | fail 1/1 | fail 1/1 | Invalid fragment-stage fixture |
 | 371 | `conformance/glsl/misc/shader-with-reserved-words.html` | pass 761/0 | fail 753/8 | fail 753/8 | Valid double-underscore identifiers |
-| 455 | `conformance/misc/uninitialized-test.html` | pass 39/0 | unsupported 1/1 | unsupported 1/1 | Pending queue work at synchronous finish |
+| 455 | `conformance/misc/uninitialized-test.html` | pass 39/0 | unsupported 1/1 | unsupported 1/1 | [Known missing synchronous wait for pending GPU work](../tasks/079-synchronous-queue-completion.md#disposition-on-2026-11-20) |
 | 606 | `conformance/offscreencanvas/methods.html` | fail 1/1 | pass 2/0 | pass 2/0 | Native OffscreenCanvas method enumeration |
 | 607 | `conformance/offscreencanvas/methods-worker.html` | fail 1/1 | pass 2/0 | pass 2/0 | Native Worker method enumeration |
 | 656 | `conformance/rendering/many-draw-calls.html` | pass 12/0 | timeout 10/0 | timeout 10/0 | [Known performance issue, deferred on 2026-11-20](../tasks/104-submission-batching-control.md#disposition-on-2026-11-20) |

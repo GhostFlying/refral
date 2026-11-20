@@ -1,4 +1,5 @@
-import type { DomTextureUploadPlan, PixelUpload } from '@refral/core-api';
+import { GL } from '@refral/core-api';
+import type { DomTextureCapturePlan, PixelUpload } from '@refral/core-api';
 
 export type NativeUploadSource = HTMLImageElement | HTMLVideoElement | VideoFrame | ImageBitmap;
 export interface NativeUploadExtent {
@@ -69,12 +70,16 @@ export class ImageExtractor {
     return lower;
   }
 
-  capture(source: NativeUploadSource, extent: NativeUploadExtent, plan: DomTextureUploadPlan) {
+  capture(source: NativeUploadSource, extent: NativeUploadExtent, plan: DomTextureCapturePlan) {
     const gl = this.gl;
     this.check();
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, Number(plan.flipY));
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, Number(plan.premultiplyAlpha));
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, plan.colorSpaceConversion);
+    if ('unpackColorSpace' in gl) gl.unpackColorSpace = plan.colorSpace;
+    else if (plan.colorSpace === 'display-p3' && plan.colorSpaceConversion !== GL.NONE) {
+      throw new DOMException('Native Display P3 texture extraction is unavailable.', 'NotSupportedError');
+    }
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
     const error = gl.getError();
     const unavailable = { width: 0, height: 0,

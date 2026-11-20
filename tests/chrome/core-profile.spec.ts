@@ -49,7 +49,7 @@ test('explicit Rust selection runs its drawing core and JS remains the default',
     rustTextureCreated: true, undefinedBaseError: 0x0502,
     members: [0, 1].map(() => ({
       draw: ['function', true, true], webgl2Draw: ['undefined', false],
-      unpackColorSpace: ['undefined', false], drawingBuffer: [true, 'srgb'],
+      unpackColorSpace: ['string', true], drawingBuffer: [true, 'srgb'],
       constants: [5, 0x0b98, true], expando: 42,
     })),
   });

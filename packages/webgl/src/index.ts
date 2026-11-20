@@ -165,6 +165,7 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: We
         await previous.releaseGPU();
         if (!lost.canRestore()) return false;
         current = create();
+        current.resourceFacade.domUploads.colorSpace = previous.resourceFacade.domUploads.colorSpace;
         await previous.dispose();
         return true;
       } catch (error) {
@@ -185,6 +186,10 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: We
     if (property === 'drawingBufferHeight') return core.isContextLost() ? 0 : host.surface.height;
     if (property === 'drawingBufferFormat') return attributes.alpha ? GL.RGBA8 : GL.RGB8;
     if (property === 'drawingBufferColorSpace') return 'srgb';
+    if (property === 'unpackColorSpace') {
+      if (!args.length) return resourceFacade.domUploads.colorSpace;
+      return resourceFacade.setUnpackColorSpace(args[0]);
+    }
     if (property === 'getError') return core.getError();
     if (property === 'isContextLost') return core.isContextLost();
     if (property === 'readPixels') return readPixels(core, host, args);

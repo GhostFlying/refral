@@ -53,6 +53,11 @@ export function createContextInterface(parent: object = Object.prototype, invoke
         get(this: object) { return invokeContext(this, key, []); }, enumerable: true, configurable: true,
       });
     }
+    Object.defineProperty(prototype, 'unpackColorSpace', {
+      get(this: object) { return invokeContext(this, 'unpackColorSpace', []); },
+      set(this: object, value: unknown) { invokeContext(this, 'unpackColorSpace', [value]); },
+      enumerable: true, configurable: true,
+    });
     const hidden = new Set<string>();
     for (const key of Object.keys(parent)) {
       if (!Object.hasOwn(prototype, key)) {

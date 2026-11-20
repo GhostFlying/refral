@@ -1241,6 +1241,52 @@
       }
     },
     {
+      "id": "texture-unpack-color-space",
+      "api": "unpackColorSpace",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Per-context sRGB and Display P3 selection for texImage2D and texSubImage2D DOM sources. Covers Canvas, rgba-unorm8 ImageData, decoded image and video, VideoFrame, and ImageBitmap.",
+          "tests": [
+            "tests/chrome/unpack-color-space.spec.ts",
+            "sdk/tests/conformance/textures/video/tex-2d-rgba-rgba-unsigned_byte.html",
+            "sdk/tests/conformance/extensions/oes-texture-float-with-video.html"
+          ],
+          "evidence": [
+            "docs/tasks/108-unpack-color-space.md",
+            "artifacts/conformance/campaign/unpack-color-target/js/results.json"
+          ],
+          "limits": [
+            "Canvas uploads with conversion disabled use WebCodecs to identify sRGB or Display P3 source encoding. Float16 ImageData remains outside the accepted texture input profile."
+          ],
+          "unsupportedBehavior": "An unavailable native Display P3 extractor or an unsupported canvas source encoding reports NotSupportedError."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Per-context sRGB and Display P3 selection for texImage2D and texSubImage2D DOM sources. Covers Canvas, rgba-unorm8 ImageData, decoded image and video, VideoFrame, and ImageBitmap.",
+          "tests": [
+            "tests/chrome/unpack-color-space.spec.ts",
+            "sdk/tests/conformance/textures/video/tex-2d-rgba-rgba-unsigned_byte.html",
+            "sdk/tests/conformance/extensions/oes-texture-float-with-video.html"
+          ],
+          "evidence": [
+            "docs/tasks/108-unpack-color-space.md",
+            "artifacts/conformance/campaign/unpack-color-target/rust/results.json"
+          ],
+          "limits": [
+            "Canvas uploads with conversion disabled use WebCodecs to identify sRGB or Display P3 source encoding. Float16 ImageData remains outside the accepted texture input profile."
+          ],
+          "unsupportedBehavior": "An unavailable native Display P3 extractor or an unsupported canvas source encoding reports NotSupportedError."
+        }
+      }
+    },
+    {
       "id": "texture-video-source",
       "api": "texImage2D and texSubImage2D HTMLVideoElement and VideoFrame overloads",
       "cores": {
@@ -1264,7 +1310,7 @@
           ],
           "limits": [
             "Synchronous native WebGL extraction and RGBA readback are required. Decoder availability depends on Chrome and installed media support.",
-            "The original format cases exercise the default upload color-space path. The unpackColorSpace property has separate scope. See texture-imagebitmap-source for ImageBitmap sources."
+            "Earlier video evidence covers default sRGB. The texture-unpack-color-space entry records the sRGB and Display P3 branches."
           ],
           "unsupportedBehavior": "Unavailable frames produce INVALID_VALUE. Origin violations throw SecurityError. Unavailable native extraction reports NotSupportedError."
         },
@@ -1288,7 +1334,7 @@
           ],
           "limits": [
             "Synchronous native WebGL extraction and RGBA readback are required. Decoder availability depends on Chrome and installed media support.",
-            "The original format cases exercise the default upload color-space path. The unpackColorSpace property has separate scope. See texture-imagebitmap-source for ImageBitmap sources."
+            "Earlier video evidence covers default sRGB. The texture-unpack-color-space entry records the sRGB and Display P3 branches."
           ],
           "unsupportedBehavior": "Unavailable frames produce INVALID_VALUE. Origin violations throw SecurityError. Unavailable native extraction reports NotSupportedError."
         }

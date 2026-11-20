@@ -71,13 +71,19 @@ for (const core of ['js', 'rust'] as const) {
         input.fill(0);
         const flatFloat = draw();
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, 2, 1, 0, gl.LUMINANCE, gl.FLOAT,
+          new Float32Array([-7, 0.5]));
         const incomplete = draw();
+        const filterable = hooks.device.features.has('float32-filterable');
+        const linearExtension = gl.getExtension('OES_texture_float_linear');
+        const linear = draw();
         await gl.flush();
-        return { core: hooks.core, extension: !!extension, sameExtension: extension === gl.getExtension('oes_texture_float'),
-          cubeFloat, flatFloat, incomplete, error: gl.getError(), diagnostics: [...hooks.errors] };
+        return { filterable, core: hooks.core, extension: !!extension, sameExtension: extension === gl.getExtension('oes_texture_float'),
+          cubeFloat, flatFloat, incomplete, linear, exposesLinear: !!linearExtension, error: gl.getError(), diagnostics: [...hooks.errors] };
       } finally { await hooks.dispose(); }
     }, core);
     expect(result).toEqual({ core, extension: true, sameExtension: true, cubeFloat: [0,255,0,255],
-      flatFloat: [255,0,255,255], incomplete: [0,0,255,255], error: 0, diagnostics: [] });
+      flatFloat: [255,0,255,255], incomplete: [0,0,255,255], filterable: result.filterable,
+      exposesLinear: result.filterable, linear: [result.filterable ? 255 : 0,0,255,255], error: 0, diagnostics: [] });
   });
 }

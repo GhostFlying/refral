@@ -116,6 +116,11 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
     coreExtensions.webgl_debug_shaders = { name: 'WEBGL_debug_shaders', enums: {},
       methods: { getTranslatedShaderSource: programFacade.methods.getTranslatedShaderSource! } };
   }
+  if (supportsFloat && host.device.features.has('float32-filterable')
+    && core.invoke('supportsFloatLinearTextures', []) === true) {
+    coreExtensions.oes_texture_float_linear = { name: 'OES_texture_float_linear',
+      operation: 'enableFloatLinearTextures', enums: {} };
+  }
   if (shaderExtensionMask && core.invoke('supportsShaderExtensions', []) === true) {
     for (const [name, bit, enums] of [
       ['OES_standard_derivatives', SHADER_EXTENSIONS.derivatives, { FRAGMENT_SHADER_DERIVATIVE_HINT_OES: DERIVATIVE_HINT_OES }],

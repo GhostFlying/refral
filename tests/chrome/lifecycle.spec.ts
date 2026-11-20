@@ -106,14 +106,17 @@ for (const core of ['js', 'rust'] as const) {
           return [...out];
         };
         return { core: hooks.core, deviceShared, immediate, queued, initialExtensions, lostExtensions, restoredExtensions: gl.getSupportedExtensions()?.sort(),
+          filterable: hooks.device.features.has('float32-filterable'),
           sameExtension: ext === gl.getExtension('webgl_lose_context'), bound, restoredState, errors,
           pixels: read(gl), peerPixels: read(peer), lost: gl.isContextLost(), peerLost: peer.isContextLost() };
       } finally { await factory.dispose(); }
     }, core);
     const supported = ['EXT_blend_minmax', 'EXT_frag_depth', 'EXT_polygon_offset_clamp', 'EXT_sRGB', 'EXT_shader_texture_lod',
       'OES_element_index_uint', 'OES_fbo_render_mipmap', 'OES_standard_derivatives',
-      'OES_texture_float', 'OES_vertex_array_object', 'WEBGL_debug_shaders', 'WEBGL_lose_context'];
+      'OES_texture_float', ...(result.filterable ? ['OES_texture_float_linear'] : []),
+      'OES_vertex_array_object', 'WEBGL_debug_shaders', 'WEBGL_lose_context'];
     expect(result).toEqual({ core, deviceShared: true, immediate: true, queued: true,
+      filterable: result.filterable,
       initialExtensions: supported, lostExtensions: null, restoredExtensions: supported,
       sameExtension: true, bound: true, restoredState: [null, 0, 0, 0, 0], errors: [0x0502, 0x9242, 0, 0x0502, 0x0502, 0x0502],
       pixels: [0, 255, 0, 255], peerPixels: [255, 0, 0, 255], lost: false, peerLost: false });

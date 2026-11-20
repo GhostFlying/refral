@@ -1597,6 +1597,52 @@
       }
     },
     {
+      "id": "float-texture-linear",
+      "api": "OES_texture_float_linear",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Device-gated linear and mip filtering of floating-point 2D and cube textures. The extension-off completeness and existing upload restrictions remain in force.",
+          "tests": [
+            "sdk/tests/conformance/extensions/oes-texture-float-linear.html",
+            "tests/chrome/float-textures.spec.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-render-extensions/float/js/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 129
+            }
+          ],
+          "unsupportedBehavior": "Missing float32-filterable or an older core module omits the extension."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Device-gated linear and mip filtering of floating-point 2D and cube textures. The extension-off completeness and existing upload restrictions remain in force.",
+          "tests": [
+            "sdk/tests/conformance/extensions/oes-texture-float-linear.html",
+            "tests/chrome/float-textures.spec.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-render-extensions/float/rust/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 129
+            }
+          ],
+          "unsupportedBehavior": "Missing float32-filterable or an older core module omits the extension."
+        }
+      }
+    },
+    {
       "id": "texture-unpack-color-space",
       "api": "unpackColorSpace",
       "cores": {

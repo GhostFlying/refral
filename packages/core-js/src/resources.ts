@@ -132,12 +132,12 @@ export function textureBase(texture: TextureObject): TextureImage | undefined {
   return base;
 }
 
-export function textureSamplingLevelCount(texture: TextureObject): number {
+export function textureSamplingLevelCount(texture: TextureObject, floatLinear = false): number {
   const base = textureBase(texture);
   if (!base?.storage) return 0;
   const { width, height } = base.storage;
   const { minFilter, wrapS, wrapT } = texture.parameters;
-  if (base.type === GL.FLOAT && (texture.parameters.magFilter !== GL.NEAREST
+  if (base.type === GL.FLOAT && !floatLinear && (texture.parameters.magFilter !== GL.NEAREST
     || (minFilter !== GL.NEAREST && minFilter !== GL.NEAREST_MIPMAP_NEAREST))) return 0;
   const nonMip = minFilter === GL.NEAREST || minFilter === GL.LINEAR;
   if (!isPowerOfTwo(width) || !isPowerOfTwo(height)) {

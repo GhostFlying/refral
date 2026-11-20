@@ -260,6 +260,7 @@ pub(super) struct TextureState {
     pub(super) units: [TextureUnit; 32],
     pub(super) active: usize,
     float_enabled: bool,
+    float_linear_enabled: bool,
     pub(super) srgb_enabled: bool,
     unpack_alignment: usize,
     pub(super) pack_alignment: usize,
@@ -307,6 +308,7 @@ impl Default for TextureState {
             units: [TextureUnit::default(); 32],
             active: 0,
             float_enabled: false,
+            float_linear_enabled: false,
             srgb_enabled: false,
             unpack_alignment: 4,
             pack_alignment: 4,
@@ -485,6 +487,10 @@ impl ContextCore {
             }
             "enableFloatTextures" => {
                 self.render.textures.float_enabled = true;
+                return Some(Reply::Null);
+            }
+            "enableFloatLinearTextures" => {
+                self.render.textures.float_linear_enabled = true;
                 return Some(Reply::Null);
             }
             "createTexture" => {
@@ -1495,7 +1501,9 @@ impl ContextCore {
                 });
             let texture =
                 texture_index.and_then(|index| self.render.textures.slots[index].value.as_ref());
-            let levels = texture.map_or(0, texture_sampling_level_count);
+            let levels = texture.map_or(0, |value| {
+                texture_sampling_level_count(value, self.render.textures.float_linear_enabled)
+            });
             let cube = target == TEXTURE_CUBE_MAP;
             let images = if levels > 1 {
                 let faces = if cube { 1..7 } else { 0..1 };
@@ -1573,12 +1581,13 @@ impl Texture {
     }
 }
 
-fn texture_sampling_level_count(texture: &Texture) -> usize {
+fn texture_sampling_level_count(texture: &Texture, float_linear: bool) -> usize {
     let Some(base) = texture.complete_base() else {
         return 0;
     };
     let parameters = texture.parameters;
     if base.ty == FLOAT
+        && !float_linear
         && (parameters.mag_filter != 0x2600 || !matches!(parameters.min_filter, 0x2600 | 0x2700))
     {
         return 0;
@@ -1614,5 +1623,5 @@ fn texture_sampling_level_count(texture: &Texture) -> usize {
 
 #[cfg(test)]
 pub(super) fn texture_complete(texture: &Texture) -> bool {
-    texture_sampling_level_count(texture) > 0
+    texture_sampling_level_count(texture, false) > 0
 }

@@ -1,8 +1,8 @@
 {
   "version": 2,
   "profile": "webgl1-prototype",
-  "updated": "2026-11-19",
-  "implementationRevision": "f1dac24d856c7c96dbf6be8402e0198872d7e2e2",
+  "updated": "2026-11-20",
+  "implementationRevision": "dceb90db653e8585bb33d6abb65b723d1f5f1361",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
     "chrome158-macos-arm64": {
@@ -3224,7 +3224,7 @@
   },
   "currentIntegration": {
     "compilerLoaderSha256": "1349a9a5f5d16d510988071ad6b1ab262a7c3faff2552ca4d03eb988a3c783bb",
-    "runtimeRevision": "f1dac24d856c7c96dbf6be8402e0198872d7e2e2",
+    "runtimeRevision": "dceb90db653e8585bb33d6abb65b723d1f5f1361",
     "environment": "chrome158-macos-arm64",
     "headless": true,
     "wasmSha256": {
@@ -3237,8 +3237,7 @@
       "nodeToolTests": 72,
       "rustNative": 76,
       "actualRustWasm": 55,
-      "compilerCorpus": 73,
-      "headlessChrome": 202
+      "headlessChrome": 204
     },
     "production": {
       "selectedCores": [
@@ -3279,13 +3278,11 @@
       "domUploadProtocol": 2
     },
     "evidence": [
-      "artifacts/conformance/campaign/final-html-resize/integration/runtime-artifacts.json",
-      "artifacts/conformance/campaign/final-html-resize/integration/check.log",
-      "artifacts/conformance/campaign/final-html-resize/integration/wasm.log",
-      "artifacts/conformance/campaign/final-html-resize/integration/compiler.log",
-      "artifacts/conformance/campaign/final-html-resize/integration/chrome.log",
-      "artifacts/conformance/campaign/final-html-resize/integration/dist.log",
-      "artifacts/conformance/campaign/final-html-resize/integration/deployment/result.json"
+      "artifacts/conformance/campaign/unpack-color-check.log",
+      "artifacts/conformance/campaign/unpack-color-wasm.log",
+      "artifacts/conformance/campaign/unpack-color-chrome.log",
+      "artifacts/conformance/campaign/unpack-color-dist.log",
+      "artifacts/conformance/campaign/unpack-color-deploy/result.json"
     ]
   },
   "verificationSummary": {
@@ -3405,7 +3402,7 @@
     "report": "docs/validation/2026-11-18-official-conformance.md",
     "scope": "Historical first full inventory on the listed runtimeBase. Subsequent complete runs are tracked under latestRefresh.",
     "latestRefresh": {
-      "runtimeBase": "f1dac24d856c7c96dbf6be8402e0198872d7e2e2",
+      "runtimeBase": "dceb90db653e8585bb33d6abb65b723d1f5f1361",
       "browserVersion": "158.0.8127.36",
       "ctsRevision": "39443210f7f81db4773eb104facadfb85d05dfa4",
       "inventoryFilesPerBackend": 971,
@@ -3441,7 +3438,8 @@
       },
       "passingAllThree": 963,
       "differentCoreFileStatuses": 0,
-      "passingFilesWithDifferentAssertionCounts": 72,
+      "passingFilesWithDifferentAssertionCounts": 63,
+      "identifiedCapabilityDependentPasses": 54,
       "screenshots": {
         "native": {
           "case-page": 971
@@ -3538,8 +3536,8 @@
           "reference": "docs/tasks/076-zero-size-svg-uploads.md"
         }
       ],
-      "report": "docs/validation/2026-11-19-conformance-campaign.md",
-      "evidence": "artifacts/conformance/campaign/final-html-resize/full/summary.json"
+      "report": "docs/tasks/108-unpack-color-space.md",
+      "evidence": "artifacts/conformance/campaign/unpack-color-full/full/summary.json"
     },
     "stencilRgbRefresh": {
       "runtimeBase": "2a519f2cbc701328df85e2b4c523b1a4cf9b9b34",

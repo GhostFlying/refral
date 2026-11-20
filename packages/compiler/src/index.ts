@@ -366,6 +366,11 @@ export function createCompilerRegistry(compiler: Compiler): CompilerRegistry {
       if (!result) throw new Error('Draw refers to a retired program artifact.');
       return result;
     },
+    translatedShaderSource(id) {
+      const shader = shaders.get(id);
+      if (!shader) throw new Error('Query refers to a retired shader artifact.');
+      return shader.success ? shader.wgsl : '';
+    },
     release(ids) {
       for (const id of ids) {
         shaders.delete(id);

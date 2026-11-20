@@ -565,7 +565,9 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
   }
   function executeDraw(bytes: Uint8Array): void {
     const reader = new Reader(bytes);
-    if (reader.u32() !== 0x36444652 || reader.u32() !== 6)
+    const magic = reader.u32();
+    const version = reader.u32();
+    if ((magic !== 0x36444652 || version !== 6) && (magic !== 0x37444652 || version !== 7))
       throw new Error('Invalid Rust draw snapshot version.');
     const program = services.compiler.executable(reader.u32());
     reader.skip(12 + 8);
@@ -574,6 +576,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     state.polygonOffsetFill = reader.u32() !== 0;
     state.polygonOffsetFactor = reader.f32();
     state.polygonOffsetUnits = reader.f32();
+    if (version >= 7) state.polygonOffsetClamp = reader.f32();
     const mode = reader.u32();
     if (!isDrawMode(mode)) throw new Error('Invalid Rust draw mode.');
     const vertexCount = reader.u32();
@@ -847,6 +850,20 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       if (operation === 'supportsCoreExtensions') {
         const version = exports.rf_core_extensions_protocol_version;
         return typeof version === 'function' && version() === 1;
+      }
+      if (operation === 'supportsPolygonOffsetClamp') {
+        const version = exports.rf_polygon_offset_clamp_protocol_version;
+        return typeof version === 'function' && version() === 1;
+      }
+      if (operation === 'supportsDebugShaders') {
+        const version = exports.rf_debug_shaders_protocol_version;
+        return typeof version === 'function' && version() === 1;
+      }
+      if (operation === 'getTranslatedShaderSource') {
+        if (abi.rf_is_context_lost()) return '';
+        const result = command('getTranslatedShaderArtifact', args);
+        const id = decode(result.value, result.binary);
+        return typeof id === 'number' ? services.compiler.translatedShaderSource(id) : '';
       }
       if (operation === 'supportsFloatTextures') {
         const version = exports.rf_float_texture_protocol_version;

@@ -296,3 +296,7 @@ Task 109 makes the uint index type, min/max blend equations and nonzero framebuf
 ## GLSL extensions backed by WGSL
 
 Task 110 gates each ESSL extension by the enabled context extensions at compile time. Derivative operations lower to WGSL derivatives. The derivative hint accepts the GLES hint modes and starts at DONT_CARE. The fragment-depth extension maps gl_FragDepthEXT to frag_depth. Explicit LOD and gradient builtins select WebGPU sampling operations while retaining projection and sampler-array semantics. [Derivatives](https://registry.khronos.org/webgl/extensions/OES_standard_derivatives/) · [Fragment depth](https://registry.khronos.org/webgl/extensions/EXT_frag_depth/) · [Texture LOD](https://registry.khronos.org/webgl/extensions/EXT_shader_texture_lod/) · [WGSL sampling](https://www.w3.org/TR/WGSL/#texture-builtin-functions)
+
+## Polygon offset clamp and translated source
+
+Task 111 sets the factor, units and signed clamp together and clears the clamp with the unextended polygonOffset call. The extension's pname is accepted only after enablement. The signed clamp bounds the offset in the appropriate direction. Task 112 returns the latest successful translation owned by the shader's context. A source update keeps the existing compilation until recompile. Uncompiled or failed shaders return an empty string. [Polygon offset clamp](https://registry.khronos.org/webgl/extensions/EXT_polygon_offset_clamp/) · [Translated shader source](https://registry.khronos.org/webgl/extensions/WEBGL_debug_shaders/)

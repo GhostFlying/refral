@@ -32,6 +32,7 @@ const bufferOperations = new Set([
 ]);
 const shaderOperations = new Set([
   "shaderSource", "compileShader", "getShaderParameter", "getShaderInfoLog", "getShaderSource",
+  "getTranslatedShaderSource",
 ]);
 const programOperations = new Set([
   "bindAttribLocation", "getProgramParameter", "getProgramInfoLog", "validateProgram",

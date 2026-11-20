@@ -100,6 +100,7 @@ export interface RasterState {
   polygonOffsetFill: boolean;
   polygonOffsetFactor: number;
   polygonOffsetUnits: number;
+  polygonOffsetClamp: number;
   depthFunc: number;
   depthRange: [number, number];
   stencilTest: boolean;
@@ -125,7 +126,7 @@ export function createRasterState(width: number, height: number): RasterState {
   return {
     viewport: [0, 0, width, height], scissor: [0, 0, width, height], scissorTest: false,
     colorMask: [true, true, true, true], depthTest: false, depthMask: true,
-    polygonOffsetFill: false, polygonOffsetFactor: 0, polygonOffsetUnits: 0,
+    polygonOffsetFill: false, polygonOffsetFactor: 0, polygonOffsetUnits: 0, polygonOffsetClamp: 0,
     depthFunc: GL.LESS, depthRange: [0, 1], stencilTest: false, stencilClear: 0,
     stencilFront: { ...stencil }, stencilBack: { ...stencil }, blend: false, blendColor: [0, 0, 0, 0],
     blendSrcRGB: GL.ONE, blendDstRGB: GL.ZERO, blendSrcAlpha: GL.ONE,

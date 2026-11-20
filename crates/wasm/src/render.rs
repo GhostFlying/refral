@@ -29,6 +29,16 @@ pub extern "C" fn rf_shader_extensions_protocol_version() -> u32 {
 }
 
 #[no_mangle]
+pub extern "C" fn rf_polygon_offset_clamp_protocol_version() -> u32 {
+    1
+}
+
+#[no_mangle]
+pub extern "C" fn rf_debug_shaders_protocol_version() -> u32 {
+    1
+}
+
+#[no_mangle]
 pub extern "C" fn rf_core_extensions_protocol_version() -> u32 {
     1
 }
@@ -621,8 +631,8 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             json!({"type":"clear"})
         }
         Reply::Draw(snapshot) => {
-            u32_value(output, 0x36444652);
-            u32_value(output, 6);
+            u32_value(output, 0x37444652);
+            u32_value(output, 7);
             u32_value(output, snapshot.artifact_id);
             for value in [
                 snapshot.program.context_id,
@@ -637,6 +647,7 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             u32_value(output, u32::from(snapshot.state.polygon_offset_fill));
             f32_value(output, snapshot.state.polygon_offset_factor);
             f32_value(output, snapshot.state.polygon_offset_units);
+            f32_value(output, snapshot.state.polygon_offset_clamp);
             for value in [
                 snapshot.mode,
                 snapshot.vertex_count,

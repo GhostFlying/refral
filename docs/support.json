@@ -1505,6 +1505,98 @@
       }
     },
     {
+      "id": "polygon-offset-clamp",
+      "api": "EXT_polygon_offset_clamp",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Per-context extension state and signed depth bias clamping in the WebGPU raster pipeline. The ordinary polygonOffset call resets the clamp.",
+          "tests": [
+            "sdk/tests/conformance/extensions/ext-polygon-offset-clamp.html",
+            "tests/chrome/webgpu-render-extensions.spec.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-render-extensions/focused/js/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 23
+            }
+          ],
+          "unsupportedBehavior": "A Wasm module without the required query or draw protocol omits the extension."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Per-context extension state and signed depth bias clamping in the WebGPU raster pipeline. The ordinary polygonOffset call resets the clamp.",
+          "tests": [
+            "sdk/tests/conformance/extensions/ext-polygon-offset-clamp.html",
+            "tests/chrome/webgpu-render-extensions.spec.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-render-extensions/focused/rust/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 23
+            }
+          ],
+          "unsupportedBehavior": "A Wasm module without the required query or draw protocol omits the extension."
+        }
+      }
+    },
+    {
+      "id": "debug-shaders",
+      "api": "WEBGL_debug_shaders",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Queries the shader object’s latest compiled WGSL with context and lifetime validation. Uncompiled and failed shaders return an empty string.",
+          "tests": [
+            "sdk/tests/conformance/extensions/webgl-debug-shaders.html",
+            "tests/chrome/webgpu-render-extensions.spec.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-render-extensions/focused/js/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 32
+            }
+          ],
+          "unsupportedBehavior": "A Wasm module without the required query or draw protocol omits the extension."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Queries the shader object’s latest compiled WGSL with context and lifetime validation. Uncompiled and failed shaders return an empty string.",
+          "tests": [
+            "sdk/tests/conformance/extensions/webgl-debug-shaders.html",
+            "tests/chrome/webgpu-render-extensions.spec.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-render-extensions/focused/rust/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 32
+            }
+          ],
+          "unsupportedBehavior": "A Wasm module without the required query or draw protocol omits the extension."
+        }
+      }
+    },
+    {
       "id": "texture-unpack-color-space",
       "api": "unpackColorSpace",
       "cores": {

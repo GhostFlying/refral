@@ -83,6 +83,7 @@ export class SemanticContext {
   private readonly defaultArray: VertexArrayObject;
   private currentArray: VertexArrayObject;
   private arraysEnabled = false;
+  private polygonOffsetClampEnabled = false;
   private floatTextures = false;
   private srgbTextures = false;
   supportsSrgbTextures(): boolean { return true; }
@@ -362,6 +363,10 @@ export class SemanticContext {
   }
   getShaderSource(shader: ShaderObject): string | null {
     return this.valid(shader, ShaderObject, true) ? shader.source : null;
+  }
+  supportsDebugShaders(): boolean { return true; }
+  getTranslatedShaderSource(shader: ShaderObject): string {
+    return this.valid(shader, ShaderObject, true) && shader.result?.success ? shader.result.wgsl : "";
   }
   deleteShader(shader: ShaderObject | null): void {
     if (shader === null || !this.valid(shader, ShaderObject, true)) return;
@@ -1441,8 +1446,17 @@ export class SemanticContext {
   }
 
   polygonOffset(factor: number, units: number): void {
+    this.setPolygonOffset(factor, units, 0);
+  }
+  supportsPolygonOffsetClamp(): boolean { return true; }
+  enablePolygonOffsetClamp(): void { this.polygonOffsetClampEnabled = true; }
+  polygonOffsetClampEXT(factor: number, units: number, clamp: number): void {
+    if (this.polygonOffsetClampEnabled) this.setPolygonOffset(factor, units, clamp);
+  }
+  private setPolygonOffset(factor: number, units: number, clamp: number): void {
     this.state.polygonOffsetFactor = factor;
     this.state.polygonOffsetUnits = units;
+    this.state.polygonOffsetClamp = clamp;
   }
   sampleCoverage(value: number, invert: boolean): void {
     this.sampleCoverageValue = clamp(value);
@@ -1634,6 +1648,7 @@ export class SemanticContext {
       [GL.POLYGON_OFFSET_FACTOR]: this.state.polygonOffsetFactor, [GL.POLYGON_OFFSET_UNITS]: this.state.polygonOffsetUnits,
       [GL.SAMPLE_COVERAGE_VALUE]: this.sampleCoverageValue, [GL.SAMPLE_COVERAGE_INVERT]: this.sampleCoverageInvert,
     };
+    if (parameter === 0x8e1b && this.polygonOffsetClampEnabled) return this.state.polygonOffsetClamp;
     if (parameter in values) return values[parameter];
     if ([GL.BLEND, GL.CULL_FACE, GL.DEPTH_TEST, GL.SCISSOR_TEST, GL.DITHER,
       GL.STENCIL_TEST, GL.POLYGON_OFFSET_FILL, GL.SAMPLE_COVERAGE, GL.SAMPLE_ALPHA_TO_COVERAGE].includes(parameter as 0x0be2)) return this.isEnabled(parameter);

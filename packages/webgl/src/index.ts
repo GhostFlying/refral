@@ -100,12 +100,22 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
   let floatExtension: object | undefined;
   const supportsArrays = core.invoke('supportsVertexArrayObjects', []) === true;
   let arrays: ReturnType<typeof createVertexArrayExtension> | undefined;
-  const coreExtensions: Record<string, { name: string; operation: string; enums: Record<string, number>; args?: number[] }>
+  const coreExtensions: Record<string, { name: string; operation?: string; enums: Record<string, number>;
+    args?: number[]; methods?: Record<string, (...args: unknown[]) => unknown> }>
     = core.invoke('supportsCoreExtensions', []) === true ? {
     ext_blend_minmax: { name: 'EXT_blend_minmax', operation: 'enableBlendMinmax', enums: BLEND_MINMAX },
     oes_element_index_uint: { name: 'OES_element_index_uint', operation: 'enableElementIndexUint', enums: {} },
     oes_fbo_render_mipmap: { name: 'OES_fbo_render_mipmap', operation: 'enableFramebufferMipmaps', enums: {} },
   } : {};
+  if (core.invoke('supportsPolygonOffsetClamp', []) === true) {
+    coreExtensions.ext_polygon_offset_clamp = { name: 'EXT_polygon_offset_clamp',
+      operation: 'enablePolygonOffsetClamp', enums: { POLYGON_OFFSET_CLAMP_EXT: 0x8e1b },
+      methods: { polygonOffsetClampEXT: resourceFacade.methods.polygonOffsetClampEXT! } };
+  }
+  if (core.invoke('supportsDebugShaders', []) === true) {
+    coreExtensions.webgl_debug_shaders = { name: 'WEBGL_debug_shaders', enums: {},
+      methods: { getTranslatedShaderSource: programFacade.methods.getTranslatedShaderSource! } };
+  }
   if (shaderExtensionMask && core.invoke('supportsShaderExtensions', []) === true) {
     for (const [name, bit, enums] of [
       ['OES_standard_derivatives', SHADER_EXTENSIONS.derivatives, { FRAGMENT_SHADER_DERIVATIVE_HINT_OES: DERIVATIVE_HINT_OES }],
@@ -132,10 +142,17 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
       const spec = coreExtensions[name]!;
       let extension = enabledCoreExtensions.get(name);
       if (!extension) {
-        core.invoke(spec.operation, spec.args ?? []);
+        if (spec.operation) core.invoke(spec.operation, spec.args ?? []);
         extension = new realm.Object();
         for (const [key, value] of Object.entries(spec.enums))
           Object.defineProperty(extension, key, { value, enumerable: true });
+        for (const [key, call] of Object.entries(spec.methods ?? {})) {
+          const method = function (this: unknown, ...args: unknown[]) {
+            if (this !== extension) throw new realm.TypeError(`Expected a ${spec.name} receiver.`);
+            return call(...args);
+          };
+          Object.defineProperty(extension, key, { value: method, writable: true, configurable: true });
+        }
         enabledCoreExtensions.set(name, extension);
       }
       return extension;

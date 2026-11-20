@@ -2,7 +2,7 @@
   "version": 2,
   "profile": "webgl1-prototype",
   "updated": "2026-11-20",
-  "implementationRevision": "dceb90db653e8585bb33d6abb65b723d1f5f1361",
+  "implementationRevision": "e58de3f051e3f42048d227a84aa7a32d6f0f919b",
   "compilerLimitsSource": "packages/compiler/profile-limits.json",
   "environments": {
     "chrome158-macos-arm64": {
@@ -3671,21 +3671,22 @@
     ]
   },
   "currentIntegration": {
-    "compilerLoaderSha256": "1349a9a5f5d16d510988071ad6b1ab262a7c3faff2552ca4d03eb988a3c783bb",
-    "runtimeRevision": "dceb90db653e8585bb33d6abb65b723d1f5f1361",
+    "compilerLoaderSha256": "3ca109c7d301a3f928ba8504993a26b3cae9211399a01c7e7fd38cffc3a9a969",
+    "runtimeRevision": "e58de3f051e3f42048d227a84aa7a32d6f0f919b",
     "environment": "chrome158-macos-arm64",
     "headless": true,
     "wasmSha256": {
-      "rustWasm": "e6095830f652136494b8ca6fa851f8de58a9e027a178e2b48bf6547a7e4057b1",
-      "compilerWasm": "70c16657373e9265ed7dc6a40cfc70eac0f96b2055d9c66cbef283c756950c06"
+      "rustWasm": "5b4e09dd0c6bc8d8fdf26931439b95d1f0496a7b0d724052985601403cac52d2",
+      "compilerWasm": "d62226acfc67938a6d5cec1e5ee0e9c56d99636e2151ba097eafc73a03bf2a14"
     },
     "checks": {
       "typescript": "passed",
       "vitest": 243,
-      "nodeToolTests": 72,
+      "nodeToolTests": 76,
       "rustNative": 76,
       "actualRustWasm": 55,
-      "headlessChrome": 204
+      "headlessChrome": 211,
+      "compilerCorpus": 74
     },
     "production": {
       "selectedCores": [
@@ -3726,11 +3727,12 @@
       "domUploadProtocol": 2
     },
     "evidence": [
-      "artifacts/conformance/campaign/unpack-color-check.log",
-      "artifacts/conformance/campaign/unpack-color-wasm.log",
-      "artifacts/conformance/campaign/unpack-color-chrome.log",
-      "artifacts/conformance/campaign/unpack-color-dist.log",
-      "artifacts/conformance/campaign/unpack-color-deploy/result.json"
+      "artifacts/conformance/campaign/webgpu-render-check.log",
+      "artifacts/conformance/campaign/webgpu-render-wasm.log",
+      "artifacts/conformance/campaign/webgpu-render-compiler-test.log",
+      "artifacts/conformance/campaign/webgpu-render-chrome.log",
+      "artifacts/conformance/campaign/webgpu-render-dist.log",
+      "artifacts/conformance/campaign/webgpu-extension-deploy/result.json"
     ]
   },
   "verificationSummary": {
@@ -3850,7 +3852,7 @@
     "report": "docs/validation/2026-11-18-official-conformance.md",
     "scope": "Historical first full inventory on the listed runtimeBase. Subsequent complete runs are tracked under latestRefresh.",
     "latestRefresh": {
-      "runtimeBase": "dceb90db653e8585bb33d6abb65b723d1f5f1361",
+      "runtimeBase": "e58de3f051e3f42048d227a84aa7a32d6f0f919b",
       "browserVersion": "158.0.8127.36",
       "ctsRevision": "39443210f7f81db4773eb104facadfb85d05dfa4",
       "inventoryFilesPerBackend": 971,
@@ -3886,8 +3888,8 @@
       },
       "passingAllThree": 963,
       "differentCoreFileStatuses": 0,
-      "passingFilesWithDifferentAssertionCounts": 63,
-      "identifiedCapabilityDependentPasses": 54,
+      "passingFilesWithDifferentAssertionCounts": 52,
+      "identifiedCapabilityDependentPasses": 42,
       "screenshots": {
         "native": {
           "case-page": 971
@@ -3984,8 +3986,8 @@
           "reference": "docs/tasks/076-zero-size-svg-uploads.md"
         }
       ],
-      "report": "docs/tasks/108-unpack-color-space.md",
-      "evidence": "artifacts/conformance/campaign/unpack-color-full/full/summary.json"
+      "report": "docs/validation/webgl1-extensions.md",
+      "evidence": "artifacts/conformance/campaign/webgpu-extension-full/summary.json"
     },
     "stencilRgbRefresh": {
       "runtimeBase": "2a519f2cbc701328df85e2b4c523b1a4cf9b9b34",

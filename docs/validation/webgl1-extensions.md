@@ -62,4 +62,20 @@ The current Metal3 adapter advertises `depth-clip-control`, `float32-filterable`
 | `WEBGL_compressed_texture_pvrtc` | WebGPU exposes no PVRTC format. A CPU/Wasm or GPU decoder to uncompressed textures could preserve images after validating precision and layout. Native compressed storage and hardware PVRTC sampling are unavailable through standard WebGPU. |
 | `WEBGL_debug_renderer_info` | On Chrome 158 the WebGPU adapter exposes vendor `apple` and architecture `metal-3`, while `device` and `description` are empty. The renderer metadata withheld by WebGPU is unavailable through this host. A truthful report can expose only fields the browser supplies. |
 
-WebGPU timestamp queries can be polled asynchronously. A timestamp written when a pass begins or ends is distinct from the WebGL extension's synchronous current timestamp query. Verify the legal counter-bit rules, disjoint reporting and the original case before treating the entire timer extension as supported. [Timer extension](https://registry.khronos.org/webgl/extensions/EXT_disjoint_timer_query/) · [WebGPU timestamps](https://www.w3.org/TR/webgpu/#timestamp-query) · [Parallel shader compilation](https://registry.khronos.org/webgl/extensions/KHR_parallel_shader_compile/) · [Polygon mode](https://registry.khronos.org/webgl/extensions/WEBGL_polygon_mode/) · [WebGPU primitive state](https://www.w3.org/TR/webgpu/#primitive-state) · [PVRTC](https://registry.khronos.org/webgl/extensions/WEBGL_compressed_texture_pvrtc/) · [WebGPU adapter information](https://www.w3.org/TR/webgpu/#gpu-adapter-information)
+## Device probes for remaining candidates
+
+A direct WebGPU test enabled `texture-compression-unaligned` with BC, ETC2 and ASTC. All thirteen tested formats retained their logical 3 × 3 dimensions and copied the uploaded compression block back byte for byte. This checks block storage and transfer on the adapter. Extension integration still needs WebGL format-specific validation, block updates, texture completeness and decoded sampling. The probe is under `artifacts/conformance/campaign/webgpu-render-extensions/compression-probe.json`. [WebGPU unaligned compressed textures](https://www.w3.org/TR/webgpu/#texture-compression-unaligned)
+
+The timestamp probe retrieved both GPU pass markers through asynchronous `mapAsync`. The same Chrome's native WebGL reported 64 elapsed counter bits, zero absolute timestamp bits, and zero for the synchronous timestamp query. That supplies a candidate elapsed-only profile. It still needs WebGL timer object, ordering and disjoint validation. [Timer extension](https://registry.khronos.org/webgl/extensions/EXT_disjoint_timer_query/) · [WebGPU timestamps](https://www.w3.org/TR/webgpu/#timestamp-query)
+
+## Full headless regression
+
+The complete 971-file inventory ran in each of Chrome native, JS, and Rust on `e58de3f`, with identical compiler and core Wasm hashes across the three runs. This revision has the same source tree as merged `b3e6fdc`.
+
+| Backend | Passed | Failed | Unsupported | Timed out |
+| --- | ---: | ---: | ---: | ---: |
+| Chrome native | 968 | 3 | 0 | 0 |
+| Refral JS | 965 | 4 | 1 | 1 |
+| Refral Rust | 965 | 4 | 1 | 1 |
+
+The full run reproduced the previous status of every original file. The ten newly enabled extension cases add 358 assertions per core. Eleven former assertion-count gaps close, including the shader enablement and hint checks. Forty-two identified capability-dependent passes remain. There are 52 files with passing counter differences, including the extra floating-point mip cases run by Refral. The full run contains 2,913 case screenshots, with the already known sustained-draw timeout captured while running on both cores. The 211 headless Chrome tests, 74 compiler cases, 55 actual Wasm tests, deterministic checks and built deployment passed. Raw records, per-file counter reconciliation and screenshots are under `artifacts/conformance/campaign/webgpu-extension-full`.

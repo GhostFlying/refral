@@ -85,6 +85,7 @@ export class SemanticContext {
   private arraysEnabled = false;
   private polygonOffsetClampEnabled = false;
   private floatTextures = false;
+  private floatLinearTextures = false;
   private srgbTextures = false;
   supportsSrgbTextures(): boolean { return true; }
   enableSrgbTextures(): void { this.srgbTextures = true; }
@@ -101,6 +102,8 @@ export class SemanticContext {
   enableFramebufferMipmaps(): void { this.framebufferMipmaps = true; }
   supportsFloatTextures(): boolean { return true; }
   enableFloatTextures(): void { this.floatTextures = true; }
+  supportsFloatLinearTextures(): boolean { return true; }
+  enableFloatLinearTextures(): void { this.floatLinearTextures = true; }
   private get elementBuffer() { return this.currentArray.element; }
   private set elementBuffer(buffer: BufferObject | null) { this.currentArray.element = buffer; }
   private get attributes(): VertexAttribute[] { return this.currentArray.attributes; }
@@ -796,7 +799,7 @@ export class SemanticContext {
         const cube = sampler.type === GL.SAMPLER_CUBE;
         if (!cube && sampler.type !== GL.SAMPLER_2D) return unsupported("sampler type");
         const texture = cube ? binding.cubeMap : binding.texture2D;
-        const levels = texture ? textureSamplingLevelCount(texture) : 0;
+        const levels = texture ? textureSamplingLevelCount(texture, this.floatLinearTextures) : 0;
         if (this.framebuffer?.color === texture && levels > this.framebuffer.colorLevel) return this.error(GL.INVALID_OPERATION);
         const parameters = texture ? { ...texture.parameters } :
           { minFilter: GL.NEAREST, magFilter: GL.NEAREST, wrapS: GL.CLAMP_TO_EDGE, wrapT: GL.CLAMP_TO_EDGE };

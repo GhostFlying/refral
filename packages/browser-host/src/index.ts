@@ -263,7 +263,9 @@ export class BrowserHost implements SemanticHost {
     if (!navigator.gpu) throw new DOMException("WebGPU is unavailable", "NotSupportedError");
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new DOMException("No WebGPU adapter is available", "NotSupportedError");
-    const device = await adapter.requestDevice();
+    const requiredFeatures: GPUFeatureName[] = [];
+    if (adapter.features.has('float32-filterable')) requiredFeatures.push('float32-filterable');
+    const device = await adapter.requestDevice({ requiredFeatures });
     const format = navigator.gpu.getPreferredCanvasFormat();
     const surfaces = new WeakMap<HTMLCanvasElement | OffscreenCanvas, { context: GPUCanvasContext; retained: RetainedSurface | null }>();
     const factory: PreparedHostFactory = (canvas, attributes, ownsDevice = false) => {
@@ -700,9 +702,9 @@ export class BrowserHost implements SemanticHost {
   }
 
   private programResources(program: LinkedProgram, textures: DrawOperation['textures']) {
-    const floatSlots = textures.map(binding =>
+    const unfilterableFloatSlots = this.device.features.has('float32-filterable') ? [] : textures.map(binding =>
       (binding.storage ?? binding.mipImages?.[0] ?? binding.cubeFaces?.[0])?.texelFormat === 'rgba32float');
-    const key = floatSlots.map(value => value ? '1' : '0').join('');
+    const key = unfilterableFloatSlots.map(value => value ? '1' : '0').join('');
     let variants = this.programs.get(program);
     if (!variants) { variants = new Map(); this.programs.set(program, variants); }
     let resources = variants.get(key);
@@ -717,10 +719,10 @@ export class BrowserHost implements SemanticHost {
     })));
     for (const [index, sampler] of sampledElements.entries()) {
       textureEntries.push({ binding: sampler.samplerBinding,
-        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, sampler: { type: floatSlots[index] ? "non-filtering" : "filtering" } });
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, sampler: { type: unfilterableFloatSlots[index] ? "non-filtering" : "filtering" } });
       textureEntries.push({ binding: sampler.textureBinding,
         visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-        texture: { sampleType: floatSlots[index] ? "unfilterable-float" : "float", viewDimension: sampler.type === GL.SAMPLER_CUBE ? 'cube' : '2d' } });
+        texture: { sampleType: unfilterableFloatSlots[index] ? "unfilterable-float" : "float", viewDimension: sampler.type === GL.SAMPLER_CUBE ? 'cube' : '2d' } });
     }
     const textureLayout = this.device.createBindGroupLayout({ entries: textureEntries });
     const driverLayout = this.device.createBindGroupLayout({ entries: [

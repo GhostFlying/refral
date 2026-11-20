@@ -111,8 +111,8 @@ fn clamped(value: f64) -> f32 {
 fn factor(value: u32) -> bool {
     matches!(value,0|1|0x300..=0x308|0x8001..=0x8004)
 }
-fn equation(value: u32) -> bool {
-    matches!(value, 0x8006 | 0x800a | 0x800b)
+fn equation(value: u32, minmax: bool) -> bool {
+    matches!(value, 0x8006 | 0x800a | 0x800b) || minmax && matches!(value, 0x8007 | 0x8008)
 }
 
 impl ContextCore {
@@ -315,7 +315,9 @@ impl ContextCore {
                 } else {
                     number(1) as u32
                 };
-                if !equation(rgb) || !equation(alpha) {
+                if !equation(rgb, self.render.blend_minmax)
+                    || !equation(alpha, self.render.blend_minmax)
+                {
                     self.record_error(INVALID_ENUM);
                 } else {
                     self.render.raster.blend_equation_rgb = rgb;

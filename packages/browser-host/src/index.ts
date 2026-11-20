@@ -1,4 +1,4 @@
-import { GL, componentCount, stencilReference, vertexComponentBytes } from "@refral/core-api";
+import { GL, BLEND_MINMAX, elementIndexBytes, readElementIndex, componentCount, stencilReference, vertexComponentBytes } from "@refral/core-api";
 import { primitiveIndexBatches } from './primitive-indices.js';
 import { OffscreenDiscard } from './offscreen-discard.js';
 import { QueueCompletion } from './queue-completion.js';
@@ -114,10 +114,13 @@ function blendFactor(value: number): GPUBlendFactor {
   return factors[value] ?? "one";
 }
 
-function blendOperation(value: number): GPUBlendOperation {
-  if (value === GL.FUNC_SUBTRACT) return "subtract";
-  if (value === GL.FUNC_REVERSE_SUBTRACT) return "reverse-subtract";
-  return "add";
+function blendComponent(equation: number, source: number, destination: number): GPUBlendComponent {
+  if (equation === BLEND_MINMAX.MIN_EXT || equation === BLEND_MINMAX.MAX_EXT) {
+    return { operation: equation === BLEND_MINMAX.MIN_EXT ? 'min' : 'max', srcFactor: 'one', dstFactor: 'one' };
+  }
+  const operation = equation === GL.FUNC_SUBTRACT ? 'subtract'
+    : equation === GL.FUNC_REVERSE_SUBTRACT ? 'reverse-subtract' : 'add';
+  return { operation, srcFactor: blendFactor(source), dstFactor: blendFactor(destination) };
 }
 
 function colorWriteMask(mask: readonly boolean[]): GPUColorWriteFlags {
@@ -767,9 +770,10 @@ export class BrowserHost implements SemanticHost {
       }
     };
     const elements = gather && new DataView(gather.data.buffer, gather.data.byteOffset, gather.data.byteLength);
+    const indexBytes = gather ? elementIndexBytes(gather.type) : 0;
     for (let vertex = 0; vertex < Math.max(1, vertices); vertex++) {
-      const sourceVertex = gather && elements ? (gather.type === GL.UNSIGNED_BYTE
-        ? elements.getUint8(gather.offset + vertex) : elements.getUint16(gather.offset + vertex * 2, true)) : vertex;
+      const sourceVertex = gather && elements
+        ? readElementIndex(elements, gather.offset + vertex * indexBytes, indexBytes) : vertex;
       for (let component = 0; component < components; component++) {
         values[vertex * components + component] = view
           ? (component < size
@@ -838,7 +842,7 @@ export class BrowserHost implements SemanticHost {
       ? (strip ? 'line-strip' : 'line-list') : (strip ? 'triangle-strip' : 'triangle-list');
     // WebGL1 index 65535 remains a vertex index. WebGPU uint16 strips reserve it for restart.
     const wideIndices = strip && indices?.type === GL.UNSIGNED_SHORT && operation.vertexCount === 65536;
-    const indexFormat = wideIndices ? 'uint32' : 'uint16';
+    const indexFormat = wideIndices || indices?.type === GL.UNSIGNED_INT ? 'uint32' : 'uint16';
     const stripIndexFormat = strip && indices ? indexFormat : undefined;
     const target = this.resolveTarget(operation.target);
     const biasEnabled = state.polygonOffsetFill && !line && !!target.depth && target.depth.format !== "stencil8";
@@ -867,10 +871,8 @@ export class BrowserHost implements SemanticHost {
     let pipeline = resources.pipelines.get(key);
     if (!pipeline) {
       const blend: GPUBlendState | undefined = state.blend ? {
-        color: { operation: blendOperation(state.blendEquationRGB),
-          srcFactor: blendFactor(state.blendSrcRGB), dstFactor: blendFactor(state.blendDstRGB) },
-        alpha: { operation: blendOperation(state.blendEquationAlpha),
-          srcFactor: blendFactor(state.blendSrcAlpha), dstFactor: blendFactor(state.blendDstAlpha) },
+        color: blendComponent(state.blendEquationRGB, state.blendSrcRGB, state.blendDstRGB),
+        alpha: blendComponent(state.blendEquationAlpha, state.blendSrcAlpha, state.blendDstAlpha),
       } : undefined;
       pipeline = this.device.createRenderPipeline({ layout: resources.layout,
         vertex: { module: resources.vertex, entryPoint: points ? "refralPointMain" : program.vertexEntryPoint, buffers: layouts },
@@ -946,11 +948,8 @@ export class BrowserHost implements SemanticHost {
       const cachedIndices = this.indexCache.get(indices.data);
       indexBuffer = cachedIndices?.get(indices.type) ?? null;
       if (!indexBuffer) {
-        const values = indices.type === GL.UNSIGNED_BYTE
-          ? new Uint16Array(indices.data)
-          : new Uint16Array(indices.data.buffer, indices.data.byteOffset, indices.data.byteLength / 2);
-        indexBuffer = this.createBuffer(new Uint8Array(values.buffer, values.byteOffset, values.byteLength),
-          GPUBufferUsage.INDEX);
+        const bytes = indices.type === GL.UNSIGNED_BYTE ? new Uint8Array(new Uint16Array(indices.data).buffer) : indices.data;
+        indexBuffer = this.createBuffer(bytes, GPUBufferUsage.INDEX);
         let cache = cachedIndices;
         if (!cache) {
           cache = new Map();
@@ -983,7 +982,7 @@ export class BrowserHost implements SemanticHost {
       }
     } else if (indexBuffer && indices) {
       pass.setIndexBuffer(indexBuffer, indexFormat);
-      const size = vertexComponentBytes(indices.type);
+      const size = elementIndexBytes(indices.type);
       pass.drawIndexed(operation.count, 1, wideIndices ? 0 : indices.offset / size);
     } else pass.draw(operation.count, 1, operation.first);
     this.stats.draws++;

@@ -123,6 +123,19 @@ export function vertexComponentBytes(type: number): number {
   }
 }
 
+/** Width and value of an index in the packed element array. */
+export function elementIndexBytes(type: number): number {
+  return type === GL.UNSIGNED_INT ? 4 : type === GL.UNSIGNED_SHORT ? 2 : 1;
+}
+
+export function readElementIndex(view: DataView, offset: number, bytes: number): number {
+  if (bytes === 4) return view.getUint32(offset, true);
+  if (bytes === 2) return view.getUint16(offset, true);
+  return view.getUint8(offset);
+}
+
+export const BLEND_MINMAX = { MIN_EXT: 0x8007, MAX_EXT: 0x8008 } as const;
+
 /** EXT_sRGB constants are exposed only on the activated extension object. */
 export const SRGB = {
   SRGB_EXT: 0x8c40, SRGB_ALPHA_EXT: 0x8c42, SRGB8_ALPHA8_EXT: 0x8c43,

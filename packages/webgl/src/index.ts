@@ -1,6 +1,6 @@
 import { createContextInterface, webglInterfaces } from './interfaces.js';
 import { createVertexArrayExtension } from './vertex-arrays.js';
-import { GL, SRGB, VERTEX_ARRAY_BINDING_OES, allocateContextId, ExecutionResources } from "@refral/core-api";
+import { GL, SRGB, BLEND_MINMAX, VERTEX_ARRAY_BINDING_OES, allocateContextId, ExecutionResources } from "@refral/core-api";
 import type { BufferHandle, BufferSnapshot, CoreKind, DrawingCore } from "@refral/core-api";
 import { createJsDrawingCore } from "@refral/core-js";
 import { prepareRustDrawingCores, prepareRustModule } from "@refral/core-wasm";
@@ -99,6 +99,12 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
   let floatExtension: object | undefined;
   const supportsArrays = core.invoke('supportsVertexArrayObjects', []) === true;
   let arrays: ReturnType<typeof createVertexArrayExtension> | undefined;
+  const coreExtensions = core.invoke('supportsCoreExtensions', []) === true ? {
+    ext_blend_minmax: { name: 'EXT_blend_minmax', operation: 'enableBlendMinmax', enums: BLEND_MINMAX },
+    oes_element_index_uint: { name: 'OES_element_index_uint', operation: 'enableElementIndexUint', enums: {} },
+    oes_fbo_render_mipmap: { name: 'OES_fbo_render_mipmap', operation: 'enableFramebufferMipmaps', enums: {} },
+  } : {};
+  const enabledCoreExtensions = new Map<string, object>();
   let releasing: Promise<void> | undefined;
   let disposed = false;
   function releaseGPU() {
@@ -107,6 +113,20 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
   }
   return { core, host, interfaces, bufferFacade, programFacade, resourceFacade, releaseGPU,
     supportsArrays, supportsFloat, supportsSrgb,
+    coreExtensionNames: Object.values(coreExtensions).map(extension => extension.name),
+    enableCoreExtension(name: string): object | null {
+      if (!Object.hasOwn(coreExtensions, name)) return null;
+      const spec = coreExtensions[name as keyof typeof coreExtensions]!;
+      let extension = enabledCoreExtensions.get(name);
+      if (!extension) {
+        core.invoke(spec.operation, []);
+        extension = new realm.Object();
+        for (const [key, value] of Object.entries(spec.enums))
+          Object.defineProperty(extension, key, { value, enumerable: true });
+        enabledCoreExtensions.set(name, extension);
+      }
+      return extension;
+    },
     enableSrgbTextures() {
       if (!supportsSrgb) return null;
       if (!srgbExtension) {
@@ -205,7 +225,7 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: We
     }
     if (property === 'getContextAttributes') return core.isContextLost() ? null : { ...attributes };
     if (property === 'getSupportedExtensions') return core.isContextLost() ? null :
-      [...(current.supportsSrgb ? ['EXT_sRGB'] : []), ...(current.supportsFloat ? ['OES_texture_float'] : []), ...(current.supportsArrays ? ['OES_vertex_array_object'] : []), 'WEBGL_lose_context'];
+      [...(current.supportsSrgb ? ['EXT_sRGB'] : []), ...(current.supportsFloat ? ['OES_texture_float'] : []), ...(current.supportsArrays ? ['OES_vertex_array_object'] : []), ...current.coreExtensionNames, 'WEBGL_lose_context'];
     if (property === 'getExtension') {
       requireArguments(property, args, 1);
       const name = `${args[0]}`.toLowerCase();
@@ -213,7 +233,7 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: We
       if (name === 'ext_srgb') return current.enableSrgbTextures();
       if (name === 'oes_texture_float') return current.enableFloatTextures();
       if (name === 'oes_vertex_array_object') return current.enableVertexArrays();
-      return name === 'webgl_lose_context' ? lost.extension : null;
+      return name === 'webgl_lose_context' ? lost.extension : current.enableCoreExtension(name);
     }
     if (property === 'vertexAttribPointer') {
       requireArguments(property, args, 6);

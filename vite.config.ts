@@ -37,6 +37,7 @@ export default defineConfig({
   build: { outDir: 'dist', rollupOptions: { input: {
     validation: path('./examples/index.html'),
     threeShapes: path('./examples/three-shapes/index.html'),
+    threeMarchingCubes: path('./examples/three-marching-cubes/index.html'),
     selection: path('./experiments/core-selection/index.html'),
     triangle: path('./examples/triangle/index.html'),
     domDeployment: path('./tests/fixtures/dom-deployment.html'),

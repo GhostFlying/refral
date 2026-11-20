@@ -27,6 +27,8 @@ Open [the Chrome validation page](http://127.0.0.1:4173/examples/index.html). Th
 
 Open [the Rust triangle](http://127.0.0.1:4173/examples/triangle/index.html?core=rust) for the shared drawing profile. Set core=js or core=native in the URL to run the same scene through either reference path.
 
+Open [Three.js Shapes](http://127.0.0.1:4173/examples/three-shapes/index.html) to compare the three backends on the pinned r162 Shapes scene. Drag the scene to rotate it. Run `REFRAL_HEADLESS=1 pnpm bench:three` for the optional performance comparison and image checks. See the [workload and results](docs/tasks/116-three-shapes-workload.md).
+
 The build produces a standalone `dist` tree containing the browser bundles, compiler Wasm, formal Rust core Wasm, core-selection experiment Wasm, and pinned demo resources. Serve it over localhost or HTTPS.
 
 ## Commands

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>Three.js Shapes · Refral</title>
+    <style>
+      :root { font: 16px system-ui, sans-serif; color-scheme: dark; background: #131820; color: #e8edf4; }
+      main { max-width: 800px; margin: 28px auto; padding: 0 18px; }
+      h1 { font-size: 24px; margin: 0 0 12px; }
+      nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+      nav a { color: #c4dcff; padding: 6px 9px; border: 1px solid #536477; border-radius: 4px; text-decoration: none; }
+      nav a[aria-current="page"] { background: #324965; color: white; }
+      canvas { display: block; width: 100%; height: auto; background: #f0f0f0; touch-action: none; cursor: grab; }
+      canvas:active { cursor: grabbing; }
+      output { display: block; min-height: 1.5em; margin: 10px 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Three.js Shapes</h1>
+      <nav aria-label="Rendering backend">
+        <a href="?core=native">Native WebGL1</a>
+        <a href="?core=js">Refral JS</a>
+        <a href="?core=rust">Refral Rust</a>
+      </nav>
+      <canvas aria-label="Rotatable three-dimensional shapes"></canvas>
+      <output aria-live="polite"></output>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

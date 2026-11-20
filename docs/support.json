@@ -2673,7 +2673,7 @@
             "docs/tasks/079-synchronous-queue-completion.md",
             "artifacts/conformance/campaign/queue-completion/"
           ],
-          "unsupportedBehavior": "Pending GPU work is submitted and raises NotSupportedError while a synchronous queue-wide completion guarantee is unavailable.",
+          "unsupportedBehavior": "Synchronous waiting for pending GPU work is a known gap in the default browser host. After submitting outstanding work, finish raises NotSupportedError if completion is still unconfirmed.",
           "environments": [
             "chrome-macos-arm64"
           ]
@@ -2689,7 +2689,7 @@
             "docs/tasks/079-synchronous-queue-completion.md",
             "artifacts/conformance/campaign/queue-completion/"
           ],
-          "unsupportedBehavior": "Pending GPU work is submitted and raises NotSupportedError while a synchronous queue-wide completion guarantee is unavailable."
+          "unsupportedBehavior": "Synchronous waiting for pending GPU work is a known gap in the default browser host. After submitting outstanding work, finish raises NotSupportedError if completion is still unconfirmed."
         }
       }
     },
@@ -3445,6 +3445,7 @@
           "url": "conformance/misc/uninitialized-test.html",
           "index": 455,
           "classification": "synchronous-host-capability",
+          "disposition": "deferred-capability-gap",
           "affectedBackends": [
             "js",
             "rust"

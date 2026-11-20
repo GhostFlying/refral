@@ -41,6 +41,7 @@
     "snapshot": "node tools/snapshot.mjs",
     "bench:chrome": "playwright test -c benchmarks/playwright.config.ts rtt-benchmark.spec.ts",
     "bench:rtt": "playwright test -c benchmarks/playwright.config.ts rtt-benchmark.spec.ts",
+    "bench:three": "playwright test -c benchmarks/playwright.config.ts three-shapes.spec.ts",
     "check": "pnpm typecheck && pnpm test:unit && pnpm test:tools && pnpm rust:check && pnpm rust:test && node tools/check-support.mjs",
     "bench:dom": "playwright test -c benchmarks/dom-upload.config.ts"
   },
@@ -48,8 +49,10 @@
     "@playwright/test": "1.65.0",
     "@types/node": "26.6.6",
     "@types/pngjs": "6.0.5",
+    "@types/three": "0.162.0",
     "@webgpu/types": "0.1.74",
     "pngjs": "7.0.0",
+    "three": "0.162.0",
     "typescript": "7.0.2",
     "vite": "8.3.8",
     "vitest": "5.1.0"

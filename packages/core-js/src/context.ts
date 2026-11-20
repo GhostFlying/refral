@@ -1,5 +1,5 @@
 import {
-  CUBE_FACES, GL, SRGB, isSrgbTextureFormat, VERTEX_ARRAY_BINDING_OES, createRasterState, snapshotRaster, componentCount, vertexComponentBytes, isColorRenderbufferFormat,
+  CUBE_FACES, GL, SRGB, BLEND_MINMAX, elementIndexBytes, readElementIndex, isSrgbTextureFormat, VERTEX_ARRAY_BINDING_OES, createRasterState, snapshotRaster, componentCount, vertexComponentBytes, isColorRenderbufferFormat,
   isStencilRenderbufferFormat, stencilReference, isDrawMode,
 } from "@refral/core-api";
 import type {
@@ -87,6 +87,13 @@ export class SemanticContext {
   private srgbTextures = false;
   supportsSrgbTextures(): boolean { return true; }
   enableSrgbTextures(): void { this.srgbTextures = true; }
+  private elementIndexUint = false;
+  private blendMinmax = false;
+  private framebufferMipmaps = false;
+  supportsCoreExtensions(): boolean { return true; }
+  enableElementIndexUint(): void { this.elementIndexUint = true; }
+  enableBlendMinmax(): void { this.blendMinmax = true; }
+  enableFramebufferMipmaps(): void { this.framebufferMipmaps = true; }
   supportsFloatTextures(): boolean { return true; }
   enableFloatTextures(): void { this.floatTextures = true; }
   private get elementBuffer() { return this.currentArray.element; }
@@ -233,9 +240,9 @@ export class SemanticContext {
     const texture = framebuffer?.colorTexture;
     const image = framebuffer?.colorImage;
     if (!this.resources || !framebuffer || !texture || !image?.storage || !this.state.colorMask.some(Boolean)) return;
-    const previous = this.textureVersion(texture, framebuffer.colorTarget);
+    const previous = this.textureVersion(texture, framebuffer.colorTarget, framebuffer.colorLevel);
     image.version++;
-    const version = this.textureVersion(texture, framebuffer.colorTarget);
+    const version = this.textureVersion(texture, framebuffer.colorTarget, framebuffer.colorLevel);
     this.resources.apply({ kind: "write-texture", version, previous });
     image.storage = this.resources.texture(version);
   }
@@ -723,9 +730,10 @@ export class SemanticContext {
     let indices: DrawOperation['indices'] = null;
     if (elements) {
       const { type, offset } = elements;
-      if (type !== GL.UNSIGNED_BYTE && type !== GL.UNSIGNED_SHORT) return this.error(GL.INVALID_ENUM);
+      if (type !== GL.UNSIGNED_BYTE && type !== GL.UNSIGNED_SHORT
+        && !(type === GL.UNSIGNED_INT && this.elementIndexUint)) return this.error(GL.INVALID_ENUM);
       if (offset < 0) return this.error(GL.INVALID_VALUE);
-      if (!this.elementBuffer || !Number.isInteger(offset) || offset % vertexComponentBytes(type)) {
+      if (!this.elementBuffer || !Number.isInteger(offset) || offset % elementIndexBytes(type)) {
         return this.error(GL.INVALID_OPERATION);
       }
       indices = { data: this.elementBuffer.data, type, offset };
@@ -741,15 +749,21 @@ export class SemanticContext {
     }
     let vertices = first + count;
     if (indices && count) {
-      const bytes = indices.type === GL.UNSIGNED_BYTE ? 1 : 2;
+      const bytes = elementIndexBytes(indices.type);
       if (indices.offset + count * bytes > indices.data.byteLength) return this.error(GL.INVALID_OPERATION);
-      const view = new DataView(indices.data.buffer, indices.data.byteOffset, indices.data.byteLength);
-      let maximum = -1;
-      for (let i = 0; i < count; i++) {
-        const value = bytes === 1 ? view.getUint8(indices.offset + i) : view.getUint16(indices.offset + i * 2, true);
-        maximum = Math.max(maximum, value);
+      if (indices.type === GL.UNSIGNED_INT
+        && !this.program.vertexInputs.some(input => this.attributes[input.location]!.enabled)) {
+        // WebGL1 shaders cannot observe an index without an enabled vertex input.
+        indices = null;
+        vertices = count;
+      } else {
+        const view = new DataView(indices.data.buffer, indices.data.byteOffset, indices.data.byteLength);
+        let maximum = -1;
+        for (let i = 0; i < count; i++) {
+          maximum = Math.max(maximum, readElementIndex(view, indices.offset + i * bytes, bytes));
+        }
+        vertices = maximum + 1;
       }
-      vertices = maximum + 1;
     }
     const attributes: AttributeSnapshot[] = [];
     for (const active of this.program.vertexInputs) {
@@ -774,7 +788,7 @@ export class SemanticContext {
         if (!cube && sampler.type !== GL.SAMPLER_2D) return unsupported("sampler type");
         const texture = cube ? binding.cubeMap : binding.texture2D;
         const levels = texture ? textureSamplingLevelCount(texture) : 0;
-        if (levels && this.framebuffer?.color === texture) return this.error(GL.INVALID_OPERATION);
+        if (this.framebuffer?.color === texture && levels > this.framebuffer.colorLevel) return this.error(GL.INVALID_OPERATION);
         const parameters = texture ? { ...texture.parameters } :
           { minFilter: GL.NEAREST, magFilter: GL.NEAREST, wrapS: GL.CLAMP_TO_EDGE, wrapT: GL.CLAMP_TO_EDGE };
         if (levels > 1 && texture) {
@@ -1072,7 +1086,7 @@ export class SemanticContext {
     const sourceHasAlpha = source.isDefault ? this.contextAttributes.alpha : !source.colorOpaque;
     if (isSrgbTextureFormat(format) || source.color?.texelFormat === "rgba8unorm-srgb" ||
         parent?.type === GL.FLOAT || (!sourceHasAlpha && format !== GL.RGB && format !== GL.LUMINANCE)
-      || (this.framebuffer?.color === texture && this.framebuffer.colorTarget === target && level === 0)) {
+      || (this.framebuffer?.color === texture && this.framebuffer.colorTarget === target && this.framebuffer.colorLevel === level)) {
       return this.error(GL.INVALID_OPERATION);
     }
     if (parent && (width === 0 || height === 0 || sourceX >= source.width || sourceY >= source.height
@@ -1266,7 +1280,8 @@ export class SemanticContext {
     const cubeFace = CUBE_FACES.some(face => face === textureTarget);
     if (target !== GL.FRAMEBUFFER || attachment !== GL.COLOR_ATTACHMENT0 ||
         (textureTarget !== GL.TEXTURE_2D && !cubeFace)) return this.error(GL.INVALID_ENUM);
-    if (level !== 0) return this.error(GL.INVALID_VALUE);
+    if (!Number.isInteger(level) || level < 0 || (level !== 0 && !this.framebufferMipmaps)
+      || level > Math.floor(Math.log2(this.host.limits.maxTextureDimension2D))) return this.error(GL.INVALID_VALUE);
     if (!this.framebuffer) return this.error(GL.INVALID_OPERATION);
     if (texture !== null && !this.valid(texture, TextureObject)) return;
     if (texture !== null && !texture.initialized) return this.error(GL.INVALID_OPERATION);
@@ -1276,6 +1291,7 @@ export class SemanticContext {
     const previous = this.framebuffer.color;
     this.framebuffer.color = texture;
     this.framebuffer.colorTarget = texture ? textureTarget : GL.TEXTURE_2D;
+    this.framebuffer.colorLevel = texture ? level : 0;
     if (previous instanceof RenderbufferObject) this.releaseRenderbuffer(previous);
     else if (previous && previous !== texture) this.releaseTexture(previous);
   }
@@ -1327,7 +1343,7 @@ export class SemanticContext {
         ? SRGB.SRGB_EXT : GL.LINEAR;
     }
     if (parameter === GL.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME) return object;
-    if (object instanceof TextureObject && parameter === GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL) return 0;
+    if (object instanceof TextureObject && parameter === GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL) return this.framebuffer.colorLevel;
     if (object instanceof TextureObject && parameter === GL.FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE) {
       return this.framebuffer.colorTarget === GL.TEXTURE_2D ? GL.NONE : this.framebuffer.colorTarget;
     }
@@ -1516,6 +1532,7 @@ export class SemanticContext {
   blendEquation(mode: number): void { this.blendEquationSeparate(mode, mode); }
   blendEquationSeparate(rgb: number, alpha: number): void {
     const valid = [GL.FUNC_ADD, GL.FUNC_SUBTRACT, GL.FUNC_REVERSE_SUBTRACT] as number[];
+    if (this.blendMinmax) valid.push(BLEND_MINMAX.MIN_EXT, BLEND_MINMAX.MAX_EXT);
     if (!valid.includes(rgb) || !valid.includes(alpha)) return this.error(GL.INVALID_ENUM);
     this.state.blendEquationRGB = rgb; this.state.blendEquationAlpha = alpha;
   }

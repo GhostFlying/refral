@@ -1,0 +1,16 @@
+# WebGL1 extensions with direct WebGPU mappings
+
+Start from the 39 extensions in the fixed WebGL1 inventory. Enable each extension only after both cores and the browser host execute its enabled branch. Keep the extension name, dependency and outstanding semantic requirements in the campaign audit for later batches. Use the existing shared facade and WebGPU/WGSL path. The first batch owns unsigned-int element indices, min/max blending and rendering to nonzero texture levels. Inventory the rest by native feature, renderer/compiler work, or exact behavior that the standard backend cannot yet provide under the accepted constraints.
+
+- OES_element_index_uint enables UNSIGNED_INT for drawElements on the selected context. Validate offsets and ranges before use. Preserve all WebGL1 primitive modes, including points, line loops and triangle fans. Keep primitive restart and unavailable vertex fetches from producing accidental draws or allocations.
+- EXT_blend_minmax enables MIN_EXT and MAX_EXT for both blend equations. Keep blend factors queryable. Use unit factors in the WebGPU pipeline when the selected equation ignores its factors. Keep other equations and extension-off error paths.
+- OES_fbo_render_mipmap allows an attachment to name a nonzero texture level. Carry the level through framebuffer completeness, queries, rendering, copies and retained attachments. Check feedback against the actual sampled level range.
+- Run deterministic checks, build and test actual Rust Wasm, and execute the pinned originals and affected browser regressions with one headless Chrome worker. Capture the enabled branches, extension lists and raw assertion counts. Use the existing PR flow.
+
+[OES_element_index_uint](https://registry.khronos.org/webgl/extensions/OES_element_index_uint/) · [EXT_blend_minmax](https://registry.khronos.org/webgl/extensions/EXT_blend_minmax/) · [OES_fbo_render_mipmap](https://registry.khronos.org/webgl/extensions/OES_fbo_render_mipmap/) · [WebGPU index format](https://www.w3.org/TR/webgpu/#enumdef-gpuindexformat) · [WebGPU blending](https://www.w3.org/TR/webgpu/#blend-state)
+
+## First batch verification
+
+On Chrome 158.0.8127.36 with Apple Metal, the original `EXT_blend_minmax`, `OES_element_index_uint` and `OES_fbo_render_mipmap` cases execute 39, 89 and 25 assertions respectively on all three paths. All 153 assertions pass per backend. Relative to the prior disabled paths, each Refral core executes 134 additional assertions across these three originals. The original extension enumeration now executes 50 assertions per core, and the index range and feedback controls pass. The 48 focused browser tests cover FBO, CubeMap, restoration and actual rendering above index 65535. The uint32 control also exercises the largest index with no streamed attributes, where an ESSL1 shader has no observable vertex index. The lost context and extension-off branches retain GL validation. Raw case screenshots and checks are under `artifacts/conformance/campaign/webgpu-core-extensions`.
+
+The optional Wasm protocol marker keeps the new extensions undiscoverable with older Rust artifacts. The existing command arguments and draw packet layouts carry uint32 indices and texture mip identities. The browser host uses the existing GPU queue. These extensions introduce no separate presentation, worker, 2D or native WebGL routes.

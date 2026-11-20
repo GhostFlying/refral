@@ -1,4 +1,4 @@
-import { GL } from '@refral/core-api';
+import { GL, elementIndexBytes, readElementIndex } from '@refral/core-api';
 import type { DrawOperation } from '@refral/core-api';
 
 // WebGPU has no line-loop or triangle-fan topology. Emit bounded list draws
@@ -14,8 +14,8 @@ export function* primitiveIndexBatches(
   const view = indices && new DataView(indices.data.buffer, indices.data.byteOffset, indices.data.byteLength);
   const vertex = (i: number) => {
     if (!indices || !view) return first + i;
-    return indices.type === GL.UNSIGNED_BYTE
-      ? view.getUint8(indices.offset + i) : view.getUint16(indices.offset + i * 2, true);
+    const bytes = elementIndexBytes(indices.type);
+    return readElementIndex(view, indices.offset + i * bytes, bytes);
   };
   const primitives = loop ? count : count - 2;
   const anchor = vertex(0);

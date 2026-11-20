@@ -120,14 +120,18 @@ pub enum TextureImages {
 }
 
 impl TextureImages {
-    /// Every image of a complete binding belongs to the same logical texture.
-    pub(super) fn texture(&self) -> Option<ObjectHandle> {
+    /// Check whether a complete sampler can reach an attached image.
+    pub(super) fn samples(&self, attachment: TextureVersion) -> bool {
         match self {
             Self::Texture2D(image) => image.as_ref(),
             Self::Cube(images) => images.as_ref().map(|faces| &faces[0]),
             Self::MipChain { images, .. } => images.first(),
         }
-        .map(|image| image.texture)
+        .is_some_and(|image| image.texture == attachment.texture)
+            && match self {
+                Self::MipChain { levels, .. } => (attachment.level as usize) < *levels,
+                _ => attachment.level == 0,
+            }
     }
 }
 
@@ -214,7 +218,7 @@ pub(super) struct Texture {
     parameters: TextureParameters,
 }
 impl Texture {
-    fn image(&self, face: usize, level: usize) -> Option<&TextureImage> {
+    pub(super) fn image(&self, face: usize, level: usize) -> Option<&TextureImage> {
         if level == 0 {
             self.images.get(face)
         } else {
@@ -222,7 +226,7 @@ impl Texture {
         }
     }
 
-    fn image_mut(&mut self, face: usize, level: usize) -> &mut TextureImage {
+    pub(super) fn image_mut(&mut self, face: usize, level: usize) -> &mut TextureImage {
         if level == 0 {
             &mut self.images[face]
         } else {
@@ -715,7 +719,7 @@ impl ContextCore {
         }
         true
     }
-    fn level_limit(&self, level: f64) -> u32 {
+    pub(super) fn level_limit(&self, level: f64) -> u32 {
         if !(0.0..32.0).contains(&level) || level.fract() != 0.0 {
             return 0;
         }

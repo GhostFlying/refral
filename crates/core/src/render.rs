@@ -327,6 +327,9 @@ pub(crate) struct RenderState {
     sample_coverage_value: f32,
     sample_coverage_invert: bool,
     requested_line_width: f32,
+    element_index_uint: bool,
+    blend_minmax: bool,
+    framebuffer_mipmaps: bool,
     mipmap_hint: u32,
     texture_unit_limit: usize,
     texture_dimension_limit: u32,
@@ -358,6 +361,9 @@ impl Default for RenderState {
             sample_coverage_value: 1.0,
             sample_coverage_invert: false,
             requested_line_width: 1.0,
+            element_index_uint: false,
+            blend_minmax: false,
+            framebuffer_mipmaps: false,
             mipmap_hint: 0x1100,
             texture_unit_limit: 8,
             texture_dimension_limit: 4096,
@@ -1264,6 +1270,9 @@ impl ContextCore {
                 }
                 return Reply::Clear(snapshot);
             }
+            "enableElementIndexUint" => self.render.element_index_uint = true,
+            "enableBlendMinmax" => self.render.blend_minmax = true,
+            "enableFramebufferMipmaps" => self.render.framebuffer_mipmaps = true,
             "drawArrays" | "drawElements" => return self.draw_snapshot(operation, args),
             "flush" => {}
             _ if operation.starts_with("uniform") => return self.set_uniform(operation, args),
@@ -1609,6 +1618,7 @@ impl ContextCore {
             let bytes = match ty {
                 0x1401 => 1,
                 0x1403 => 2,
+                0x1405 if self.render.element_index_uint => 4,
                 _ => {
                     self.record_error(INVALID_ENUM);
                     return Reply::Null;
@@ -1674,22 +1684,41 @@ impl ContextCore {
                 self.record_error(INVALID_OPERATION);
                 return Reply::Null;
             }
-            vertex_count = 0;
-            for value in buffer.data[offset..end].chunks_exact(bytes) {
-                let value = if bytes == 1 {
-                    value[0] as usize
-                } else {
-                    u16::from_le_bytes([value[0], value[1]]) as usize
+            let no_array_inputs = ty == 0x1405
+                && !self.render.programs[program_index]
+                    .value
+                    .as_ref()
+                    .unwrap()
+                    .executable
+                    .as_ref()
+                    .unwrap()
+                    .vertex_inputs
+                    .iter()
+                    .any(|(location, _)| {
+                        self.render.arrays.current().attributes[*location as usize].enabled
+                    });
+            if !no_array_inputs {
+                vertex_count = 0;
+                for value in buffer.data[offset..end].chunks_exact(bytes) {
+                    let value = match bytes {
+                        1 => u32::from(value[0]),
+                        2 => u32::from(u16::from_le_bytes([value[0], value[1]])),
+                        _ => u32::from_le_bytes(value.try_into().unwrap()),
+                    };
+                    let Some(end_vertex) = value.checked_add(1) else {
+                        self.record_error(INVALID_OPERATION);
+                        return Reply::Null;
+                    };
+                    vertex_count = vertex_count.max(end_vertex as usize);
+                }
+                let Some(snapshot) =
+                    self.inspect_attached_buffer(self.render.arrays.current().element.unwrap())
+                else {
+                    self.record_error(OUT_OF_MEMORY);
+                    return Reply::Null;
                 };
-                vertex_count = vertex_count.max(value + 1);
+                indices = Some((snapshot, ty, offset));
             }
-            let Some(snapshot) =
-                self.inspect_attached_buffer(self.render.arrays.current().element.unwrap())
-            else {
-                self.record_error(OUT_OF_MEMORY);
-                return Reply::Null;
-            };
-            indices = Some((snapshot, ty, offset));
         }
         let program = self.render.programs[program_index].value.as_ref().unwrap();
         let executable = program.executable.as_ref().unwrap();
@@ -1701,11 +1730,8 @@ impl ContextCore {
             self.record_error(OUT_OF_MEMORY);
             return Reply::Null;
         };
-        if let Some(color) = self.framebuffer_color_texture() {
-            if textures
-                .iter()
-                .any(|binding| binding.images.texture() == Some(color))
-            {
+        if let Some(color) = target.color {
+            if textures.iter().any(|binding| binding.images.samples(color)) {
                 self.record_error(INVALID_OPERATION);
                 return Reply::Null;
             }

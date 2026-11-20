@@ -839,6 +839,10 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
         const version = exports.rf_srgb_texture_protocol_version;
         return typeof version === 'function' && version() === 1;
       }
+      if (operation === 'supportsCoreExtensions') {
+        const version = exports.rf_core_extensions_protocol_version;
+        return typeof version === 'function' && version() === 1;
+      }
       if (operation === 'supportsFloatTextures') {
         const version = exports.rf_float_texture_protocol_version;
         return typeof version === 'function' && version() === 1;

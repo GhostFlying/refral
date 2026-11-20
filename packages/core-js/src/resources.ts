@@ -73,9 +73,10 @@ export class FramebufferObject extends LogicalObject {
   initialized = false;
   color: TextureObject | RenderbufferObject | null = null;
   colorTarget: number = GL.TEXTURE_2D;
+  colorLevel = 0;
   get colorTexture(): TextureObject | null { return this.color instanceof TextureObject ? this.color : null; }
   get colorRenderbuffer(): RenderbufferObject | null { return this.color instanceof RenderbufferObject ? this.color : null; }
-  get colorImage(): TextureImage | undefined { return this.colorTexture?.image(this.colorTarget); }
+  get colorImage(): TextureImage | undefined { return this.colorTexture?.image(this.colorTarget, this.colorLevel); }
   depth: RenderbufferObject | null = null;
   stencil: RenderbufferObject | null = null;
   depthStencil: RenderbufferObject | null = null;

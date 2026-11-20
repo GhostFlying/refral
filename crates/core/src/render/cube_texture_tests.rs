@@ -368,14 +368,26 @@ fn cube_framebuffer_selects_a_face_and_preserves_the_prior_attachment_after_erro
     args[3] = Argument::Handle(cube);
     core.render_invoke("framebufferTexture2D", &args);
     assert_eq!(core.get_error(), INVALID_OPERATION);
-    assert_eq!(core.framebuffer_color_texture(), Some(two_d));
+    assert!(matches!(
+        core.render_invoke("getFramebufferAttachmentParameter", &[number(0x8d40), number(0x8ce0), number(0x8cd1)]),
+        Reply::Handle(value) if value == two_d
+    ));
     args[2] = number(FIRST_FACE);
     core.render_invoke("framebufferTexture2D", &args);
     assert_eq!(core.get_error(), NO_ERROR);
-    assert_eq!(core.framebuffer_color_texture(), Some(cube));
+    assert!(matches!(
+        core.render_invoke("getFramebufferAttachmentParameter", &[number(0x8d40), number(0x8ce0), number(0x8cd1)]),
+        Reply::Handle(value) if value == cube
+    ));
     args[3] = Argument::Null;
     core.render_invoke("framebufferTexture2D", &args);
-    assert_eq!(core.framebuffer_color_texture(), None);
+    assert!(matches!(
+        core.render_invoke(
+            "getFramebufferAttachmentParameter",
+            &[number(0x8d40), number(0x8ce0), number(0x8cd0)]
+        ),
+        Reply::Number(0.0)
+    ));
     assert_eq!(core.get_error(), NO_ERROR);
 }
 

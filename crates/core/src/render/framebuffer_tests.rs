@@ -498,7 +498,7 @@ fn target_validation_and_color_writes_are_ordered_and_version_bounded() {
     attach_color(&mut core, Some(texture));
     core.take_resource_operations();
     let target = core.target_snapshot(true).unwrap();
-    assert_eq!(core.framebuffer_color_texture(), Some(texture));
+    assert_eq!(target.color.unwrap().texture, texture);
     assert!(core.prepare_color_write(&target));
     core.finish_color_write(&target);
     let (before, after) = core.take_resource_operations();

@@ -1,4 +1,4 @@
-export { GL, SRGB, isSrgbTextureFormat, vertexComponentBytes } from './gl.js';
+export { GL, SRGB, BLEND_MINMAX, elementIndexBytes, readElementIndex, isSrgbTextureFormat, vertexComponentBytes } from './gl.js';
 export type * from './compiler.js';
 export * from './execution.js';
 export type * from './drawing.js';

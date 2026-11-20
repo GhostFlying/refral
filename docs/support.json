@@ -1241,6 +1241,138 @@
       }
     },
     {
+      "id": "blend-minmax",
+      "api": "EXT_blend_minmax",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "coverage": "Per-context MIN_EXT and MAX_EXT gates, separate RGB and alpha equations, and WebGPU component-wise blending that ignores the selected factors.",
+          "tests": [
+            "sdk/tests/conformance/extensions/ext-blend-minmax.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-core-extensions/focused/js/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 39
+            }
+          ],
+          "unsupportedBehavior": "The corresponding WebGL validation rejects invalid calls. The extended operands require enabling the extension on this context.",
+          "environments": [
+            "chrome158-macos-arm64"
+          ]
+        },
+        "rust": {
+          "status": "cts-verified",
+          "coverage": "Per-context MIN_EXT and MAX_EXT gates, separate RGB and alpha equations, and WebGPU component-wise blending that ignores the selected factors.",
+          "tests": [
+            "sdk/tests/conformance/extensions/ext-blend-minmax.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-core-extensions/focused/rust/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 39
+            }
+          ],
+          "unsupportedBehavior": "The corresponding WebGL validation rejects invalid calls. The extended operands require enabling the extension on this context.",
+          "environments": [
+            "chrome158-macos-arm64"
+          ]
+        }
+      }
+    },
+    {
+      "id": "element-index-uint",
+      "api": "OES_element_index_uint",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "coverage": "Per-context UNSIGNED_INT drawElements, validation and all primitive modes, including uint32 point gathering, emulated topologies and ordinary WebGPU indexed draws.",
+          "tests": [
+            "sdk/tests/conformance/extensions/oes-element-index-uint.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-core-extensions/focused/js/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 89
+            }
+          ],
+          "unsupportedBehavior": "The corresponding WebGL validation rejects invalid calls. The extended operands require enabling the extension on this context.",
+          "environments": [
+            "chrome158-macos-arm64"
+          ]
+        },
+        "rust": {
+          "status": "cts-verified",
+          "coverage": "Per-context UNSIGNED_INT drawElements, validation and all primitive modes, including uint32 point gathering, emulated topologies and ordinary WebGPU indexed draws.",
+          "tests": [
+            "sdk/tests/conformance/extensions/oes-element-index-uint.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-core-extensions/focused/rust/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 89
+            }
+          ],
+          "unsupportedBehavior": "The corresponding WebGL validation rejects invalid calls. The extended operands require enabling the extension on this context.",
+          "environments": [
+            "chrome158-macos-arm64"
+          ]
+        }
+      }
+    },
+    {
+      "id": "framebuffer-render-mipmap",
+      "api": "OES_fbo_render_mipmap",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "coverage": "Per-context nonzero color attachment levels, level queries, resource generations and sampling feedback checks.",
+          "tests": [
+            "sdk/tests/conformance/extensions/oes-fbo-render-mipmap.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-core-extensions/focused/js/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 25
+            }
+          ],
+          "unsupportedBehavior": "The corresponding WebGL validation rejects invalid calls. The extended operands require enabling the extension on this context.",
+          "environments": [
+            "chrome158-macos-arm64"
+          ]
+        },
+        "rust": {
+          "status": "cts-verified",
+          "coverage": "Per-context nonzero color attachment levels, level queries, resource generations and sampling feedback checks.",
+          "tests": [
+            "sdk/tests/conformance/extensions/oes-fbo-render-mipmap.html"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-core-extensions/focused/rust/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 25
+            }
+          ],
+          "unsupportedBehavior": "The corresponding WebGL validation rejects invalid calls. The extended operands require enabling the extension on this context.",
+          "environments": [
+            "chrome158-macos-arm64"
+          ]
+        }
+      }
+    },
+    {
       "id": "texture-unpack-color-space",
       "api": "unpackColorSpace",
       "cores": {
@@ -2016,7 +2148,7 @@
             "artifacts/rtt/fbo-rgb-texture/result.json"
           ],
           "limits": [
-            "The declared color texture attachments cover RGB or RGBA at level zero."
+            "The declared color texture attachments cover RGB or RGBA. Enable OES_fbo_render_mipmap for a nonzero level."
           ],
           "unsupportedBehavior": "RGB sources can supply RGB or LUMINANCE copies and reject copies requiring alpha with INVALID_OPERATION."
         },
@@ -2036,7 +2168,7 @@
             "artifacts/rtt/fbo-rgb-texture/result.json"
           ],
           "limits": [
-            "The declared color texture attachments cover RGB or RGBA at level zero."
+            "The declared color texture attachments cover RGB or RGBA. Enable OES_fbo_render_mipmap for a nonzero level."
           ],
           "unsupportedBehavior": "RGB sources can supply RGB or LUMINANCE copies and reject copies requiring alpha with INVALID_OPERATION."
         }
@@ -3057,7 +3189,7 @@
             "artifacts/rtt/texture-manual-mip-cube/result.json"
           ],
           "limits": [
-            "See texture-mipmap-generation for generated levels. WebGL1 offscreen color attachments use level zero."
+            "See texture-mipmap-generation for generated levels. Enable OES_fbo_render_mipmap for nonzero offscreen color attachment levels."
           ],
           "unsupportedBehavior": "Invalid levels or dimensions produce INVALID_VALUE. Updates of undefined images produce INVALID_OPERATION. Incomplete sampling returns opaque black."
         },
@@ -3079,7 +3211,7 @@
             "artifacts/rtt/texture-manual-mip-cube/result.json"
           ],
           "limits": [
-            "See texture-mipmap-generation for generated levels. WebGL1 offscreen color attachments use level zero."
+            "See texture-mipmap-generation for generated levels. Enable OES_fbo_render_mipmap for nonzero offscreen color attachment levels."
           ],
           "unsupportedBehavior": "Invalid levels or dimensions produce INVALID_VALUE. Updates of undefined images produce INVALID_OPERATION. Incomplete sampling returns opaque black."
         }
@@ -3339,7 +3471,7 @@
       "implementation": "packages/core-js",
       "contract": "packages/core-api",
       "facade": "packages/webgl",
-      "scope": "ESSL 1.00 shaders, structured uniforms and sampler arrays, all seven WebGL1 primitive modes, matrix vertex attributes, 8-/16-bit indices and vertex arrays. Texture2D and CubeMap support mip levels and mipmap generation. Extension-dependent paths cover FLOAT textures and sRGB formats. The shared host supports framebuffer color, depth, stencil and synchronous RGBA/UNSIGNED_BYTE readPixels. Per-entry limits describe supported formats and operations."
+      "scope": "ESSL 1.00 shaders, structured uniforms and sampler arrays, all seven WebGL1 primitive modes, matrix vertex attributes, 8-/16-bit indices, optional 32-bit indices and vertex arrays. Texture2D and CubeMap support mip levels and mipmap generation. Extension-dependent paths cover FLOAT textures and sRGB formats. The shared host supports framebuffer color, depth, stencil and synchronous RGBA/UNSIGNED_BYTE readPixels. Per-entry limits describe supported formats and operations."
     },
     "rust": {
       "profile": "webgl1-render-to-texture",
@@ -3347,7 +3479,7 @@
       "binding": "crates/wasm + packages/core-wasm",
       "contract": "packages/core-api",
       "facade": "packages/webgl",
-      "scope": "ESSL 1.00 shaders, structured uniforms and sampler arrays, all seven WebGL1 primitive modes, matrix vertex attributes, 8-/16-bit indices and vertex arrays. Texture2D and CubeMap support mip levels and mipmap generation. Extension-dependent paths cover FLOAT textures and sRGB formats. The shared host supports framebuffer color, depth, stencil and synchronous RGBA/UNSIGNED_BYTE readPixels. Per-entry limits describe supported formats and operations."
+      "scope": "ESSL 1.00 shaders, structured uniforms and sampler arrays, all seven WebGL1 primitive modes, matrix vertex attributes, 8-/16-bit indices, optional 32-bit indices and vertex arrays. Texture2D and CubeMap support mip levels and mipmap generation. Extension-dependent paths cover FLOAT textures and sRGB formats. The shared host supports framebuffer color, depth, stencil and synchronous RGBA/UNSIGNED_BYTE readPixels. Per-entry limits describe supported formats and operations."
     }
   },
   "officialConformance": {

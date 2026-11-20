@@ -110,7 +110,8 @@ for (const core of ['js', 'rust'] as const) {
           pixels: read(gl), peerPixels: read(peer), lost: gl.isContextLost(), peerLost: peer.isContextLost() };
       } finally { await factory.dispose(); }
     }, core);
-    const supported = ['EXT_sRGB', 'OES_texture_float', 'OES_vertex_array_object', 'WEBGL_lose_context'];
+    const supported = ['EXT_blend_minmax', 'EXT_sRGB', 'OES_element_index_uint', 'OES_fbo_render_mipmap',
+      'OES_texture_float', 'OES_vertex_array_object', 'WEBGL_lose_context'];
     expect(result).toEqual({ core, deviceShared: true, immediate: true, queued: true,
       initialExtensions: supported, lostExtensions: null, restoredExtensions: supported,
       sameExtension: true, bound: true, restoredState: [null, 0, 0, 0, 0], errors: [0x0502, 0x9242, 0, 0x0502, 0x0502, 0x0502],

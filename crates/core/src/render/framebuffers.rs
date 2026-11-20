@@ -58,6 +58,7 @@ struct Framebuffer {
     bound: bool,
     color: Option<ObjectHandle>,
     color_face: usize,
+    color_level: usize,
     depth: Option<ObjectHandle>,
     stencil: Option<ObjectHandle>,
     depth_stencil: Option<ObjectHandle>,
@@ -299,21 +300,6 @@ impl ContextCore {
         self.render.framebuffers.renderbuffers[index].value = None;
     }
 
-    pub(super) fn framebuffer_color_texture(&self) -> Option<ObjectHandle> {
-        let handle = self.render.framebuffers.bound?;
-        let index = slot_index(
-            &self.render.framebuffers.slots,
-            handle,
-            ObjectKind::Framebuffer,
-            self.context_id,
-        )?;
-        self.render.framebuffers.slots[index]
-            .value
-            .as_ref()?
-            .color
-            .filter(|color| color.kind == ObjectKind::Texture)
-    }
-
     fn renderbuffer_value(&self, handle: ObjectHandle) -> Option<&Renderbuffer> {
         let index = slot_index(
             &self.render.framebuffers.renderbuffers,
@@ -397,7 +383,10 @@ impl ContextCore {
             if texture.target == textures::TEXTURE_CUBE_MAP && texture.complete_base().is_none() {
                 return INCOMPLETE_ATTACHMENT;
             }
-            let Some(storage) = texture.images[framebuffer.color_face].storage else {
+            let Some(storage) = texture
+                .image(framebuffer.color_face, framebuffer.color_level)
+                .and_then(|image| image.storage)
+            else {
                 return INCOMPLETE_ATTACHMENT;
             };
             if storage.width == 0 || storage.height == 0 {
@@ -497,12 +486,16 @@ impl ContextCore {
                 let storage = self.render.textures.slots[color_index]
                     .value
                     .as_ref()?
-                    .images[framebuffer.color_face]
+                    .image(framebuffer.color_face, framebuffer.color_level)?
                     .storage?;
                 (
                     storage.width,
                     storage.height,
-                    Some(self.texture_image_version(color_index, framebuffer.color_face, 0)),
+                    Some(self.texture_image_version(
+                        color_index,
+                        framebuffer.color_face,
+                        framebuffer.color_level,
+                    )),
                     None,
                     storage.format == RGB,
                 )
@@ -561,7 +554,7 @@ impl ContextCore {
             self.record_error(INVALID_OPERATION);
             return false;
         };
-        if self.texture_image_version(index, face, 0) != version {
+        if self.texture_image_version(index, face, version.level as usize) != version {
             self.record_error(INVALID_OPERATION);
             return false;
         }
@@ -587,18 +580,19 @@ impl ContextCore {
             return;
         };
         let face = textures::image_index(previous.image_target).unwrap();
-        debug_assert_eq!(self.texture_image_version(index, face, 0), previous);
+        let level = previous.level as usize;
+        debug_assert_eq!(self.texture_image_version(index, face, level), previous);
         self.render.textures.slots[index]
             .value
             .as_mut()
             .unwrap()
-            .images[face]
+            .image_mut(face, level)
             .content_version += 1;
         self.render
             .textures
             .after
             .push(ResourceOperation::WriteTexture {
-                version: self.texture_image_version(index, face, 0),
+                version: self.texture_image_version(index, face, level),
                 previous,
             });
     }
@@ -690,7 +684,11 @@ impl ContextCore {
                 ObjectKind::Texture,
                 self.context_id,
             )?;
-            self.render.textures.slots[index].value.as_ref()?.images[framebuffer.color_face].storage
+            self.render.textures.slots[index]
+                .value
+                .as_ref()?
+                .image(framebuffer.color_face, framebuffer.color_level)?
+                .storage
         });
         let Some(color) = color.filter(|color| color.width > 0 && color.height > 0) else {
             return 0;
@@ -1013,7 +1011,10 @@ impl ContextCore {
             self.record_error(INVALID_ENUM);
             return Reply::Null;
         }
-        if texture_attachment && arg(4).number() != 0.0 {
+        let level = arg(4).number();
+        if texture_attachment
+            && ((!self.render.framebuffer_mipmaps && level != 0.0) || self.level_limit(level) == 0)
+        {
             self.record_error(INVALID_VALUE);
             return Reply::Null;
         }
@@ -1048,13 +1049,19 @@ impl ContextCore {
         } else {
             0
         };
+        let color_level = if texture_attachment && handle.is_some() {
+            level as usize
+        } else {
+            0
+        };
         if previous == handle {
             if texture_attachment {
-                self.render.framebuffers.slots[index]
+                let framebuffer = self.render.framebuffers.slots[index]
                     .value
                     .as_mut()
-                    .unwrap()
-                    .color_face = color_face;
+                    .unwrap();
+                framebuffer.color_face = color_face;
+                framebuffer.color_level = color_level;
             }
             return Reply::Null;
         }
@@ -1103,6 +1110,7 @@ impl ContextCore {
             COLOR_ATTACHMENT0 => {
                 framebuffer.color = handle;
                 framebuffer.color_face = color_face;
+                framebuffer.color_level = color_level;
             }
             DEPTH_ATTACHMENT => framebuffer.depth = handle,
             STENCIL_ATTACHMENT => framebuffer.stencil = handle,
@@ -1156,7 +1164,10 @@ impl ContextCore {
                     self.context_id,
                 )
                 .and_then(|index| {
-                    self.render.textures.slots[index].value.as_ref()?.images[framebuffer.color_face]
+                    self.render.textures.slots[index]
+                        .value
+                        .as_ref()?
+                        .image(framebuffer.color_face, framebuffer.color_level)?
                         .storage
                 })
                 .map(|storage| storage.format)
@@ -1176,7 +1187,7 @@ impl ContextCore {
             return Reply::Handle(object);
         }
         if object.kind == ObjectKind::Texture && parameter == 0x8cd2 {
-            return Reply::Number(0.0);
+            return Reply::Number(framebuffer.color_level as f64);
         }
         if object.kind == ObjectKind::Texture && parameter == 0x8cd3 {
             return Reply::Number(if framebuffer.color_face == 0 {

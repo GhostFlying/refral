@@ -24,6 +24,11 @@ pub extern "C" fn rf_vertex_array_protocol_version() -> u32 {
 }
 
 #[no_mangle]
+pub extern "C" fn rf_core_extensions_protocol_version() -> u32 {
+    1
+}
+
+#[no_mangle]
 pub extern "C" fn rf_resource_protocol_version() -> u32 {
     8
 }

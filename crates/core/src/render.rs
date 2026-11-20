@@ -330,6 +330,7 @@ pub(crate) struct RenderState {
     requested_line_width: f32,
     element_index_uint: bool,
     blend_minmax: bool,
+    polygon_offset_clamp_enabled: bool,
     framebuffer_mipmaps: bool,
     shader_extensions: u32,
     derivative_hint: u32,
@@ -366,6 +367,7 @@ impl Default for RenderState {
             requested_line_width: 1.0,
             element_index_uint: false,
             blend_minmax: false,
+            polygon_offset_clamp_enabled: false,
             framebuffer_mipmaps: false,
             shader_extensions: 0,
             derivative_hint: 0x1100,
@@ -1014,7 +1016,10 @@ impl ContextCore {
                     }
                 }
             }
-            "getShaderSource" | "getShaderInfoLog" | "getShaderParameter" => {
+            "getShaderSource"
+            | "getShaderInfoLog"
+            | "getShaderParameter"
+            | "getTranslatedShaderArtifact" => {
                 let Some(index) = self.shader_index(arg(0).handle()) else {
                     return Reply::Null;
                 };
@@ -1022,6 +1027,15 @@ impl ContextCore {
                 return match operation {
                     "getShaderSource" => Reply::Text(copy(&shader.source).unwrap_or_default()),
                     "getShaderInfoLog" => text(&shader.log),
+                    "getTranslatedShaderArtifact" => {
+                        if shader.compiled {
+                            shader
+                                .artifact
+                                .map_or(Reply::Null, |id| Reply::Number(id.into()))
+                        } else {
+                            Reply::Null
+                        }
+                    }
                     _ => match arg(1).number() as u32 {
                         0x8b80 => Reply::Boolean(shader.deleted),
                         0x8b81 => Reply::Boolean(shader.compiled),

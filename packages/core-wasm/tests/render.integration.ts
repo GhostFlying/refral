@@ -99,6 +99,7 @@ function setup(
       if (!value) throw new Error(`missing artifact ${id}`);
       return value;
     },
+    translatedShaderSource: () => '',
     release(ids) {
       for (const id of ids) executables.delete(id);
     },

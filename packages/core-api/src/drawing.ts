@@ -13,6 +13,7 @@ export interface CompilerRegistry {
   link(vertexId: number, fragmentId: number,
     attributeLocations: ReadonlyMap<string, number>): { artifactId: number; result: LinkedProgram };
   executable(id: number): LinkedProgram;
+  translatedShaderSource(id: number): string;
   release(ids: readonly number[]): void;
   dispose(): void;
 }

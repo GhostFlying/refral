@@ -45,6 +45,7 @@ pub struct RasterState {
     pub polygon_offset_fill: bool,
     pub polygon_offset_factor: f32,
     pub polygon_offset_units: f32,
+    pub polygon_offset_clamp: f32,
     pub depth_mask: bool,
     pub depth_func: u32,
     pub depth_range: [f32; 2],
@@ -75,6 +76,7 @@ impl Default for RasterState {
             polygon_offset_fill: false,
             polygon_offset_factor: 0.0,
             polygon_offset_units: 0.0,
+            polygon_offset_clamp: 0.0,
             depth_mask: true,
             depth_func: 0x201,
             depth_range: [0.0, 1.0],
@@ -124,6 +126,9 @@ impl ContextCore {
             0x0d50 => Reply::Number(4.0),
             0x8038 => Reply::Number(state.polygon_offset_factor as f64),
             0x2a00 => Reply::Number(state.polygon_offset_units as f64),
+            0x8e1b if self.render.polygon_offset_clamp_enabled => {
+                Reply::Number(state.polygon_offset_clamp as f64)
+            }
             0x80aa => Reply::Number(self.render.sample_coverage_value as f64),
             0x80ab => Reply::Boolean(self.render.sample_coverage_invert),
             0x0ba2 => Reply::Ints(state.viewport.to_vec()),
@@ -190,9 +195,15 @@ impl ContextCore {
         let number = |index: usize| args.get(index).map_or(0.0, Argument::number);
         let boolean = |index: usize| args.get(index).is_some_and(Argument::boolean);
         match operation {
-            "polygonOffset" => {
+            "enablePolygonOffsetClamp" => self.render.polygon_offset_clamp_enabled = true,
+            "polygonOffset" | "polygonOffsetClampEXT" => {
+                if operation == "polygonOffsetClampEXT" && !self.render.polygon_offset_clamp_enabled
+                {
+                    return Some(Reply::Null);
+                }
                 self.render.raster.polygon_offset_factor = number(0) as f32;
                 self.render.raster.polygon_offset_units = number(1) as f32;
+                self.render.raster.polygon_offset_clamp = number(2) as f32;
             }
             "sampleCoverage" => {
                 self.render.sample_coverage_value = clamped(number(0));

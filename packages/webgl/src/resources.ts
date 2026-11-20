@@ -153,6 +153,7 @@ export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCap
   }
   method('hint', 2, args => [toEnum(args[0]), toEnum(args[1])]);
   method('polygonOffset', 2, args => [float(args[0]), float(args[1])]);
+  method('polygonOffsetClampEXT', 3, args => [float(args[0]), float(args[1]), float(args[2])]);
   method('sampleCoverage', 2, args => [float(args[0]), Boolean(args[1])]);
   method('lineWidth', 1, args => [float(args[0])]);
   method('depthMask', 1, args => [Boolean(args[0])]);

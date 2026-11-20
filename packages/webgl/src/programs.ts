@@ -102,6 +102,7 @@ export function createProgramFacade(core: DrawingCore, interfaces = webglInterfa
   for (const name of ['compileShader', 'getShaderInfoLog', 'getShaderSource']) {
     method(name, 1, args => [shader(args[0])]);
   }
+  method('getTranslatedShaderSource', 1, args => [shader(args[0])], value => value ?? '');
   method('shaderSource', 2, args => [shader(args[0]), domString(args[1])]);
   method('getShaderParameter', 2, args => [shader(args[0]), toEnum(args[1])]);
   for (const name of ['deleteShader', 'isShader']) method(name, 1, args => [shader(args[0], true)]);

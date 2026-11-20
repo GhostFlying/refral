@@ -853,6 +853,8 @@ export class BrowserHost implements SemanticHost {
     const maxFloat = 3.4028234663852886e38;
     const depthBiasSlopeScale = biasEnabled
       ? Math.max(-maxFloat, Math.min(maxFloat, state.polygonOffsetFactor || 0)) : 0;
+    const depthBiasClamp = biasEnabled
+      ? Math.max(-maxFloat, Math.min(maxFloat, state.polygonOffsetClamp || 0)) : 0;
     const resources = this.programResources(program, operation.textures);
     const stencil = state.stencilTest && targetHasStencil(target) ? {
       stencilFront: stencilFace(state.stencilFront), stencilBack: stencilFace(state.stencilBack),
@@ -865,7 +867,7 @@ export class BrowserHost implements SemanticHost {
         attributes: [{ shaderLocation: attribute.location, offset: 0, format }] };
     });
     const key = JSON.stringify([mode, topology, stripIndexFormat, layouts, target.color.format, target.depth?.format, target.opaque, state.depthTest, state.depthMask,
-      state.depthFunc, depthBias, depthBiasSlopeScale, state.colorMask, state.blend, state.blendSrcRGB, state.blendDstRGB,
+      state.depthFunc, depthBias, depthBiasSlopeScale, depthBiasClamp, state.colorMask, state.blend, state.blendSrcRGB, state.blendDstRGB,
       state.blendSrcAlpha, state.blendDstAlpha, state.blendEquationRGB, state.blendEquationAlpha,
       state.cull, state.cullFace, state.frontFace, stencil]);
     let pipeline = resources.pipelines.get(key);
@@ -885,7 +887,7 @@ export class BrowserHost implements SemanticHost {
         depthStencil: target.depth ? { format: target.depth.format,
           ...stencil,
           ...(target.depth.format === "stencil8" ? {} : {
-            depthBias, depthBiasSlopeScale,
+            depthBias, depthBiasSlopeScale, depthBiasClamp,
             depthWriteEnabled: state.depthTest && state.depthMask,
             depthCompare: state.depthTest ? compareFunction(state.depthFunc) : "always",
           }) } : undefined,

@@ -171,6 +171,14 @@ export function createResourceFacade(core: DrawingCore, captureCanvas: CanvasCap
   method('blendFuncSeparate', 4, args => args.slice(0, 4).map(toEnum));
   return {
     methods,
+    domUploads,
+    setUnpackColorSpace(value: unknown) {
+      const colorSpace = `${value}`;
+      if (colorSpace !== 'srgb' && colorSpace !== 'display-p3') {
+        throw new ErrorType('Expected srgb or display-p3 for unpackColorSpace.');
+      }
+      domUploads.colorSpace = colorSpace;
+    },
     binding: (parameter: number) => wrap(core.invoke('getParameter', [parameter])),
     dispose: () => { wrappers.clear(); domUploads.dispose(); },
   };

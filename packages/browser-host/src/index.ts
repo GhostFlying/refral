@@ -5,7 +5,7 @@ import { QueueCompletion } from './queue-completion.js';
 import { CanvasReadback } from './canvas-readback.js';
 import type {
   AttributeSnapshot, RasterState, StencilFaceState, TargetSnapshot, TextureCopy, TextureParameters, TextureStorage,
-  LinkedProgram, DrawOperation, DrawingSurface, SemanticHost, DomTextureUploadPlan, TextureVersion,
+  LinkedProgram, DrawOperation, DrawingSurface, SemanticHost, DomTextureCapturePlan, TextureVersion,
 } from "@refral/core-api";
 
 export type { TextureBinding, DrawOperation } from "@refral/core-api";
@@ -1203,12 +1203,12 @@ export class BrowserHost implements SemanticHost {
 
   /** Preserve canvas alpha bytes through external copy and the opaque Canvas2D readback transport. */
   captureDomCanvas(source: HTMLCanvasElement | OffscreenCanvas, width: number, height: number,
-    plan: DomTextureUploadPlan): Uint8Array {
+    plan: DomTextureCapturePlan): Uint8Array {
     if (this.disposed) throw new DOMException('The context has been disposed.', 'InvalidStateError');
     this.endPass();
     const texture = this.createTexture(width, height, 'rgba8unorm');
     try {
-      const destination = { texture, colorSpace: 'srgb' as const, premultipliedAlpha: plan.premultiplyAlpha };
+      const destination = { texture, colorSpace: plan.colorSpace, premultipliedAlpha: plan.premultiplyAlpha };
       const size = { width, height };
       try {
         this.device.queue.copyExternalImageToTexture({ source, flipY: plan.flipY }, destination, size);

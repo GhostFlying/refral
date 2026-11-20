@@ -21,3 +21,8 @@ export interface DomTextureUploadPlan {
   readonly premultiplyAlpha: boolean;
   readonly colorSpaceConversion: number;
 }
+
+/** Browser-side color conversion adds the context's destination encoding. */
+export interface DomTextureCapturePlan extends DomTextureUploadPlan {
+  readonly colorSpace: 'srgb' | 'display-p3';
+}

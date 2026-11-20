@@ -1,8 +1,9 @@
 import { GL } from '@refral/core-api';
-import type { DomTextureUploadPlan, DomTextureUploadRequest, DrawingCore, PixelUpload } from '@refral/core-api';
+import type { DomTextureCapturePlan, DomTextureUploadRequest, DrawingCore, PixelUpload } from '@refral/core-api';
 import { bufferSourceBytes } from './buffers.js';
 import { ImageExtractor } from './image-extractor.js';
 import type { NativeUploadExtent, NativeUploadSource } from './image-extractor.js';
+import { convertImageDataColor } from './image-data-color.js';
 
 type SourceKind = 'image-data' | 'canvas' | 'offscreen-canvas' | 'image' | 'video' | 'video-frame' | 'bitmap';
 interface SourceType {
@@ -36,7 +37,7 @@ for (const [kind, prototype, width, height] of [
 
 interface CanvasSource { prepare(): void; isLost(): boolean }
 export type CanvasCapture = (source: HTMLCanvasElement | OffscreenCanvas,
-  width: number, height: number, plan: DomTextureUploadPlan) => Uint8Array;
+  width: number, height: number, plan: DomTextureCapturePlan) => Uint8Array;
 const canvasSources = new WeakMap<object, CanvasSource>();
 
 export function registerCanvasSource(canvas: HTMLCanvasElement | OffscreenCanvas, source: CanvasSource): () => void {
@@ -44,11 +45,26 @@ export function registerCanvasSource(canvas: HTMLCanvasElement | OffscreenCanvas
   return () => { if (canvasSources.get(canvas) === source) canvasSources.delete(canvas); };
 }
 
+function sourceColorSpace(source: HTMLCanvasElement | OffscreenCanvas): DomTextureCapturePlan['colorSpace'] {
+  // A synchronous WebCodecs snapshot exposes the source encoding without acquiring a canvas context.
+  const frame = new VideoFrame(source, { timestamp: 0 });
+  try {
+    switch (frame.colorSpace.primaries as string | null) {
+      case 'bt709': return 'srgb';
+      case 'smpte432': return 'display-p3';
+      default: throw new DOMException('This source color encoding is outside the DOM upload profile.', 'NotSupportedError');
+    }
+  } finally {
+    frame.close();
+  }
+}
+
 /** Platform getters provide the WebIDL source brand and internal dimensions across realms. */
 function inspectSource(value: unknown,
   extract: (source: NativeUploadSource, extent: NativeUploadExtent) => ReturnType<ImageExtractor['capture']>,
-  captureCanvas: (source: HTMLCanvasElement | OffscreenCanvas, width: number, height: number) => Uint8Array,
-  validateCanvasOrigin: (source: HTMLCanvasElement | OffscreenCanvas) => void): SourcePixels {
+  captureCanvas: CanvasCapture,
+  validateCanvasOrigin: (source: HTMLCanvasElement | OffscreenCanvas) => void,
+  unpackPlan: () => DomTextureCapturePlan): SourcePixels {
   for (const type of sourceTypes) {
     let width: number;
     try { width = type.getters[type.width]!.get!.call(value); }
@@ -61,10 +77,13 @@ function inspectSource(value: unknown,
       const pixelFormat = type.getters.pixelFormat?.get?.call(value) ?? 'rgba-unorm8';
       return { width, height, valid: bytes.byteLength > 0,
         pixels() {
-          if (colorSpace !== 'srgb' || pixelFormat !== 'rgba-unorm8') {
+          if ((colorSpace !== 'srgb' && colorSpace !== 'display-p3') || pixelFormat !== 'rgba-unorm8') {
             throw new DOMException('This ImageData source encoding is outside the implemented DOM upload profile.', 'NotSupportedError');
           }
-          return { bytes, viewType: 'Uint8Array', source: 'dom' };
+          const plan = unpackPlan();
+          const convert = plan.colorSpaceConversion !== GL.NONE && colorSpace !== plan.colorSpace;
+          return { bytes: convert ? convertImageDataColor(bytes, plan.colorSpace) : bytes,
+            viewType: 'Uint8Array', source: 'dom' };
         } };
     }
     if (type.kind === 'image' || type.kind === 'video' || type.kind === 'video-frame' || type.kind === 'bitmap') {
@@ -87,22 +106,30 @@ function inspectSource(value: unknown,
         pixels: () => captured.pixels() };
       return source;
     }
-    const registered = canvasSources.get(value as object);
+    const canvas = value as HTMLCanvasElement | OffscreenCanvas;
+    const registered = canvasSources.get(canvas);
     const source: SourcePixels = { width, height, valid: width > 0 && height > 0,
       contextLost: registered?.isLost() ?? false,
       prepare() {
         if (source.contextLost) return;
         registered?.prepare();
-        if (!registered) validateCanvasOrigin(value as HTMLCanvasElement | OffscreenCanvas);
+        if (!registered) validateCanvasOrigin(canvas);
       },
-      pixels: () => ({ bytes: captureCanvas(value as HTMLCanvasElement | OffscreenCanvas, width, height),
-        viewType: 'Uint8Array', source: 'dom-converted' }) };
+      pixels() {
+        const plan = unpackPlan();
+        const colorSpace = plan.colorSpaceConversion === GL.NONE
+          ? registered ? 'srgb' : sourceColorSpace(canvas)
+          : plan.colorSpace;
+        return { bytes: captureCanvas(canvas, width, height, { ...plan, colorSpace }),
+          viewType: 'Uint8Array', source: 'dom-converted' };
+      } };
     return source;
   }
   throw new TypeError('Expected a WebGL TexImageSource.');
 }
 
 export function createDomTextureUploads(core: DrawingCore, captureCanvas: CanvasCapture) {
+  let colorSpace: DomTextureCapturePlan['colorSpace'] = 'srgb';
   let extractor: ImageExtractor | null = null;
   let originCanvas: OffscreenCanvas | null = null;
   let originContext: OffscreenCanvasRenderingContext2D | null = null;
@@ -117,11 +144,12 @@ export function createDomTextureUploads(core: DrawingCore, captureCanvas: Canvas
     originContext!.drawImage(source, 0, 0, 1, 1);
     originContext!.getImageData(0, 0, 1, 1);
   }
-  function unpackPlan(): DomTextureUploadPlan {
+  function unpackPlan(): DomTextureCapturePlan {
     return {
       flipY: core.invoke('getParameter', [GL.UNPACK_FLIP_Y_WEBGL]) as boolean,
       premultiplyAlpha: core.invoke('getParameter', [GL.UNPACK_PREMULTIPLY_ALPHA_WEBGL]) as boolean,
       colorSpaceConversion: core.invoke('getParameter', [GL.UNPACK_COLORSPACE_CONVERSION_WEBGL]) as number,
+      colorSpace,
     };
   }
   function extract(source: NativeUploadSource, extent: NativeUploadExtent) {
@@ -129,9 +157,10 @@ export function createDomTextureUploads(core: DrawingCore, captureCanvas: Canvas
     return extractor.capture(source, extent, unpackPlan());
   }
   return {
+    get colorSpace() { return colorSpace; },
+    set colorSpace(value: DomTextureCapturePlan['colorSpace']) { colorSpace = value; },
     upload(parameters: Omit<DomTextureUploadRequest, 'width' | 'height' | 'sourceValid'>, value: unknown): void {
-      const source = inspectSource(value, extract, (canvas, width, height) =>
-        captureCanvas(canvas, width, height, unpackPlan()), validateCanvasOrigin);
+      const source = inspectSource(value, extract, captureCanvas, validateCanvasOrigin, unpackPlan);
       if (core.isContextLost()) return;
       if (source.valid) source.prepare?.();
       const request: DomTextureUploadRequest = { ...parameters,

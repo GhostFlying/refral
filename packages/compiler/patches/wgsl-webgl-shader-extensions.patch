@@ -1,18 +1,33 @@
 diff --git a/src/compiler/translator/wgsl/RewritePipelineVariables.cpp b/src/compiler/translator/wgsl/RewritePipelineVariables.cpp
 --- a/src/compiler/translator/wgsl/RewritePipelineVariables.cpp
 +++ b/src/compiler/translator/wgsl/RewritePipelineVariables.cpp
-@@ -166,0 +167,6 @@
+@@ -164,6 +164,12 @@
+                  ImmutableString("gl_FragDepth"), BuiltinAnnotation{ImmutableString("frag_depth")},
+                  IOType::Output, BuiltInVariable::gl_FragDepth(), ImmutableString("f32"),
+                  ImmutableString(nullptr), ImmutableString(nullptr)}},
 +            {"gl_FragDepthEXT",
 +             GlslToWgslBuiltinMapping{
 +                 ImmutableString("gl_FragDepthEXT"),
 +                 BuiltinAnnotation{ImmutableString("frag_depth")}, IOType::Output,
 +                 BuiltInVariable::gl_FragDepthEXT(), ImmutableString("f32"),
 +                 ImmutableString(nullptr), ImmutableString(nullptr)}},
+         });
+
+     if (shaderType == GL_VERTEX_SHADER)
 diff --git a/src/compiler/translator/wgsl/TranslatorWGSL.cpp b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
 --- a/src/compiler/translator/wgsl/TranslatorWGSL.cpp
 +++ b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
-@@ -1914,0 +1915 @@
+@@ -1912,10 +1912,13 @@
+         }
+         break;
+
 +        case EOpTexture2DProjGradEXT:
-@@ -1918,0 +1920,2 @@
+         case EOpTextureProjGrad:
+         case EOpTextureProjGradOffset:
+             isProj = true;
+             [[fallthrough]];
 +        case EOpTexture2DGradEXT:
 +        case EOpTextureCubeGradEXT:
+         case EOpTextureGrad:
+         case EOpTextureGradOffset:
+         {

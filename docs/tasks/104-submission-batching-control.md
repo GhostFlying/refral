@@ -38,6 +38,10 @@ The control takes the native 2D method from the caller's realm before importing 
 
 GL readPixels itself returned all four expected red/green pixels in both policies and both cores. Each batched core showed the previous publication at four of the eight native Canvas2D observation points. The application can already hold this native method, so patching its JS prototype at initialization cannot guarantee observation of every use. The WebGPU canvas snapshot algorithm waits for submitted work to write the public image. An unfinished private command encoder cannot supply the new image through that mechanism. [WebGPU canvas image contents](https://www.w3.org/TR/webgpu/#abstract-opdef-get-a-copy-of-the-image-contents-of-a-context)
 
+### Disposition on 2026-11-20
+
+Defer original #656 as a known performance issue in the default browser host. Record the decision in the campaign report and support matrix. Keep both production timeouts in the official totals and retain task-end batching as an experiment. Reopen when Chrome's queue processing changes or a host optimization can preserve same-stack canvas copies. Verify any candidate with the unchanged original under the pinned timeout and the red/green copy control above.
+
 ### Reproduction and evidence
 
 Use a disposable worktree at `f1dac24d856c7c96dbf6be8402e0198872d7e2e2`, with pinned CTS dependencies, compiler and actual Wasm available. Apply the [experimental host patch](../../experiments/submission-batching/defer-publication.patch) from this task and run each command independently in the GPU slot. The instrumentation prints existing host counters at flush time.

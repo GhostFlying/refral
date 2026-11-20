@@ -90,5 +90,5 @@ The following rows include every URL with a nonpassing result on any backend. Co
 | 455 | `conformance/misc/uninitialized-test.html` | pass 39/0 | unsupported 1/1 | unsupported 1/1 | Pending queue work at synchronous finish |
 | 606 | `conformance/offscreencanvas/methods.html` | fail 1/1 | pass 2/0 | pass 2/0 | Native OffscreenCanvas method enumeration |
 | 607 | `conformance/offscreencanvas/methods-worker.html` | fail 1/1 | pass 2/0 | pass 2/0 | Native Worker method enumeration |
-| 656 | `conformance/rendering/many-draw-calls.html` | pass 12/0 | timeout 10/0 | timeout 10/0 | Immediate-publication queue cost |
+| 656 | `conformance/rendering/many-draw-calls.html` | pass 12/0 | timeout 10/0 | timeout 10/0 | [Known performance issue, deferred on 2026-11-20](../tasks/104-submission-batching-control.md#disposition-on-2026-11-20) |
 | 708 | `conformance/textures/misc/tex-image-svg-image-no-natural-width-and-height.html` | pass 13/0 | fail 11/2 | fail 11/2 | Texture storage after rejected SVG upload |

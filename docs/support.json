@@ -3473,6 +3473,7 @@
           "url": "conformance/rendering/many-draw-calls.html",
           "index": 656,
           "classification": "production-timeout",
+          "disposition": "deferred-performance-issue",
           "affectedBackends": [
             "js",
             "rust"

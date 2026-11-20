@@ -8,6 +8,7 @@ Current direction is parallel JS/TypeScript and Rust/Wasm semantic cores sharing
 | [Architecture](architecture.md) | Module boundaries, target layout, and data ownership |
 | [Roadmap](roadmap.md) | Stages, implementation order, and acceptance |
 | [Support matrix](support.json) | Actual implementation scope and evidence |
+| [WebGL1 extension coverage](validation/webgl1-extensions.md) | The pinned extension inventory, enabled coverage and WebGPU feasibility |
 | [Actions and PR delivery](ci.md) | Required checks, optional runs, and repository integration constraints |
 | [Shared core contract](core-api.md) | Object handles, shader/program state, draw snapshots, validation, and lifecycle |
 | [Specification map](spec-map.md) | Pinned WebGL/IDL/GLES sources, semantic assertions, and original CTS identities |

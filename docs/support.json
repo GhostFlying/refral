@@ -1643,6 +1643,52 @@
       }
     },
     {
+      "id": "depth-clamp",
+      "api": "EXT_depth_clamp",
+      "cores": {
+        "js": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Per-context depth clamp enablement and queries, and near/far clipping behavior under WebGPU unclippedDepth.",
+          "tests": [
+            "sdk/tests/conformance/extensions/ext-depth-clamp.html",
+            "tests/chrome/lifecycle.spec.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-render-extensions/verified-final/js/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 31
+            }
+          ],
+          "unsupportedBehavior": "Missing depth-clip-control or an older core module omits the extension."
+        },
+        "rust": {
+          "status": "cts-verified",
+          "environments": [
+            "chrome158-macos-arm64"
+          ],
+          "coverage": "Per-context depth clamp enablement and queries, and near/far clipping behavior under WebGPU unclippedDepth.",
+          "tests": [
+            "sdk/tests/conformance/extensions/ext-depth-clamp.html",
+            "tests/chrome/lifecycle.spec.ts"
+          ],
+          "evidence": [
+            {
+              "path": "artifacts/conformance/campaign/webgpu-render-extensions/verified-final/rust/results.json",
+              "passed": true,
+              "originalFiles": 1,
+              "assertions": 31
+            }
+          ],
+          "unsupportedBehavior": "Missing depth-clip-control or an older core module omits the extension."
+        }
+      }
+    },
+    {
       "id": "texture-unpack-color-space",
       "api": "unpackColorSpace",
       "cores": {

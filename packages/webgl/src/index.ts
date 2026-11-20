@@ -112,6 +112,10 @@ function createGeneration(realm: typeof globalThis, host: BrowserHost, core: Dra
       operation: 'enablePolygonOffsetClamp', enums: { POLYGON_OFFSET_CLAMP_EXT: 0x8e1b },
       methods: { polygonOffsetClampEXT: resourceFacade.methods.polygonOffsetClampEXT! } };
   }
+  if (host.device.features.has('depth-clip-control') && core.invoke('supportsDepthClamp', []) === true) {
+    coreExtensions.ext_depth_clamp = { name: 'EXT_depth_clamp', operation: 'enableDepthClamp',
+      enums: { DEPTH_CLAMP_EXT: 0x864f } };
+  }
   if (core.invoke('supportsDebugShaders', []) === true) {
     coreExtensions.webgl_debug_shaders = { name: 'WEBGL_debug_shaders', enums: {},
       methods: { getTranslatedShaderSource: programFacade.methods.getTranslatedShaderSource! } };

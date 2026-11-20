@@ -573,7 +573,9 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     reader.skip(12 + 8);
     const drawTarget = readTarget(reader);
     const state = readRaster(reader, drawTarget.width, drawTarget.height);
-    state.polygonOffsetFill = reader.u32() !== 0;
+    const rasterFlags = reader.u32();
+    state.polygonOffsetFill = (rasterFlags & 1) !== 0;
+    state.depthClamp = (rasterFlags & 2) !== 0;
     state.polygonOffsetFactor = reader.f32();
     state.polygonOffsetUnits = reader.f32();
     if (version >= 7) state.polygonOffsetClamp = reader.f32();
@@ -853,6 +855,10 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       }
       if (operation === 'supportsPolygonOffsetClamp') {
         const version = exports.rf_polygon_offset_clamp_protocol_version;
+        return typeof version === 'function' && version() === 1;
+      }
+      if (operation === 'supportsDepthClamp') {
+        const version = exports.rf_depth_clamp_protocol_version;
         return typeof version === 'function' && version() === 1;
       }
       if (operation === 'supportsDebugShaders') {

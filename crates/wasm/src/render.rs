@@ -39,6 +39,11 @@ pub extern "C" fn rf_polygon_offset_clamp_protocol_version() -> u32 {
 }
 
 #[no_mangle]
+pub extern "C" fn rf_depth_clamp_protocol_version() -> u32 {
+    1
+}
+
+#[no_mangle]
 pub extern "C" fn rf_debug_shaders_protocol_version() -> u32 {
     1
 }
@@ -649,7 +654,9 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             output.extend_from_slice(&snapshot.link_generation.to_le_bytes());
             crate::resources::target(output, snapshot.target);
             raster(output, snapshot.state);
-            u32_value(output, u32::from(snapshot.state.polygon_offset_fill));
+            let raster_flags = u32::from(snapshot.state.polygon_offset_fill)
+                | (u32::from(snapshot.state.depth_clamp) << 1);
+            u32_value(output, raster_flags);
             f32_value(output, snapshot.state.polygon_offset_factor);
             f32_value(output, snapshot.state.polygon_offset_units);
             f32_value(output, snapshot.state.polygon_offset_clamp);

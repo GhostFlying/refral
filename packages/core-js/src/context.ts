@@ -84,6 +84,7 @@ export class SemanticContext {
   private currentArray: VertexArrayObject;
   private arraysEnabled = false;
   private polygonOffsetClampEnabled = false;
+  private depthClampEnabled = false;
   private floatTextures = false;
   private floatLinearTextures = false;
   private srgbTextures = false;
@@ -1453,6 +1454,8 @@ export class SemanticContext {
   }
   supportsPolygonOffsetClamp(): boolean { return true; }
   enablePolygonOffsetClamp(): void { this.polygonOffsetClampEnabled = true; }
+  supportsDepthClamp(): boolean { return true; }
+  enableDepthClamp(): void { this.depthClampEnabled = true; }
   polygonOffsetClampEXT(factor: number, units: number, clamp: number): void {
     if (this.polygonOffsetClampEnabled) this.setPolygonOffset(factor, units, clamp);
   }
@@ -1480,6 +1483,7 @@ export class SemanticContext {
   private setCapability(capability: number, enabled: boolean): void {
     if (capability === GL.BLEND) this.state.blend = enabled;
     else if (capability === GL.DEPTH_TEST) this.state.depthTest = enabled;
+    else if (capability === 0x864f && this.depthClampEnabled) this.state.depthClamp = enabled;
     else if (capability === GL.CULL_FACE) this.state.cull = enabled;
     else if (capability === GL.SCISSOR_TEST) this.state.scissorTest = enabled;
     else if (capability === GL.DITHER) this.dither = enabled;
@@ -1492,6 +1496,7 @@ export class SemanticContext {
   isEnabled(capability: number): boolean {
     if (capability === GL.BLEND) return this.state.blend;
     if (capability === GL.DEPTH_TEST) return this.state.depthTest;
+    if (capability === 0x864f && this.depthClampEnabled) return this.state.depthClamp;
     if (capability === GL.CULL_FACE) return this.state.cull;
     if (capability === GL.SCISSOR_TEST) return this.state.scissorTest;
     if (capability === GL.DITHER) return this.dither;
@@ -1652,6 +1657,7 @@ export class SemanticContext {
       [GL.SAMPLE_COVERAGE_VALUE]: this.sampleCoverageValue, [GL.SAMPLE_COVERAGE_INVERT]: this.sampleCoverageInvert,
     };
     if (parameter === 0x8e1b && this.polygonOffsetClampEnabled) return this.state.polygonOffsetClamp;
+    if (parameter === 0x864f && this.depthClampEnabled) return this.state.depthClamp;
     if (parameter in values) return values[parameter];
     if ([GL.BLEND, GL.CULL_FACE, GL.DEPTH_TEST, GL.SCISSOR_TEST, GL.DITHER,
       GL.STENCIL_TEST, GL.POLYGON_OFFSET_FILL, GL.SAMPLE_COVERAGE, GL.SAMPLE_ALPHA_TO_COVERAGE].includes(parameter as 0x0be2)) return this.isEnabled(parameter);

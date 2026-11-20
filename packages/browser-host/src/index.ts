@@ -265,6 +265,7 @@ export class BrowserHost implements SemanticHost {
     if (!adapter) throw new DOMException("No WebGPU adapter is available", "NotSupportedError");
     const requiredFeatures: GPUFeatureName[] = [];
     if (adapter.features.has('float32-filterable')) requiredFeatures.push('float32-filterable');
+    if (adapter.features.has('depth-clip-control')) requiredFeatures.push('depth-clip-control');
     const device = await adapter.requestDevice({ requiredFeatures });
     const format = navigator.gpu.getPreferredCanvasFormat();
     const surfaces = new WeakMap<HTMLCanvasElement | OffscreenCanvas, { context: GPUCanvasContext; retained: RetainedSurface | null }>();
@@ -869,7 +870,8 @@ export class BrowserHost implements SemanticHost {
         attributes: [{ shaderLocation: attribute.location, offset: 0, format }] };
     });
     const key = JSON.stringify([mode, topology, stripIndexFormat, layouts, target.color.format, target.depth?.format, target.opaque, state.depthTest, state.depthMask,
-      state.depthFunc, depthBias, depthBiasSlopeScale, depthBiasClamp, state.colorMask, state.blend, state.blendSrcRGB, state.blendDstRGB,
+      state.depthFunc, state.depthClamp, depthBias, depthBiasSlopeScale, depthBiasClamp, state.colorMask,
+      state.blend, state.blendSrcRGB, state.blendDstRGB,
       state.blendSrcAlpha, state.blendDstAlpha, state.blendEquationRGB, state.blendEquationAlpha,
       state.cull, state.cullFace, state.frontFace, stencil]);
     let pipeline = resources.pipelines.get(key);
@@ -883,7 +885,7 @@ export class BrowserHost implements SemanticHost {
         fragment: { module: resources.fragment, entryPoint: points ? "refralPointMain" : program.fragmentEntryPoint,
           targets: [{ format: target.color.format,
             writeMask: colorWriteMask(state.colorMask) & (target.opaque ? 7 : 15), blend }] },
-        primitive: { topology, stripIndexFormat,
+        primitive: { topology, stripIndexFormat, unclippedDepth: state.depthClamp,
           frontFace: points || state.frontFace !== GL.CCW ? "ccw" : "cw",
           cullMode: line || !state.cull ? "none" : state.cullFace === GL.FRONT ? "front" : "back" },
         depthStencil: target.depth ? { format: target.depth.format,

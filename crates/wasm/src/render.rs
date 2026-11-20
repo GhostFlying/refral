@@ -24,6 +24,11 @@ pub extern "C" fn rf_vertex_array_protocol_version() -> u32 {
 }
 
 #[no_mangle]
+pub extern "C" fn rf_shader_extensions_protocol_version() -> u32 {
+    1
+}
+
+#[no_mangle]
 pub extern "C" fn rf_core_extensions_protocol_version() -> u32 {
     1
 }
@@ -576,7 +581,7 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             for unit in request.source {
                 output.extend_from_slice(&unit.to_le_bytes());
             }
-            json!({"type":"compile","requestId":request.request_id,"shader":handle_json(request.shader),"stage":request.stage})
+            json!({"type":"compile","requestId":request.request_id,"shader":handle_json(request.shader),"stage":request.stage,"extensions":request.extensions})
         }
         Reply::Link(request) => {
             json!({"type":"link","requestId":request.request_id,"program":handle_json(request.program),"vertexArtifact":request.vertex_artifact,"fragmentArtifact":request.fragment_artifact,"bindings":request.bindings})

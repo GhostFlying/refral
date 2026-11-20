@@ -71,6 +71,7 @@ interface WireReply {
   requestId?: number;
   shader?: LogicalHandle;
   stage?: number;
+  extensions?: number;
   program?: LogicalHandle;
   vertexArtifact?: number | null;
   fragmentArtifact?: number | null;
@@ -839,6 +840,10 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
         const version = exports.rf_srgb_texture_protocol_version;
         return typeof version === 'function' && version() === 1;
       }
+      if (operation === 'supportsShaderExtensions') {
+        const version = exports.rf_shader_extensions_protocol_version;
+        return typeof version === 'function' && version() === 1;
+      }
       if (operation === 'supportsCoreExtensions') {
         const version = exports.rf_core_extensions_protocol_version;
         return typeof version === 'function' && version() === 1;
@@ -898,6 +903,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
           const compiled = services.compiler.compile(
             utf16(prepare.binary),
             request.stage === GL.VERTEX_SHADER ? 'vertex' : 'fragment',
+            request.extensions ?? 0,
           );
           const committed = command('commitCompileShader', [request.shader], {
             request_id: request.requestId,

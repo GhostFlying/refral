@@ -1,0 +1,18 @@
+diff --git a/src/compiler/translator/wgsl/RewritePipelineVariables.cpp b/src/compiler/translator/wgsl/RewritePipelineVariables.cpp
+--- a/src/compiler/translator/wgsl/RewritePipelineVariables.cpp
++++ b/src/compiler/translator/wgsl/RewritePipelineVariables.cpp
+@@ -166,0 +167,6 @@
++            {"gl_FragDepthEXT",
++             GlslToWgslBuiltinMapping{
++                 ImmutableString("gl_FragDepthEXT"),
++                 BuiltinAnnotation{ImmutableString("frag_depth")}, IOType::Output,
++                 BuiltInVariable::gl_FragDepthEXT(), ImmutableString("f32"),
++                 ImmutableString(nullptr), ImmutableString(nullptr)}},
+diff --git a/src/compiler/translator/wgsl/TranslatorWGSL.cpp b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
+--- a/src/compiler/translator/wgsl/TranslatorWGSL.cpp
++++ b/src/compiler/translator/wgsl/TranslatorWGSL.cpp
+@@ -1914,0 +1915 @@
++        case EOpTexture2DProjGradEXT:
+@@ -1918,0 +1920,2 @@
++        case EOpTexture2DGradEXT:
++        case EOpTextureCubeGradEXT:

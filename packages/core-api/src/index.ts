@@ -1,4 +1,5 @@
 export { GL, SRGB, BLEND_MINMAX, elementIndexBytes, readElementIndex, isSrgbTextureFormat, vertexComponentBytes } from './gl.js';
+export { SHADER_EXTENSIONS, DERIVATIVE_HINT_OES } from './compiler.js';
 export type * from './compiler.js';
 export * from './execution.js';
 export type * from './drawing.js';

@@ -9,7 +9,7 @@ import type { DomTextureUploadPlan, DomTextureUploadRequest } from './dom-upload
 
 /** Per-context artifacts owned by the shared synchronous compiler service. */
 export interface CompilerRegistry {
-  compile(source: string, stage: ShaderStage): { artifactId: number; result: CompiledShader };
+  compile(source: string, stage: ShaderStage, extensions?: number): { artifactId: number; result: CompiledShader };
   link(vertexId: number, fragmentId: number,
     attributeLocations: ReadonlyMap<string, number>): { artifactId: number; result: LinkedProgram };
   executable(id: number): LinkedProgram;

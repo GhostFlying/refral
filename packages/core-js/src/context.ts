@@ -1,5 +1,5 @@
 import {
-  CUBE_FACES, GL, SRGB, BLEND_MINMAX, elementIndexBytes, readElementIndex, isSrgbTextureFormat, VERTEX_ARRAY_BINDING_OES, createRasterState, snapshotRaster, componentCount, vertexComponentBytes, isColorRenderbufferFormat,
+  CUBE_FACES, GL, SRGB, SHADER_EXTENSIONS, DERIVATIVE_HINT_OES, BLEND_MINMAX, elementIndexBytes, readElementIndex, isSrgbTextureFormat, VERTEX_ARRAY_BINDING_OES, createRasterState, snapshotRaster, componentCount, vertexComponentBytes, isColorRenderbufferFormat,
   isStencilRenderbufferFormat, stencilReference, isDrawMode,
 } from "@refral/core-api";
 import type {
@@ -90,6 +90,10 @@ export class SemanticContext {
   private elementIndexUint = false;
   private blendMinmax = false;
   private framebufferMipmaps = false;
+  private shaderExtensions = 0;
+  private derivativeHint: number = GL.DONT_CARE;
+  supportsShaderExtensions(): boolean { return true; }
+  enableShaderExtension(mask: number): void { this.shaderExtensions |= mask; }
   supportsCoreExtensions(): boolean { return true; }
   enableElementIndexUint(): void { this.elementIndexUint = true; }
   enableBlendMinmax(): void { this.blendMinmax = true; }
@@ -343,7 +347,7 @@ export class SemanticContext {
     if (!this.valid(shader, ShaderObject)) return;
     const previous = shader.result;
     shader.result = this.compiler.compile(shader.source,
-      shader.type === GL.VERTEX_SHADER ? "vertex" : "fragment", 1);
+      shader.type === GL.VERTEX_SHADER ? "vertex" : "fragment", 1, this.shaderExtensions);
     if (previous) this.compiler.releaseShader?.(previous);
   }
   getShaderParameter(shader: ShaderObject, parameter: number): unknown {
@@ -1449,10 +1453,10 @@ export class SemanticContext {
     this.requestedLineWidth = width;
   }
   hint(target: number, mode: number): void {
-    if (target !== GL.GENERATE_MIPMAP_HINT || (mode !== GL.DONT_CARE && mode !== GL.FASTEST && mode !== GL.NICEST)) {
-      return this.error(GL.INVALID_ENUM);
-    }
-    this.mipmapHint = mode;
+    if (mode !== GL.DONT_CARE && mode !== GL.FASTEST && mode !== GL.NICEST) return this.error(GL.INVALID_ENUM);
+    if (target === GL.GENERATE_MIPMAP_HINT) this.mipmapHint = mode;
+    else if (target === DERIVATIVE_HINT_OES && (this.shaderExtensions & SHADER_EXTENSIONS.derivatives)) this.derivativeHint = mode;
+    else this.error(GL.INVALID_ENUM);
   }
   enable(capability: number): void { this.setCapability(capability, true); }
   disable(capability: number): void { this.setCapability(capability, false); }
@@ -1596,6 +1600,7 @@ export class SemanticContext {
       [GL.TEXTURE_BINDING_CUBE_MAP]: this.textureUnits[this.activeUnit]!.cubeMap,
       [GL.VIEWPORT]: new Int32Array(this.state.viewport), [GL.SCISSOR_BOX]: new Int32Array(this.state.scissor),
       [GL.LINE_WIDTH]: this.requestedLineWidth, [GL.GENERATE_MIPMAP_HINT]: this.mipmapHint,
+      ...((this.shaderExtensions & SHADER_EXTENSIONS.derivatives) ? { [DERIVATIVE_HINT_OES]: this.derivativeHint } : {}),
       [GL.COLOR_CLEAR_VALUE]: new Float32Array(this.clearColorValue), [GL.DEPTH_CLEAR_VALUE]: this.clearDepthValue,
       [GL.COLOR_WRITEMASK]: [...this.state.colorMask], [GL.DEPTH_WRITEMASK]: this.state.depthMask,
       [GL.DEPTH_FUNC]: this.state.depthFunc, [GL.DEPTH_RANGE]: new Float32Array(this.state.depthRange),

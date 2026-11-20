@@ -62,8 +62,8 @@ class RegistryCompiler implements Compiler {
 
   constructor(private readonly registry: CompilerRegistry) {}
 
-  compile(source: string, stage: "vertex" | "fragment"): CompiledShader {
-    const artifact = this.registry.compile(source, stage);
+  compile(source: string, stage: "vertex" | "fragment", _version = 1, extensions = 0): CompiledShader {
+    const artifact = this.registry.compile(source, stage, extensions);
     const result = { ...artifact.result };
     this.shaders.set(result, artifact.artifactId);
     this.owned.add(artifact.artifactId);

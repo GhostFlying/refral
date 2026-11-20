@@ -172,11 +172,11 @@ void WriteVariables(std::ostream& output,
   output << ']';
 }
 
-}  // namespace
+constexpr int kStandardDerivatives = 1 << 0;
+constexpr int kFragmentDepth = 1 << 1;
+constexpr int kShaderTextureLod = 1 << 2;
 
-extern "C" EMSCRIPTEN_KEEPALIVE const char* RefralCompile(const char* source,
-                                                          int stage,
-                                                          int version) {
+const char* Compile(const char* source, int stage, int version, int extensions) {
   static const bool initialized = sh::Initialize();
   static std::string result;
   if (!initialized) {
@@ -185,6 +185,9 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char* RefralCompile(const char* source,
   }
   ShBuiltInResources resources;
   sh::InitBuiltInResources(&resources);
+  resources.OES_standard_derivatives = (extensions & kStandardDerivatives) != 0;
+  resources.EXT_frag_depth = (extensions & kFragmentDepth) != 0;
+  resources.EXT_shader_texture_lod = (extensions & kShaderTextureLod) != 0;
   resources.MaxVertexAttribs = REFRAL_VERTEX_ATTRIBUTES;
   resources.MaxVertexUniformVectors = REFRAL_VERTEX_UNIFORM_VECTORS;
   resources.MaxFragmentUniformVectors = REFRAL_FRAGMENT_UNIFORM_VECTORS;
@@ -255,4 +258,21 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char* RefralCompile(const char* source,
   result = output.str();
   sh::Destruct(compiler);
   return result.c_str();
+}
+
+}  // namespace
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char* RefralCompile(const char* source,
+                                                         int stage,
+                                                         int version) {
+  return Compile(source, stage, version, 0);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE const char* RefralCompileWithExtensions(
+    const char* source, int stage, int version, int extensions) {
+  return Compile(source, stage, version, extensions);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE int RefralShaderExtensionMask() {
+  return kStandardDerivatives | kFragmentDepth | kShaderTextureLod;
 }

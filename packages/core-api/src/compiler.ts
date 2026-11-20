@@ -77,8 +77,17 @@ export interface LinkedProgram {
   driverUniformBufferSize: number;
 }
 
+export const SHADER_EXTENSIONS = {
+  derivatives: 1 << 0,
+  fragmentDepth: 1 << 1,
+  textureLod: 1 << 2,
+} as const;
+
+export const DERIVATIVE_HINT_OES = 0x8b8b;
+
 export interface Compiler {
-  compile(source: string, stage: ShaderStage, version?: 1 | 2): CompiledShader;
+  readonly shaderExtensionMask?: number;
+  compile(source: string, stage: ShaderStage, version?: 1 | 2, extensions?: number): CompiledShader;
   link(vertex: CompiledShader, fragment: CompiledShader,
     attributeLocations?: Record<string, number>): LinkedProgram;
 }

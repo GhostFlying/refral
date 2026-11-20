@@ -282,7 +282,7 @@ describe('actual Rust drawing Wasm', () => {
       core.invoke('shaderSource', [shader, source]);
       expect(core.invoke('getShaderSource', [shader])).toBe(source);
       core.invoke('compileShader', [shader]);
-      expect(compile).toHaveBeenCalledWith(source, 'vertex');
+      expect(compile).toHaveBeenCalledWith(source, 'vertex', 0);
       const program = core.invoke('createProgram', []);
       core.invoke('bindAttribLocation', [program, 0, '\ud800']);
       expect(core.getError()).toBe(GL.INVALID_VALUE);

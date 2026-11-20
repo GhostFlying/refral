@@ -29,6 +29,8 @@ Open [the Rust triangle](http://127.0.0.1:4173/examples/triangle/index.html?core
 
 Open [Three.js Shapes](http://127.0.0.1:4173/examples/three-shapes/index.html) to compare the three backends on the pinned r162 Shapes scene. Drag the scene to rotate it. Run `REFRAL_HEADLESS=1 pnpm bench:three` for the optional performance comparison and image checks. See the [workload and results](docs/tasks/116-three-shapes-workload.md).
 
+Open [Three.js Marching Cubes](http://127.0.0.1:4173/examples/three-marching-cubes/index.html) for an automatically playing animation. This scene rebuilds the mesh's positions, normals and colors each frame. The backend links switch between native WebGL1, Refral JS and Refral Rust. See the [animation verification](docs/tasks/117-three-marching-cubes.md).
+
 The build produces a standalone `dist` tree containing the browser bundles, compiler Wasm, formal Rust core Wasm, core-selection experiment Wasm, and pinned demo resources. Serve it over localhost or HTTPS.
 
 ## Commands

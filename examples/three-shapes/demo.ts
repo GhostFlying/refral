@@ -1,22 +1,16 @@
 import { TextureLoader, WebGL1Renderer } from 'three';
-import { createWebGLOnWebGPU, getTestingHooks } from '@refral/webgl';
+import { createThreeContext, threeBackends } from '../three-context';
+import type { ThreeBackend } from '../three-context';
 import { createShapesScene } from './scene';
 
-export const shapesBackends = ['native', 'js', 'rust'] as const;
-export type ShapesBackend = typeof shapesBackends[number];
-export const shapesSize = { width: 800, height: 600 };
+export const shapesBackends = threeBackends;
+export type ShapesBackend = ThreeBackend;
 const grid = new URL('./uv_grid_opengl.jpg', import.meta.url).href;
 
 export async function createShapesDemo(canvas: HTMLCanvasElement, backend: ShapesBackend) {
-  canvas.width = shapesSize.width;
-  canvas.height = shapesSize.height;
-  const attributes = { alpha: false, depth: true, stencil: false, antialias: false, preserveDrawingBuffer: false };
   const contextStarted = performance.now();
-  const gl = backend === 'native' ? (canvas.getContext('webgl', attributes) as WebGLRenderingContext | null)
-    : await createWebGLOnWebGPU(canvas, { version: 1, core: backend, ...attributes });
-  if (!gl) throw new Error('WebGL1 context creation failed.');
+  const { gl, attributes, hooks } = await createThreeContext(canvas, backend);
   const contextMs = performance.now() - contextStarted;
-  const hooks = backend === 'native' ? null : getTestingHooks(gl);
   try {
     const sceneStarted = performance.now();
     const texture = await new TextureLoader().loadAsync(grid);

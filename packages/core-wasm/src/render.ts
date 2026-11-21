@@ -1,4 +1,5 @@
 import { createRasterState, GL, isDrawMode, vertexComponentBytes } from '@refral/core-api';
+import { createDirectCommands, noDirectCommand } from './direct.js';
 import type {
   BufferHandle,
   BufferSnapshot,
@@ -315,6 +316,12 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     if (start > buffer.byteLength || length > buffer.byteLength - start)
       throw new Error('Invalid Rust arena range.');
     return new Uint8Array(buffer, start, length);
+  }
+  const direct = createDirectCommands(exports, memory);
+  function syncSurface(): void {
+    const { width, height } = surface;
+    if (direct) direct.surface(width, height);
+    else command('setSurfaceSize', [width, height]);
   }
   function command(
     op: string,
@@ -817,13 +824,13 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     },
     captureTarget() {
       if (abi.rf_is_context_lost()) throw new Error('Cannot capture a lost context.');
-      command('setSurfaceSize', [surface.width, surface.height]);
+      syncSurface();
       const result = command('captureTarget', []);
       return decode(result.value, result.binary) as TargetSnapshot;
     },
     prepareReadPixels(request: ReadPixelsRequest) {
       if (abi.rf_is_context_lost()) return null;
-      command('setSurfaceSize', [surface.width, surface.height]);
+      syncSurface();
       const result = command('prepareReadPixels', [
         request.x,
         request.y,
@@ -904,6 +911,10 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
           ? undefined
           : value;
       }
+      if (direct) {
+        const result = direct.invoke(operation, args);
+        if (result !== noDirectCommand) return result;
+      }
       if (operation === 'getParameter') {
         const capabilities: Record<number, unknown> = {
           [GL.MAX_VERTEX_ATTRIBS]: profile.vertexAttributes,
@@ -977,7 +988,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
         return undefined;
       }
       if (operation === 'drawArrays' || operation === 'drawElements' || operation === 'clear')
-        command('setSurfaceSize', [surface.width, surface.height]);
+        syncSurface();
       const result = command(operation, args);
       let value: unknown;
       try {

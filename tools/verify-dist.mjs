@@ -123,6 +123,7 @@ try {
     const resourceProtocol = call('rf_resource_protocol_version');
     const readbackProtocol = call('rf_readback_protocol_version');
     const domUploadProtocol = call('rf_dom_upload_protocol_version');
+    const directCommandProtocol = call('rf_direct_command_protocol_version');
     const initialized = call('rf_init', 1, 16);
     const slot = call('rf_create_buffer');
     const generation = call('rf_result_generation');
@@ -135,9 +136,11 @@ try {
     if (pointer === 0 || stale !== 0) throw new Error('Invalid packaged Rust Buffer resolver.');
     const error = call('rf_get_error');
     call('rf_dispose');
-    return { version, resourceProtocol, readbackProtocol, domUploadProtocol, initialized, slot, generation, byteLength, drawBytes, error };
+    return { version, resourceProtocol, readbackProtocol, domUploadProtocol, directCommandProtocol,
+      initialized, slot, generation, byteLength, drawBytes, error };
   });
-  assert.deepEqual(rustBuffer, { version: 7, resourceProtocol: 8, readbackProtocol: 1, domUploadProtocol: 2, initialized: 1, slot: 1, generation: 1, byteLength: 4, drawBytes: [0, 0, 0, 0], error: 0 });
+  assert.deepEqual(rustBuffer, { version: 7, resourceProtocol: 8, readbackProtocol: 1, domUploadProtocol: 2,
+    directCommandProtocol: 1, initialized: 1, slot: 1, generation: 1, byteLength: 4, drawBytes: [0, 0, 0, 0], error: 0 });
   await page.screenshot({ path: 'artifacts/deployment/chrome.png' });
   const triangles = [];
   for (const core of ['native', 'js', 'rust']) {

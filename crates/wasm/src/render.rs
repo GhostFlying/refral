@@ -6,6 +6,8 @@ use refral_core::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+mod direct;
+
 const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
 
 #[no_mangle]
@@ -77,6 +79,8 @@ pub(super) struct Transport {
     prepared: bool,
     resource_before: Vec<refral_core::ResourceOperation>,
     resource_after: Vec<refral_core::ResourceOperation>,
+    direct_list: Vec<u8>,
+    direct_list_prepared: bool,
 }
 
 fn reserve(bytes: &mut Vec<u8>, length: usize) -> bool {

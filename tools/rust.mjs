@@ -45,13 +45,18 @@ if (operation === 'check') {
   const resourceProtocol = exports.rf_resource_protocol_version?.();
   const readbackProtocol = exports.rf_readback_protocol_version?.();
   const domUploadProtocol = exports.rf_dom_upload_protocol_version?.();
+  const directCommandProtocol = exports.rf_direct_command_protocol_version?.();
   if (typeof exports.rf_draw_buffer_pointer !== 'function')
     throw new Error('The formal Rust module requires a draw Buffer resolver.');
   if (abi !== 7 || resourceProtocol !== 8 || readbackProtocol !== 1 || domUploadProtocol !== 2)
     throw new Error('The formal Rust module requires ABI7/resource8/readback1/DOM upload2.');
+  if (directCommandProtocol !== 1 || ['rf_direct_scalar', 'rf_direct_list_prepare', 'rf_direct_list_commit']
+    .some(name => typeof exports[name] !== 'function'))
+    throw new Error('The formal Rust module requires direct command protocol v1.');
   await writeFile(resolve(dirname(output), 'build.json'), JSON.stringify({
     channel, target: 'wasm32-unknown-unknown', profile: 'release', bytes,
-    sha256: createHash('sha256').update(binary).digest('hex'), abi, resourceProtocol, readbackProtocol, domUploadProtocol, imports,
+    sha256: createHash('sha256').update(binary).digest('hex'), abi, resourceProtocol, readbackProtocol, domUploadProtocol,
+    directCommandProtocol, imports,
   }, null, 2) + '\n');
   console.log(`Built formal semantic core Wasm (${bytes} bytes).`);
 } else {

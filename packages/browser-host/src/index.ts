@@ -574,7 +574,8 @@ export class BrowserHost implements SemanticHost {
     if (this.retained || (this.lastPresentedTexture && (this.lastPresentationTime === canvas.ownerDocument.timeline.currentTime
         || !canvas.isConnected || !canvas.checkVisibility({ visibilityProperty: true })))) {
       this.beginPass(this.defaultTarget);
-      this.publishDefaultColor();
+      this.defaultDirty = true;
+      this.submitEncoded();
     }
   }
 
@@ -1009,7 +1010,7 @@ export class BrowserHost implements SemanticHost {
       pass.drawIndexed(operation.count, 1, wideIndices ? 0 : indices.offset / size);
     } else pass.draw(operation.count, 1, operation.first);
     this.stats.draws++;
-    if (operation.target.isDefault) this.publishDefaultColor();
+    if (operation.target.isDefault) this.defaultDirty = true;
   }
 
   private applyScissor(pass: GPURenderPassEncoder, state: RasterState, target: Target): void {
@@ -1077,7 +1078,7 @@ export class BrowserHost implements SemanticHost {
     pass.setBindGroup(0, group);
     pass.draw(3);
     this.stats.bindGroups++;
-    if (snapshot.isDefault && (writeMask || this.offscreenDiscard && (writesDepth || stencilWriteMask))) this.publishDefaultColor();
+    if (snapshot.isDefault && (writeMask || this.offscreenDiscard && (writesDepth || stencilWriteMask))) this.defaultDirty = true;
   }
 
   private configurePresentation(): boolean {
@@ -1094,12 +1095,6 @@ export class BrowserHost implements SemanticHost {
       this.presentationConfigured = true;
     }
     return true;
-  }
-
-  // DOM consumers such as drawImage and toDataURL can observe the canvas in this same task.
-  private publishDefaultColor(): void {
-    this.defaultDirty = true;
-    this.submitEncoded();
   }
 
   private present(): boolean {

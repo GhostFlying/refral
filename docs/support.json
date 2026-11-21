@@ -69,7 +69,7 @@
             "rust"
           ],
           "classification": "undefined-post-composite-source-read",
-          "scope": "After composition, Canvas2D drawImage samples an opaque HTML canvas with preserveDrawingBuffer false. Same-task source reads and cleared attachment semantics retain their ordinary requirements.",
+          "scope": "After composition, Canvas2D drawImage samples an opaque HTML canvas with preserveDrawingBuffer false. Cleared attachment semantics retain their ordinary requirements. Same-task canvas publication is covered by the automatic-submission entry.",
           "observed": "Chrome WebGL copied opaque black; direct WebGPU on both cores copied transparent black. Each source remained red on screen.",
           "accepted": "2026-11-19",
           "reference": "docs/tasks/093-opaque-webgpu-canvas-discard.md"
@@ -2753,10 +2753,11 @@
           "environments": [
             "chrome-macos-arm64"
           ],
-          "coverage": "Default-buffer color clears and draws publish in time for same-task DOM canvas consumers. FBO draws and uploads use microtask submission, and flush submits pending work.",
+          "coverage": "Default and offscreen framebuffer work batches until automatic microtask submission or explicit flush. GL readPixels and registered texture-source paths preserve ordered visibility.",
           "tests": [
             "tests/chrome/differential.spec.ts::WebGL1 differential automatic-submit",
-            "tests/chrome/dual-core-drawing.spec.ts"
+            "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/canvas-publication.spec.ts"
           ],
           "evidence": [
             {
@@ -2769,14 +2770,16 @@
           "unsupportedBehavior": "Invalid implemented inputs set the corresponding GL error. Valid operations outside the initial profile throw NotSupportedError or return compiler/link diagnostics.",
           "limits": [
             "flush signals submission rather than GPU completion",
-            "Public normal drawing uses the automatic host schedule"
+            "Public normal drawing uses the automatic host schedule",
+            "Before flush or automatic submission, same-stack native drawImage and toDataURL can observe an older or empty bitmap. Original CTS differences are listed in docs/tasks/120-geometry-cache-and-batched-publication.md#verification"
           ]
         },
         "rust": {
           "status": "differential-verified",
-          "coverage": "The common host publishes Rust-owned default-buffer clear/draw results for same-task DOM image consumers. FBO work can batch until microtask submission or explicit flush.",
+          "coverage": "The common host batches Rust-owned default and offscreen framebuffer work until automatic microtask submission or explicit flush. GL readPixels and registered texture-source paths preserve ordered visibility.",
           "tests": [
             "tests/chrome/dual-core-drawing.spec.ts",
+            "tests/chrome/canvas-publication.spec.ts",
             "tests/chrome/buffers.spec.ts",
             "packages/core-wasm/tests/render.integration.ts"
           ],
@@ -2790,7 +2793,11 @@
               "passed": true
             }
           ],
-          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics."
+          "unsupportedBehavior": "Invalid declared inputs produce GL errors. Valid operations beyond the declared Rust profile report library diagnostics.",
+          "limits": [
+            "flush signals submission rather than GPU completion",
+            "Before flush or automatic submission, same-stack native drawImage and toDataURL can observe an older or empty bitmap. Original CTS differences are listed in docs/tasks/120-geometry-cache-and-batched-publication.md#verification"
+          ]
         }
       }
     },
@@ -3968,7 +3975,8 @@
           "url": "conformance/rendering/many-draw-calls.html",
           "index": 656,
           "classification": "production-timeout",
-          "disposition": "deferred-performance-issue",
+          "disposition": "passed-by-both-cores-in-targeted-batched-publication-follow-up",
+          "followUp": "docs/tasks/120-geometry-cache-and-batched-publication.md#verification",
           "affectedBackends": [
             "js",
             "rust"

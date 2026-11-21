@@ -33,6 +33,8 @@ Open [Three.js Marching Cubes](http://127.0.0.1:4173/examples/three-marching-cub
 
 Run `pnpm bench:three:heavy` for the optional headless comparison of four-view Shapes, a lit triangle cloud, and Sobel postprocessing at two resolutions. Results include the native, JS and Rust screenshots and raw timings. See the [heavier workloads and diagnostic controls](docs/tasks/119-heavy-three-benchmarks.md).
 
+Refral publishes default framebuffer work at its automatic microtask checkpoint or on `gl.flush()`. If synchronous platform calls such as Canvas2D `drawImage()` or canvas serialization need the latest drawing, call `gl.flush()` before taking the snapshot. Native WebGL can provide the drawing directly when taking a same-stack snapshot.
+
 The build produces a standalone `dist` tree containing the browser bundles, compiler Wasm, formal Rust core Wasm, core-selection experiment Wasm, and pinned demo resources. Serve it over localhost or HTTPS.
 
 ## Commands

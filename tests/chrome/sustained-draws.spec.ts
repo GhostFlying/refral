@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 for (const backend of ['native', 'js', 'rust'] as const) {
-  test(`consecutive draws preserve immediate canvas pixels and buffer versions on ${backend}`, async ({ page }) => {
+  test(`consecutive draws preserve flushed canvas pixels and buffer versions on ${backend}`, async ({ page }) => {
     await page.goto('/tests/fixtures/runner.html');
     const result = await page.evaluate(async backend => {
       const runtime = '/packages/webgl/src/index.ts';
@@ -22,6 +22,7 @@ for (const backend of ['native', 'js', 'rust'] as const) {
         const offset = gl.getUniformLocation(program, 'u_z');
         const dst = new OffscreenCanvas(4, 2).getContext('2d', { willReadFrequently: true })!;
         const observed = () => {
+          gl.flush();
           dst.drawImage(canvas, 0, 0);
           return [...dst.getImageData(2, 1, 1, 1).data];
         };

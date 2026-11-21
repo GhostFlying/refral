@@ -54,6 +54,8 @@ export interface AttributeSnapshot {
   stride: number;
   offset: number;
   data: Uint8Array | null;
+  /** Identifies immutable buffer bytes within this host. */
+  bufferVersion?: string;
   constant: readonly number[];
 }
 
@@ -191,7 +193,7 @@ export interface DrawOperation {
   vertexCount: number;
   count: number;
   first: number;
-  indices: { data: Uint8Array; type: number; offset: number } | null;
+  indices: { data: Uint8Array; bufferVersion?: string; type: number; offset: number } | null;
   vertexUniforms: Uint8Array;
   fragmentUniforms: Uint8Array;
   textures: TextureBinding[];

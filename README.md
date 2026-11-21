@@ -31,6 +31,8 @@ Open [Three.js Shapes](http://127.0.0.1:4173/examples/three-shapes/index.html) t
 
 Open [Three.js Marching Cubes](http://127.0.0.1:4173/examples/three-marching-cubes/index.html) for an automatically playing animation. This scene rebuilds the mesh's positions, normals and colors each frame. The backend links switch between native WebGL1, Refral JS and Refral Rust. See the [animation verification](docs/tasks/117-three-marching-cubes.md).
 
+Run `pnpm bench:three:heavy` for the optional headless comparison of four-view Shapes, a lit triangle cloud, and Sobel postprocessing at two resolutions. Results include the native, JS and Rust screenshots and raw timings. See the [heavier workloads and diagnostic controls](docs/tasks/119-heavy-three-benchmarks.md).
+
 The build produces a standalone `dist` tree containing the browser bundles, compiler Wasm, formal Rust core Wasm, core-selection experiment Wasm, and pinned demo resources. Serve it over localhost or HTTPS.
 
 ## Commands

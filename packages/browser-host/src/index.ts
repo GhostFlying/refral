@@ -3,6 +3,7 @@ import { primitiveIndexBatches } from './primitive-indices.js';
 import { OffscreenDiscard } from './offscreen-discard.js';
 import { QueueCompletion } from './queue-completion.js';
 import { CanvasReadback } from './canvas-readback.js';
+import { GeometryCache } from './geometry-cache.js';
 import type {
   AttributeSnapshot, RasterState, StencilFaceState, TargetSnapshot, TextureCopy, TextureParameters, TextureStorage,
   LinkedProgram, DrawOperation, DrawingSurface, SemanticHost, DomTextureCapturePlan, TextureVersion,
@@ -11,7 +12,7 @@ import type {
 export type { TextureBinding, DrawOperation } from "@refral/core-api";
 
 const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
-const geometryCacheBytes = 8 * 1024 * 1024;
+const geometryCacheBytes = 32 * 1024 * 1024;
 const geometryCacheEntries = 512;
 
 export interface HostStats {
@@ -171,9 +172,11 @@ export class BrowserHost implements SemanticHost {
   private depthCache = new Map<string, GPUTexture>();
   private targetCache = new WeakMap<GPUTexture, Target>();
   private initialized = new WeakSet<GPUTexture>();
-  private readonly geometryCache = new Map<string, GPUBuffer>();
-  private cachedGeometryBytes = 0;
   private readonly transientBuffers = new Set<GPUBuffer>();
+  private readonly geometryCache = new GeometryCache(geometryCacheBytes, geometryCacheEntries,
+    buffer => { this.transientBuffers.delete(buffer); },
+    // Evicted buffers can still be referenced by the active encoder.
+    buffer => { this.transientBuffers.add(buffer); });
   private uniformGroups = new WeakMap<LinkedProgram, {
     group: GPUBindGroup; vertex: GPUBuffer; fragment: GPUBuffer; encoder: GPUCommandEncoder;
   }>();
@@ -749,25 +752,9 @@ export class BrowserHost implements SemanticHost {
   private geometryBuffer(key: string | null, usage: GPUBufferUsageFlags,
     prepare: () => Uint8Array): GPUBuffer {
     const cached = key === null ? undefined : this.geometryCache.get(key);
-    if (cached && key !== null) {
-      this.geometryCache.delete(key);
-      this.geometryCache.set(key, cached);
-      return cached;
-    }
+    if (cached) return cached;
     const buffer = this.createBuffer(prepare(), usage);
-    if (key === null || buffer.size > geometryCacheBytes) return buffer;
-
-    while (this.cachedGeometryBytes + buffer.size > geometryCacheBytes
-      || this.geometryCache.size >= geometryCacheEntries) {
-      const [oldKey, oldBuffer] = this.geometryCache.entries().next().value!;
-      this.geometryCache.delete(oldKey);
-      this.cachedGeometryBytes -= oldBuffer.size;
-      // The current encoder can still reference this buffer.
-      this.transientBuffers.add(oldBuffer);
-    }
-    this.geometryCache.set(key, buffer);
-    this.cachedGeometryBytes += buffer.size;
-    this.transientBuffers.delete(buffer);
+    if (key !== null) this.geometryCache.use(key, buffer);
     return buffer;
   }
 
@@ -936,6 +923,7 @@ export class BrowserHost implements SemanticHost {
       resources.pipelines.set(key, pipeline);
       this.stats.pipelines++;
     }
+    this.geometryCache.beginDraw();
     const vertexBuffers = operation.attributes.map(attribute =>
       this.vertexBuffer(attribute, points && indices ? operation.count : operation.vertexCount, points ? indices : null));
     const uniformGroup = this.uniformGroup(operation, resources.groups[0]);
@@ -992,6 +980,7 @@ export class BrowserHost implements SemanticHost {
       indexBuffer = this.geometryBuffer(key, GPUBufferUsage.INDEX, () =>
         indices.type === GL.UNSIGNED_BYTE ? new Uint8Array(new Uint16Array(indices.data).buffer) : indices.data);
     }
+    this.geometryCache.endDraw();
     const pass = this.beginPass(target);
     pass.setPipeline(pipeline);
     pass.setViewport(...state.viewport, ...state.depthRange);
@@ -1332,7 +1321,6 @@ export class BrowserHost implements SemanticHost {
     this.buffers.clear();
     this.transientBuffers.clear();
     this.geometryCache.clear();
-    this.cachedGeometryBytes = 0;
     this.textures.clear();
     this.sampledImageCache.clear();
     this.stats.allocatedBufferBytes = 0;

@@ -1,7 +1,7 @@
 use super::*;
 use refral_core::{
-    ActiveInfo, Argument, AttributeInfo, CompileOutcome, LinkOutcome, ObjectHandle, ObjectKind,
-    PixelView, ProgramLayout, Reply, TextureImages, UniformInfo,
+    ActiveInfo, Argument, AttributeInfo, BufferMetadata, CompileOutcome, LinkOutcome, ObjectHandle,
+    ObjectKind, PixelView, ProgramLayout, Reply, TextureImages, UniformInfo,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -503,17 +503,17 @@ fn raster(output: &mut Vec<u8>, state: refral_core::RasterState) {
         }
     }
 }
-fn buffer(output: &mut Vec<u8>, snapshot: &BufferSnapshot) {
+fn buffer(output: &mut Vec<u8>, metadata: BufferMetadata) {
     for value in [
-        snapshot.metadata.handle.context_id,
-        snapshot.metadata.handle.slot,
-        snapshot.metadata.handle.generation,
+        metadata.handle.context_id,
+        metadata.handle.slot,
+        metadata.handle.generation,
     ] {
         u32_value(output, value);
     }
-    output.extend_from_slice(&snapshot.metadata.storage_generation.to_le_bytes());
-    output.extend_from_slice(&snapshot.metadata.content_version.to_le_bytes());
-    bytes(output, &snapshot.data);
+    output.extend_from_slice(&metadata.storage_generation.to_le_bytes());
+    output.extend_from_slice(&metadata.content_version.to_le_bytes());
+    u32_value(output, metadata.byte_length as u32);
 }
 fn reply_capacity(value: &Reply) -> Option<usize> {
     match value {
@@ -532,12 +532,12 @@ fn reply_capacity(value: &Reply) -> Option<usize> {
                 .checked_add(snapshot.fragment_uniforms.len())?;
             for attribute in &snapshot.attributes {
                 total = total.checked_add(40)?;
-                if let Some(buffer) = &attribute.data {
-                    total = total.checked_add(32)?.checked_add(buffer.data.len())?;
+                if attribute.data.is_some() {
+                    total = total.checked_add(32)?;
                 }
             }
-            if let Some((buffer, _, _)) = &snapshot.indices {
-                total = total.checked_add(40)?.checked_add(buffer.data.len())?;
+            if snapshot.indices.is_some() {
+                total = total.checked_add(40)?;
             }
             for binding in &snapshot.textures {
                 let versions = match &binding.images {
@@ -641,8 +641,8 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             json!({"type":"clear"})
         }
         Reply::Draw(snapshot) => {
-            u32_value(output, 0x37444652);
-            u32_value(output, 7);
+            u32_value(output, 0x38444652);
+            u32_value(output, 8);
             u32_value(output, snapshot.artifact_id);
             for value in [
                 snapshot.program.context_id,
@@ -686,14 +686,14 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
                 }
                 u32_value(output, u32::from(attribute.data.is_some()));
                 if let Some(snapshot) = attribute.data {
-                    buffer(output, &snapshot);
+                    buffer(output, snapshot);
                 }
             }
             u32_value(output, u32::from(snapshot.indices.is_some()));
             if let Some((snapshot, ty, offset)) = snapshot.indices {
                 u32_value(output, ty);
                 u32_value(output, offset as u32);
-                buffer(output, &snapshot);
+                buffer(output, snapshot);
             }
             bytes(output, &snapshot.vertex_uniforms);
             bytes(output, &snapshot.fragment_uniforms);

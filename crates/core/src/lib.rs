@@ -61,6 +61,16 @@ struct Buffer {
 }
 
 impl Buffer {
+    fn metadata(&self, handle: BufferHandle) -> BufferMetadata {
+        BufferMetadata {
+            handle,
+            byte_length: self.data.len(),
+            usage: self.usage,
+            storage_generation: self.storage_generation,
+            content_version: self.content_version,
+        }
+    }
+
     fn new() -> Self {
         Self {
             deleted: false,
@@ -521,23 +531,29 @@ impl ContextCore {
     }
 
     pub fn inspect_buffer(&self, handle: BufferHandle) -> Option<BufferSnapshot> {
-        self.live_index(handle)?;
-        self.inspect_attached_buffer(handle)
-    }
-
-    fn inspect_attached_buffer(&self, handle: BufferHandle) -> Option<BufferSnapshot> {
-        let index = self.storage_index(handle)?;
+        let index = self.live_index(handle)?;
         let buffer = self.slots[index].buffer.as_ref()?;
         Some(BufferSnapshot {
-            metadata: BufferMetadata {
-                handle,
-                byte_length: buffer.data.len(),
-                usage: buffer.usage,
-                storage_generation: buffer.storage_generation,
-                content_version: buffer.content_version,
-            },
+            metadata: buffer.metadata(handle),
             data: copy_bytes(&buffer.data)?,
         })
+    }
+
+    /// Bytes for the currently resident draw version. A deleted buffer can still
+    /// be resident while a vertex array retains it.
+    pub fn draw_buffer_bytes(
+        &self,
+        handle: BufferHandle,
+        storage_generation: f64,
+        content_version: f64,
+        byte_length: usize,
+    ) -> Option<&[u8]> {
+        let index = self.storage_index(handle)?;
+        let buffer = self.slots[index].buffer.as_ref()?;
+        (buffer.storage_generation as f64 == storage_generation
+            && buffer.content_version as f64 == content_version
+            && buffer.data.len() == byte_length)
+            .then_some(buffer.data.as_slice())
     }
 }
 

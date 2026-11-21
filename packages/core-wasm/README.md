@@ -2,7 +2,7 @@
 
 `createRustBufferCore(options, wasmURL?)` implements the shared Buffer contract with an independent Rust/Wasm instance per context. Its default module URL is `/artifacts/core-wasm/refral_core.wasm`; run `pnpm rust:build` before browser verification.
 
-The `refral-core` crate owns the semantic state and native unit tests. `refral-wasm` exports a private version 6 `rf_*` ABI. The standalone Buffer adapter validates exports and ABI version before initialization, shares only the compiled module across contexts, and copies inspection output into owned JavaScript bytes. Prepared drawing factories use one Wasm instance with context-specific Rust state and transport storage as described in [ADR 014](../../docs/adr/014-prepared-wasm-contexts.md).
+The `refral-core` crate owns the semantic state and native unit tests. `refral-wasm` exports a private version 7 `rf_*` ABI. The standalone Buffer adapter validates exports and ABI version before initialization, shares only the compiled module across contexts, and copies inspection output into owned JavaScript bytes. Prepared drawing factories use one Wasm instance with context-specific Rust state and transport storage as described in [ADR 014](../../docs/adr/014-prepared-wasm-contexts.md).
 
 An upload calls a prepare export, copies its exact view into Rust-owned staging memory, then calls `rf_upload_commit` synchronously. The core validates metadata before staging allocation and validates again when consuming the staged bytes. No export accepts an arbitrary input pointer. Staging and core storage currently each copy the input; measurement must include both copies. Arena views are recreated after prepare/inspection so Wasm memory growth cannot leave the adapter using a detached view. Snapshot storage remains valid independently of later uploads and deletion.
 
@@ -10,9 +10,9 @@ The output of Cargo package `refral-wasm` is `target/wasm32-unknown-unknown/rele
 
 Run `pnpm --filter @refral/core-wasm test:wasm` after building to execute the adapter against the actual binary. These CPU tests use a fetch stub serving the compiled bytes; they instantiate real Wasm exports. They run separately from the fast unit suite and require a built artifact. The shared browser Buffer suite also exercises this adapter in Chrome.
 
-## Private ABI version 6
+## Private ABI version 7
 
-The module exports `memory` and the following functions, with no host imports. Integer arguments/results are Wasm i32 values interpreted as unsigned by Rust; sizes, offsets, host budget, query results, and semantic versions crossing as floating values are f64. The adapter verifies every required function and `rf_abi_version() === 6`.
+The module exports `memory` and the following functions, with no host imports. Integer arguments/results are Wasm i32 values interpreted as unsigned by Rust; sizes, offsets, host budget, query results, and semantic versions crossing as floating values are f64. The adapter verifies every required function and `rf_abi_version() === 7`.
 
 | Export | Arguments and result |
 | --- | --- |
@@ -35,6 +35,7 @@ The module exports `memory` and the following functions, with no host imports. I
 | `rf_mark_lost` | Returns one for the first transition, zero thereafter. |
 | `rf_is_context_lost` | Returns one/zero. |
 | `rf_inspect_buffer` | `(context_id, slot, generation) -> u32`; copies an owned Rust snapshot and returns one, or clears the snapshot and returns zero for an invalid handle. |
+| `rf_draw_buffer_pointer` | Resolve a draw Buffer handle, storage generation, content version and byte length to its current Rust-owned bytes. A mismatch returns zero. |
 | `rf_snapshot_pointer`, `rf_snapshot_length`, `rf_snapshot_usage` | Return the current snapshot's byte range and usage. |
 | `rf_snapshot_storage_generation`, `rf_snapshot_content_version` | Return exact safe-integer versions as f64. |
 | `rf_dispose` | Marks loss and releases buffers, slots, staging, and snapshot allocations. Repeated calls are harmless. |
@@ -53,9 +54,9 @@ The full host budget is retained even when it exceeds the Wasm32 address range. 
 
 Shader/program requests and commits include a request identifier and typed generational object handle. Core validation rejects a commit after the relevant source, link, object lifetime or context has changed. The common compiler registry keeps artifacts under numeric IDs. Reply metadata drains retired artifact IDs to the registry.
 
-Draw replies start with RFD6 magic and version 6. After raster state they carry the polygon offset enable bit, factor and units. They contain executable and program identities, link generation, target size, complete raster state, primitive mode, draw counts, typed and normalized attributes, constants, optional indices, and uniform bytes. Each copied Buffer section records its handle, storage generation and content version. The decoder bounds-checks every section and rejects trailing bytes. It resolves the shared executable and emits the common DrawOperation to BrowserHost.
+Draw replies start with RFD8 magic and version 8. They contain executable and program identities, link generation, target size, raster state including polygon offset clamp, primitive mode, draw counts, typed and normalized attributes, constants, optional indices, and uniform bytes. Each Buffer reference contains a handle, storage generation, content version and byte length. Rust validates the version and length when resolving a reference. The adapter immediately copies a new reference into an owned snapshot before issuing another GL command. A repeated reference in the same or previous draw can reuse that owned snapshot. The decoder bounds-checks the reply and resolved memory range before emitting the common DrawOperation to BrowserHost.
 
-Automatic microtask submission and explicit flush use the same host. The testing capture target is the current default framebuffer. ABI v6 represents line and triangle topologies with typed vertex input alongside uniform, raster and resource state. The selected original CTS can still inspect matrix attribute reflection and call unsupported uniform setters with null locations.
+Automatic microtask submission and explicit flush use the same host. The testing capture target is the current default framebuffer. ABI v7 represents line and triangle topologies with typed vertex input alongside uniform, raster and resource state. The selected original CTS can still inspect matrix attribute reflection and call unsupported uniform setters with null locations.
 
 ## Mip image chains
 

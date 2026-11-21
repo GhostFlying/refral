@@ -1,6 +1,6 @@
 import type { BufferCore, BufferCoreOptions, BufferHandle, BufferSnapshot } from '@refral/core-api';
 
-const ABI_VERSION = 6;
+const ABI_VERSION = 7;
 const DEFAULT_WASM_URL = '/artifacts/core-wasm/refral_core.wasm';
 const UINT32_MAX = 0xffff_ffff;
 

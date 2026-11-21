@@ -194,7 +194,7 @@ pub struct AttributeDraw {
     pub normalized: bool,
     pub stride: u32,
     pub offset: usize,
-    pub data: Option<BufferSnapshot>,
+    pub data: Option<BufferMetadata>,
     pub constant: [f32; 4],
 }
 pub struct DrawSnapshot {
@@ -208,7 +208,7 @@ pub struct DrawSnapshot {
     pub vertex_count: u32,
     pub first: u32,
     pub count: u32,
-    pub indices: Option<(BufferSnapshot, u32, usize)>,
+    pub indices: Option<(BufferMetadata, u32, usize)>,
     pub vertex_uniforms: Vec<u8>,
     pub fragment_uniforms: Vec<u8>,
     pub textures: Vec<TextureBinding>,
@@ -1734,13 +1734,8 @@ impl ContextCore {
                     };
                     vertex_count = vertex_count.max(end_vertex as usize);
                 }
-                let Some(snapshot) =
-                    self.inspect_attached_buffer(self.render.arrays.current().element.unwrap())
-                else {
-                    self.record_error(OUT_OF_MEMORY);
-                    return Reply::Null;
-                };
-                indices = Some((snapshot, ty, offset));
+                let handle = self.render.arrays.current().element.unwrap();
+                indices = Some((buffer.metadata(handle), ty, offset));
             }
         }
         let program = self.render.programs[program_index].value.as_ref().unwrap();
@@ -1799,11 +1794,7 @@ impl ContextCore {
                     self.record_error(INVALID_OPERATION);
                     return Reply::Null;
                 }
-                let Some(snapshot) = self.inspect_attached_buffer(handle) else {
-                    self.record_error(OUT_OF_MEMORY);
-                    return Reply::Null;
-                };
-                Some(snapshot)
+                Some(buffer.metadata(handle))
             } else {
                 None
             };

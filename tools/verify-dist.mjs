@@ -129,11 +129,15 @@ try {
     call('rf_bind_buffer', 0x8892, 1, slot, generation);
     call('rf_buffer_data_size', 0x8892, 4, 0x88e4);
     const byteLength = call('rf_get_buffer_parameter', 0x8892, 0x8764);
+    const pointer = call('rf_draw_buffer_pointer', 1, slot, generation, 1, 1, byteLength);
+    const drawBytes = Array.from(new Uint8Array(abi.memory.buffer, pointer, byteLength));
+    const stale = call('rf_draw_buffer_pointer', 1, slot, generation, 1, 0, byteLength);
+    if (pointer === 0 || stale !== 0) throw new Error('Invalid packaged Rust Buffer resolver.');
     const error = call('rf_get_error');
     call('rf_dispose');
-    return { version, resourceProtocol, readbackProtocol, domUploadProtocol, initialized, slot, generation, byteLength, error };
+    return { version, resourceProtocol, readbackProtocol, domUploadProtocol, initialized, slot, generation, byteLength, drawBytes, error };
   });
-  assert.deepEqual(rustBuffer, { version: 6, resourceProtocol: 8, readbackProtocol: 1, domUploadProtocol: 2, initialized: 1, slot: 1, generation: 1, byteLength: 4, error: 0 });
+  assert.deepEqual(rustBuffer, { version: 7, resourceProtocol: 8, readbackProtocol: 1, domUploadProtocol: 2, initialized: 1, slot: 1, generation: 1, byteLength: 4, drawBytes: [0, 0, 0, 0], error: 0 });
   await page.screenshot({ path: 'artifacts/deployment/chrome.png' });
   const triangles = [];
   for (const core of ['native', 'js', 'rust']) {
@@ -206,7 +210,7 @@ try {
   assert.deepEqual(errors, []);
   const result = { recordedAt: new Date().toISOString(), url: page.url(), browserVersion: browser.version(), launchCommandLine, builds, headless: process.env.REFRAL_HEADLESS !== '0', viewport: page.viewportSize(), probe, demos, demoComparisons, rustBuffer, triangles, domUploads, cubeMaps, pageErrors: errors };
   await writeFile('artifacts/deployment/result.json', JSON.stringify(result, null, 2) + '\n');
-  console.log('Built deployment passed Chrome probe, three-path RTT and triangle pixels, public readPixels, DOM uploads and CubeMap pixels, ABI6/resource8/readback1/DOM upload2 and page-error checks.');
+  console.log('Built deployment passed Chrome probe, three-path RTT and triangle pixels, public readPixels, DOM uploads and CubeMap pixels, ABI7/resource8/readback1/DOM upload2 and page-error checks.');
 } finally {
   try { await browser?.close(); } finally {
     if (server.exitCode === null) {

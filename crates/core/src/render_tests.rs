@@ -292,27 +292,29 @@ fn every_null_uniform_setter_is_neutral_without_a_current_program() {
 }
 
 #[test]
-fn buffers_and_draws_share_storage_versions_and_owned_snapshots() {
+fn draw_references_resolve_only_to_the_current_buffer_version() {
     let (mut core, _, _, _, _, buffer) = scene();
-    let before = draw(&mut core);
+    let before = draw(&mut core).attributes[0].data.unwrap();
+    assert_eq!(before.handle, buffer);
+    assert_eq!(before.byte_length, 24);
+    let owned = core
+        .draw_buffer_bytes(buffer, 1.0, 1.0, before.byte_length)
+        .unwrap()
+        .to_vec();
+
     core.buffer_sub_data(ARRAY_BUFFER, 0.0, &[9, 8, 7, 6]);
-    let after = draw(&mut core);
+    let after = draw(&mut core).attributes[0].data.unwrap();
+    assert_eq!(after.storage_generation, before.storage_generation);
+    assert_eq!(after.content_version, 2);
+    assert_eq!(&owned[..4], &[0; 4]);
+    assert!(core
+        .draw_buffer_bytes(buffer, 1.0, 1.0, before.byte_length)
+        .is_none());
     assert_eq!(
-        &before.attributes[0].data.as_ref().unwrap().data[..4],
-        &[0; 4]
-    );
-    assert_eq!(
-        &after.attributes[0].data.as_ref().unwrap().data[..4],
+        &core
+            .draw_buffer_bytes(buffer, 1.0, 2.0, after.byte_length)
+            .unwrap()[..4],
         &[9, 8, 7, 6]
-    );
-    assert_eq!(
-        after.attributes[0]
-            .data
-            .as_ref()
-            .unwrap()
-            .metadata
-            .content_version,
-        2
     );
     core.delete_buffer(Some(buffer));
     assert!(matches!(
@@ -320,7 +322,9 @@ fn buffers_and_draws_share_storage_versions_and_owned_snapshots() {
         Reply::Null
     ));
     assert_eq!(core.get_error(), INVALID_OPERATION);
-    assert_eq!(before.attributes[0].data.as_ref().unwrap().data.len(), 24);
+    assert!(core
+        .draw_buffer_bytes(buffer, 1.0, 2.0, after.byte_length)
+        .is_none());
 }
 
 #[test]

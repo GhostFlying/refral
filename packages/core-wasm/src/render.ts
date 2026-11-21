@@ -45,6 +45,8 @@ interface ABI {
   rf_upload_commit(): void;
   rf_get_buffer_parameter(target: number, parameter: number): number;
   rf_inspect_buffer(context: number, slot: number, generation: number): number;
+  rf_draw_buffer_pointer(context: number, slot: number, generation: number,
+    storage: number, content: number, byteLength: number): number;
   rf_snapshot_pointer(): number;
   rf_snapshot_length(): number;
   rf_snapshot_usage(): number;
@@ -268,6 +270,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     'rf_upload_commit',
     'rf_get_buffer_parameter',
     'rf_inspect_buffer',
+    'rf_draw_buffer_pointer',
     'rf_snapshot_pointer',
     'rf_snapshot_length',
     'rf_snapshot_usage',
@@ -291,12 +294,12 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     required.some((name) => typeof exports[name] !== 'function')
   ) {
     throw new Error(
-      'Rust drawing module requires ABI6/resource8/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
+      'Rust drawing module requires ABI7/resource8/readback1/DOM upload2 exports. Rebuild with pnpm rust:build.',
     );
   }
   const abi = exports as unknown as ABI;
-  if (abi.rf_abi_version() !== 6)
-    throw new Error('Rust drawing ABI version mismatch; expected 6. Rebuild with pnpm rust:build.');
+  if (abi.rf_abi_version() !== 7)
+    throw new Error('Rust drawing ABI version mismatch; expected 7. Rebuild with pnpm rust:build.');
   if (abi.rf_resource_protocol_version() !== 8)
     throw new Error('Rust resource protocol mismatch. Rebuild with pnpm rust:build.');
   if (abi.rf_readback_protocol_version() !== 1)
@@ -544,8 +547,8 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     return { color, ...(colorKind === 3 ? { colorOpaque: true } : {}),
       depth, depthGeneration, ...(depthFormat ? { depthFormat } : {}), width, height, isDefault };
   }
-  // The wire repeats the payload, but a handle/storage/content version denotes immutable bytes.
-  // Keep only the last draw's streams so deletion and large changing workloads retain bounded data.
+  // Retain owned bytes only for the current/last draw. The reply carries
+  // versions, and Rust lends the data only until another GL operation.
   let previousBuffers = new Map<string, Uint8Array>();
   function drawBuffer(reader: Reader, current: Map<string, Uint8Array>) {
     const owner = reader.u32();
@@ -553,13 +556,20 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     const generation = reader.u32();
     const storage = reader.u64();
     const content = reader.u64();
-    const payload = reader.bytes();
-    if (owner !== contextId || !slot || !generation || (payload.length && (!storage || !content))) {
+    const length = reader.u32();
+    if (owner !== contextId || !slot || !generation || length > maxBufferBytes
+      || (length && (!storage || !content))) {
       throw new Error('Invalid Rust draw buffer version.');
     }
     const key = `${slot}:${generation}:${storage}:${content}`;
-    const bytes = current.get(key) ?? previousBuffers.get(key) ?? payload.slice();
-    if (bytes.length !== payload.length) throw new Error('Inconsistent Rust draw buffer length.');
+    let bytes = current.get(key) ?? previousBuffers.get(key);
+    if (bytes) {
+      if (bytes.length !== length) throw new Error('Inconsistent Rust draw buffer length.');
+    } else {
+      const pointer = abi.rf_draw_buffer_pointer(owner, slot, generation, storage, content, length);
+      if (!pointer) throw new Error('Rust draw references an unavailable buffer version.');
+      bytes = memory(pointer, length).slice();
+    }
     current.set(key, bytes);
     return { data: bytes, bufferVersion: key };
   }
@@ -567,7 +577,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     const reader = new Reader(bytes);
     const magic = reader.u32();
     const version = reader.u32();
-    if ((magic !== 0x36444652 || version !== 6) && (magic !== 0x37444652 || version !== 7))
+    if (magic !== 0x38444652 || version !== 8)
       throw new Error('Invalid Rust draw snapshot version.');
     const program = services.compiler.executable(reader.u32());
     reader.skip(12 + 8);
@@ -578,7 +588,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     state.depthClamp = (rasterFlags & 2) !== 0;
     state.polygonOffsetFactor = reader.f32();
     state.polygonOffsetUnits = reader.f32();
-    if (version >= 7) state.polygonOffsetClamp = reader.f32();
+    state.polygonOffsetClamp = reader.f32();
     const mode = reader.u32();
     if (!isDrawMode(mode)) throw new Error('Invalid Rust draw mode.');
     const vertexCount = reader.u32();

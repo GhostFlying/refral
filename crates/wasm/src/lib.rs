@@ -11,7 +11,7 @@ use refral_core::{BufferCore, BufferHandle, BufferSnapshot, INVALID_OPERATION, O
 mod render;
 mod resources;
 
-const ABI_VERSION: u32 = 6;
+const ABI_VERSION: u32 = 7;
 
 enum Upload {
     Data { target: u32, usage: u32 },
@@ -286,6 +286,31 @@ pub extern "C" fn rf_inspect_buffer(context_id: u32, slot: u32, generation: u32)
     })
 }
 
+// The adapter copies the view immediately, before another command can
+// change the version, drop its context or grow the Wasm memory.
+#[no_mangle]
+pub extern "C" fn rf_draw_buffer_pointer(
+    context_id: u32,
+    slot: u32,
+    generation: u32,
+    storage_generation: f64,
+    content_version: f64,
+    byte_length: usize,
+) -> usize {
+    with_state(0, |state| {
+        handle(context_id, slot, generation)
+            .and_then(|handle| {
+                state.core.draw_buffer_bytes(
+                    handle,
+                    storage_generation,
+                    content_version,
+                    byte_length,
+                )
+            })
+            .map_or(0, |bytes| bytes.as_ptr() as usize)
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn rf_snapshot_pointer() -> usize {
     with_state(0, |state| {
@@ -389,7 +414,7 @@ mod tests {
 
     #[test]
     fn initializes_and_rejects_invalid_limits() {
-        assert_eq!(rf_abi_version(), 6);
+        assert_eq!(rf_abi_version(), 7);
         assert_eq!(rf_init(0, 1.0), 0);
         assert_eq!(rf_init(1, f64::NAN), 0);
         assert_eq!(rf_init(1, -1.0), 0);
@@ -397,6 +422,23 @@ mod tests {
         assert_eq!(rf_init(1, 9_007_199_254_740_992.0), 0);
         assert_eq!(rf_init(1, u32::MAX as f64 + 1.0), 1);
         assert_eq!(rf_init(1, 0.0), 1);
+    }
+
+    #[test]
+    fn draw_buffer_resolver_checks_identity_version_and_length() {
+        let slot = bind_new();
+        let generation = rf_result_generation();
+        rf_buffer_data_size(ARRAY_BUFFER, 4.0, STATIC_DRAW);
+        assert_ne!(rf_draw_buffer_pointer(1, slot, generation, 1.0, 1.0, 4), 0);
+        assert_eq!(rf_draw_buffer_pointer(2, slot, generation, 1.0, 1.0, 4), 0);
+        assert_eq!(rf_draw_buffer_pointer(1, slot, generation, 1.0, 1.0, 3), 0);
+        assert_eq!(rf_draw_buffer_pointer(1, slot, generation, 1.5, 1.0, 4), 0);
+        assert_eq!(rf_buffer_sub_data_prepare(ARRAY_BUFFER, 1.0, 2.0), 1);
+        rf_upload_commit();
+        assert_eq!(rf_draw_buffer_pointer(1, slot, generation, 1.0, 1.0, 4), 0);
+        assert_ne!(rf_draw_buffer_pointer(1, slot, generation, 1.0, 2.0, 4), 0);
+        rf_delete_buffer(1, slot, generation);
+        assert_eq!(rf_draw_buffer_pointer(1, slot, generation, 1.0, 2.0, 4), 0);
     }
 
     #[test]

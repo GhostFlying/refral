@@ -10,6 +10,8 @@ import type {
 
 export type { TextureBinding, DrawOperation } from "@refral/core-api";
 
+const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+
 export interface HostStats {
   draws: number;
   passes: number;
@@ -749,6 +751,26 @@ export class BrowserHost implements SemanticHost {
       const cached = this.vertexCache.get(attribute.data)?.get(key);
       if (cached) return cached;
     }
+    const data = attribute.data;
+    const width = components * Float32Array.BYTES_PER_ELEMENT;
+    const end = offset + vertices * width;
+    const bytes = data && !gather && littleEndian && type === GL.FLOAT && !normalized && size === components
+      && (!attribute.stride || attribute.stride === width) && vertices > 0
+      && offset >= 0 && offset % Float32Array.BYTES_PER_ELEMENT === 0 && end <= data.byteLength
+      ? data.subarray(offset, end)
+      : this.packVertexData(attribute, vertices, components, gather);
+    const buffer = this.createBuffer(bytes, GPUBufferUsage.VERTEX, !data);
+    if (attribute.data && !gather) {
+      let cache = this.vertexCache.get(attribute.data);
+      if (!cache) { cache = new Map(); this.vertexCache.set(attribute.data, cache); }
+      cache.set(key, buffer);
+    }
+    return buffer;
+  }
+
+  private packVertexData(attribute: AttributeSnapshot, vertices: number, components: number,
+    gather: DrawOperation['indices']): Uint8Array {
+    const { type, normalized, size, offset } = attribute;
     const values = new Float32Array(Math.max(1, vertices) * components);
     const view = attribute.data ? new DataView(attribute.data.buffer, attribute.data.byteOffset,
       attribute.data.byteLength) : null;
@@ -785,14 +807,7 @@ export class BrowserHost implements SemanticHost {
           : attribute.constant[component] ?? (component === 3 ? 1 : 0);
       }
     }
-    const buffer = this.createBuffer(new Uint8Array(values.buffer), GPUBufferUsage.VERTEX,
-      !attribute.data);
-    if (attribute.data && !gather) {
-      let cache = this.vertexCache.get(attribute.data);
-      if (!cache) { cache = new Map(); this.vertexCache.set(attribute.data, cache); }
-      cache.set(key, buffer);
-    }
-    return buffer;
+    return new Uint8Array(values.buffer);
   }
 
   private sampler(parameters: TextureParameters): GPUSampler {

@@ -749,7 +749,7 @@ export class SemanticContext {
       if (!this.elementBuffer || !Number.isInteger(offset) || offset % elementIndexBytes(type)) {
         return this.error(GL.INVALID_OPERATION);
       }
-      indices = { data: this.elementBuffer.data, type, offset };
+      indices = { data: this.elementBuffer.data, bufferVersion: this.elementBuffer.executionVersion, type, offset };
     }
     if (!this.program?.linkStatus || !this.program.executable) return this.error(GL.INVALID_OPERATION);
     if (this.attributes.some(attribute => attribute.enabled && !attribute.buffer)) return this.error(GL.INVALID_OPERATION);
@@ -791,7 +791,9 @@ export class SemanticContext {
       attributes.push({ location: active.location, shaderType: active.type,
         size: attribute.size, type: attribute.type, normalized: attribute.normalized,
         stride: attribute.stride, offset: attribute.offset,
-        data: attribute.enabled ? attribute.buffer!.data : null, constant: [...this.constants[active.location]!] });
+        data: attribute.enabled ? attribute.buffer!.data : null,
+        bufferVersion: attribute.enabled ? attribute.buffer!.executionVersion : undefined,
+        constant: [...this.constants[active.location]!] });
     }
     const textures: TextureBinding[] = [];
     for (const sampler of this.program.executable.samplers) {

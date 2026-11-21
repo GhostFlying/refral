@@ -547,7 +547,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
   // The wire repeats the payload, but a handle/storage/content version denotes immutable bytes.
   // Keep only the last draw's streams so deletion and large changing workloads retain bounded data.
   let previousBuffers = new Map<string, Uint8Array>();
-  function drawBuffer(reader: Reader, current: Map<string, Uint8Array>): Uint8Array {
+  function drawBuffer(reader: Reader, current: Map<string, Uint8Array>) {
     const owner = reader.u32();
     const slot = reader.u32();
     const generation = reader.u32();
@@ -561,7 +561,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     const bytes = current.get(key) ?? previousBuffers.get(key) ?? payload.slice();
     if (bytes.length !== payload.length) throw new Error('Inconsistent Rust draw buffer length.');
     current.set(key, bytes);
-    return bytes;
+    return { data: bytes, bufferVersion: key };
   }
   function executeDraw(bytes: Uint8Array): void {
     const reader = new Reader(bytes);
@@ -597,11 +597,11 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       const stride = reader.u32();
       const offset = reader.u32();
       const constant = [reader.f32(), reader.f32(), reader.f32(), reader.f32()];
-      const data = reader.u32() ? drawBuffer(reader, currentBuffers) : null;
+      const buffer = reader.u32() ? drawBuffer(reader, currentBuffers) : { data: null };
       vertexAttributes.push({ location, shaderType, size, type, normalized: normalized === 1,
-        stride, offset, constant, data });
+        stride, offset, constant, ...buffer });
     }
-    const indices = reader.u32() ? { type: reader.u32(), offset: reader.u32(), data: drawBuffer(reader, currentBuffers) } : null;
+    const indices = reader.u32() ? { type: reader.u32(), offset: reader.u32(), ...drawBuffer(reader, currentBuffers) } : null;
     const vertexUniforms = reader.bytes();
     const fragmentUniforms = reader.bytes();
     const textureCount = reader.u32();

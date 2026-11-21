@@ -13,3 +13,5 @@ Run `pnpm check`, `pnpm rust:build`, `pnpm rust:test:wasm`, focused Chrome diffe
 ## Smoke results
 
 Packed FLOAT lowered steady render and flush CPU p50 from 3.22 to 0.88 ms on JS and 3.23 to 1.40 ms on Rust in the 15-warmup/45-sample paired Marching Cubes run. Workload, uploaded bytes and final pixels matched.
+
+The persistent cache smoke retained zero repeat geometry uploads in Shapes (from 599,228 bytes/frame on JS and 614,935 bytes/frame on Rust). Marching Cubes still uploaded three new attribute versions per frame. The paired draw workloads and pixels matched in both demos. The host bounds retention to 512 entries and 8 MiB per context and sends evictions through completion-aware retirement.

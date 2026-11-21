@@ -17,6 +17,7 @@ export class BufferObject extends LogicalObject {
   target: number | null = null;
   generation = 0;
   version = 0;
+  get executionVersion(): string { return `${this.id}:${this.generation}:${this.version}`; }
 }
 
 export interface TextureImage {

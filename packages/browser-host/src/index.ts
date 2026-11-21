@@ -11,6 +11,8 @@ import type {
 export type { TextureBinding, DrawOperation } from "@refral/core-api";
 
 const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+const geometryCacheBytes = 8 * 1024 * 1024;
+const geometryCacheEntries = 512;
 
 export interface HostStats {
   draws: number;
@@ -169,8 +171,9 @@ export class BrowserHost implements SemanticHost {
   private depthCache = new Map<string, GPUTexture>();
   private targetCache = new WeakMap<GPUTexture, Target>();
   private initialized = new WeakSet<GPUTexture>();
-  private vertexCache = new WeakMap<Uint8Array, Map<string, GPUBuffer>>();
-  private indexCache = new WeakMap<Uint8Array, Map<number, GPUBuffer>>();
+  private readonly geometryCache = new Map<string, GPUBuffer>();
+  private cachedGeometryBytes = 0;
+  private readonly transientBuffers = new Set<GPUBuffer>();
   private uniformGroups = new WeakMap<LinkedProgram, {
     group: GPUBindGroup; vertex: GPUBuffer; fragment: GPUBuffer; encoder: GPUCommandEncoder;
   }>();
@@ -316,6 +319,7 @@ export class BrowserHost implements SemanticHost {
       usage: usage | GPUBufferUsage.COPY_DST });
     this.writeBuffer(buffer, data);
     this.buffers.add(buffer);
+    this.transientBuffers.add(buffer);
     this.stats.allocatedBufferBytes += buffer.size;
     this.stats.peakAllocatedBufferBytes = Math.max(this.stats.peakAllocatedBufferBytes,
       this.stats.allocatedBufferBytes);
@@ -742,30 +746,48 @@ export class BrowserHost implements SemanticHost {
     return resources;
   }
 
+  private geometryBuffer(key: string | null, usage: GPUBufferUsageFlags,
+    prepare: () => Uint8Array): GPUBuffer {
+    const cached = key === null ? undefined : this.geometryCache.get(key);
+    if (cached && key !== null) {
+      this.geometryCache.delete(key);
+      this.geometryCache.set(key, cached);
+      return cached;
+    }
+    const buffer = this.createBuffer(prepare(), usage);
+    if (key === null || buffer.size > geometryCacheBytes) return buffer;
+
+    while (this.cachedGeometryBytes + buffer.size > geometryCacheBytes
+      || this.geometryCache.size >= geometryCacheEntries) {
+      const [oldKey, oldBuffer] = this.geometryCache.entries().next().value!;
+      this.geometryCache.delete(oldKey);
+      this.cachedGeometryBytes -= oldBuffer.size;
+      // The current encoder can still reference this buffer.
+      this.transientBuffers.add(oldBuffer);
+    }
+    this.geometryCache.set(key, buffer);
+    this.cachedGeometryBytes += buffer.size;
+    this.transientBuffers.delete(buffer);
+    return buffer;
+  }
+
   private vertexBuffer(attribute: AttributeSnapshot, vertices: number,
     gather: DrawOperation['indices'] = null): GPUBuffer {
     const components = componentCount(attribute.shaderType);
     const { type, normalized, size, offset } = attribute;
-    const key = `${type}:${normalized}:${size}:${attribute.stride}:${offset}:${components}:${vertices}`;
-    if (attribute.data && !gather) {
-      const cached = this.vertexCache.get(attribute.data)?.get(key);
-      if (cached) return cached;
-    }
-    const data = attribute.data;
-    const width = components * Float32Array.BYTES_PER_ELEMENT;
-    const end = offset + vertices * width;
-    const bytes = data && !gather && littleEndian && type === GL.FLOAT && !normalized && size === components
-      && (!attribute.stride || attribute.stride === width) && vertices > 0
-      && offset >= 0 && offset % Float32Array.BYTES_PER_ELEMENT === 0 && end <= data.byteLength
-      ? data.subarray(offset, end)
-      : this.packVertexData(attribute, vertices, components, gather);
-    const buffer = this.createBuffer(bytes, GPUBufferUsage.VERTEX, !data);
-    if (attribute.data && !gather) {
-      let cache = this.vertexCache.get(attribute.data);
-      if (!cache) { cache = new Map(); this.vertexCache.set(attribute.data, cache); }
-      cache.set(key, buffer);
-    }
-    return buffer;
+    const key = attribute.bufferVersion && !gather
+      ? `v/${attribute.bufferVersion}/${type}:${normalized}:${size}:${attribute.stride}:${offset}:${components}:${vertices}`
+      : null;
+    return this.geometryBuffer(key, GPUBufferUsage.VERTEX, () => {
+      const data = attribute.data;
+      const width = components * Float32Array.BYTES_PER_ELEMENT;
+      const end = offset + vertices * width;
+      return data && !gather && littleEndian && type === GL.FLOAT && !normalized && size === components
+        && (!attribute.stride || attribute.stride === width) && vertices > 0
+        && offset >= 0 && offset % Float32Array.BYTES_PER_ELEMENT === 0 && end <= data.byteLength
+        ? data.subarray(offset, end)
+        : this.packVertexData(attribute, vertices, components, gather);
+    });
   }
 
   private packVertexData(attribute: AttributeSnapshot, vertices: number, components: number,
@@ -966,18 +988,9 @@ export class BrowserHost implements SemanticHost {
       }
       indexBuffer = this.createBuffer(new Uint8Array(widened.buffer), GPUBufferUsage.INDEX, true);
     } else if (indices && !points && !needsIndexExpansion) {
-      const cachedIndices = this.indexCache.get(indices.data);
-      indexBuffer = cachedIndices?.get(indices.type) ?? null;
-      if (!indexBuffer) {
-        const bytes = indices.type === GL.UNSIGNED_BYTE ? new Uint8Array(new Uint16Array(indices.data).buffer) : indices.data;
-        indexBuffer = this.createBuffer(bytes, GPUBufferUsage.INDEX);
-        let cache = cachedIndices;
-        if (!cache) {
-          cache = new Map();
-          this.indexCache.set(indices.data, cache);
-        }
-        cache.set(indices.type, indexBuffer);
-      }
+      const key = indices.bufferVersion ? `i/${indices.bufferVersion}/${indices.type}` : null;
+      indexBuffer = this.geometryBuffer(key, GPUBufferUsage.INDEX, () =>
+        indices.type === GL.UNSIGNED_BYTE ? new Uint8Array(new Uint16Array(indices.data).buffer) : indices.data);
     }
     const pass = this.beginPass(target);
     pass.setPipeline(pipeline);
@@ -1191,20 +1204,19 @@ export class BrowserHost implements SemanticHost {
     if (this.disposed) return;
     this.submitEncoded();
     const fence = this.completion.observe();
-    if (!this.buffers.size && !this.retiredTextures.size) return;
-    const completed = [...this.buffers];
-    this.buffers.clear();
+    if (!this.transientBuffers.size && !this.retiredTextures.size) return;
+    const completed = [...this.transientBuffers];
+    this.transientBuffers.clear();
     this.uniformGroups = new WeakMap();
-    this.vertexCache = new WeakMap();
-    this.indexCache = new WeakMap();
     this.driverGroups = new WeakMap();
     const retired = [...this.retiredTextures];
     this.retiredTextures.clear();
     void fence.then(() => {
       for (const buffer of completed) {
-        this.stats.allocatedBufferBytes -= buffer.size;
-        this.buffers.delete(buffer);
-        buffer.destroy();
+        if (this.buffers.delete(buffer)) {
+          this.stats.allocatedBufferBytes -= buffer.size;
+          buffer.destroy();
+        }
       }
       for (const texture of retired) {
         this.stats.allocatedTextureBytes -= textureAllocationBytes(texture);
@@ -1318,6 +1330,9 @@ export class BrowserHost implements SemanticHost {
     this.device.removeEventListener("uncapturederror", this.handleError);
     if (this.ownsDevice) this.device.destroy();
     this.buffers.clear();
+    this.transientBuffers.clear();
+    this.geometryCache.clear();
+    this.cachedGeometryBytes = 0;
     this.textures.clear();
     this.sampledImageCache.clear();
     this.stats.allocatedBufferBytes = 0;

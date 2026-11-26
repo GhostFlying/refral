@@ -1,4 +1,4 @@
-import type { VertexArrayHandle } from '@refral/core-api';
+import type { DrawingSurface, VertexArrayHandle } from '@refral/core-api';
 import { handle, lists, littleEndian, scalars } from './direct.js';
 
 const capacity = 128 * 1024;
@@ -19,7 +19,7 @@ export interface RustCommandBatchStats {
 
 export function createCommandBatch(exports: WebAssembly.Exports,
   memory: (pointer: number, length: number) => Uint8Array,
-  apply: (kind: number, bytes: Uint8Array) => void) {
+  apply: (kind: number, bytes: Uint8Array) => void, surface: DrawingSurface) {
   const version = exports.rf_batch_protocol_version;
   const open = exports.rf_batch_input_pointer;
   const run = exports.rf_batch_run;
@@ -32,14 +32,21 @@ export function createCommandBatch(exports: WebAssembly.Exports,
   let bytes = memory(pointer, capacity);
   let view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let cursor = 0;
-  let width = 0;
-  let height = 0;
+  let width = surface.width;
+  let height = surface.height;
+  const pollResize = surface.bindResizeBarrier?.(replay);
   const acknowledgments: Acknowledge[] = [];
   const stats: RustCommandBatchStats = {
     commands: 0, batches: 0, inputBytes: 0, outputBytes: 0, bufferCopies: 0, bufferBytes: 0,
   };
 
   function drain(): void {
+    if (!cursor) return;
+    pollResize?.();
+    replay();
+  }
+
+  function replay(): void {
     if (!cursor) return;
     const length = (run as (length: number, width: number, height: number) => number)(cursor, width, height) >>> 0;
     stats.batches++;
@@ -112,8 +119,9 @@ export function createCommandBatch(exports: WebAssembly.Exports,
       acknowledgments.length = 0;
     },
     surface(nextWidth: number, nextHeight: number) {
+      pollResize?.();
       if (width !== nextWidth || height !== nextHeight) {
-        if (width) drain();
+        replay();
         width = nextWidth;
         height = nextHeight;
       }

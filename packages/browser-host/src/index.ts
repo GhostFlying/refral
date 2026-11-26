@@ -222,6 +222,8 @@ export class BrowserHost implements SemanticHost {
   private presentationConfigured = false;
   private lastPresentedTexture: GPUTexture | null = null;
   private lastPresentationTime: DocumentTimeline['currentTime'] = null;
+  private replayingBeforeResize = false;
+  private beforeCanvasResize?: () => void;
   private readonly sizeObserver: MutationObserver | null;
   private readonly offscreenDiscard: OffscreenDiscard | null;
   private presentationPipeline: GPURenderPipeline | null = null;
@@ -275,6 +277,10 @@ export class BrowserHost implements SemanticHost {
     if ('ownerDocument' in canvas) {
       this.sizeObserver = new MutationObserver(records => this.observeCanvasSize(canvas, records));
       this.sizeObserver.observe(canvas, { attributes: true, attributeFilter: ['width', 'height'], attributeOldValue: true });
+      this.surface.bindResizeBarrier = replay => {
+        this.beforeCanvasResize = replay;
+        return () => this.observeCanvasSize(canvas, this.sizeObserver!.takeRecords());
+      };
     }
     this.configurePresentation();
     device.addEventListener("uncapturederror", this.handleError);
@@ -563,7 +569,14 @@ export class BrowserHost implements SemanticHost {
   }
 
   private observeCanvasSize(canvas: HTMLCanvasElement, records: MutationRecord[]): void {
-    if (!records.length || !this.defaultTarget || this.disposed) return;
+    if (!records.length || this.disposed) return;
+    if (this.beforeCanvasResize) {
+      // The assignment can replace the public texture in this frame. Earlier queued draws
+      // still use the canonical attachments that were current before the assignment.
+      this.replayingBeforeResize = this.lastPresentationTime === canvas.ownerDocument.timeline.currentTime;
+      try { this.beforeCanvasResize(); } finally { this.replayingBeforeResize = false; }
+    }
+    if (!this.defaultTarget) return;
     let parser: HTMLCanvasElement | undefined;
     const resized = records.some(({ attributeName, oldValue }) => {
       const dimension = attributeName === 'width' ? 'width' : 'height';
@@ -597,7 +610,7 @@ export class BrowserHost implements SemanticHost {
           this.defaultTarget.height === snapshot.height && this.offscreenDiscard.discarded()) {
         this.resetDefaultDrawingBuffer();
       }
-      if (this.lastPresentedTexture && this.defaultTarget && this.canvas.width === this.surface.width &&
+      if (!this.replayingBeforeResize && this.lastPresentedTexture && this.defaultTarget && this.canvas.width === this.surface.width &&
           this.canvas.height === this.surface.height && 'isConnected' in this.canvas &&
           this.canvas.isConnected && this.canvas.checkVisibility({ visibilityProperty: true })) {
         if (this.context.getCurrentTexture() !== this.lastPresentedTexture) {
@@ -1375,6 +1388,7 @@ export class BrowserHost implements SemanticHost {
     this.flush();
     this.disposed = true;
     this.sizeObserver?.disconnect();
+    this.beforeCanvasResize = undefined;
     abandonedHosts.unregister(this);
     await this.device.queue.onSubmittedWorkDone().catch(() => {});
     this.offscreenDiscard?.dispose();

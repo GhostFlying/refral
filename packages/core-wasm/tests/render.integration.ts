@@ -172,6 +172,20 @@ function setup(
     },
   };
 }
+it('selects the available transport per context and drains on a synchronous query', () => {
+  const { core } = setup();
+  const hasBatch = WebAssembly.Module.exports(module).some(entry => entry.name === 'rf_batch_run');
+  const stats = () => core.invoke('commandBatchStatsForTesting', []);
+  try {
+    core.invoke('viewport', [1, 2, 3, 4]);
+    if (hasBatch) expect(stats()).toMatchObject({ commands: 1, batches: 0 });
+    else expect(stats()).toBeNull();
+    expect(core.invoke('getParameter', [GL.VIEWPORT])).toEqual(new Int32Array([1, 2, 3, 4]));
+    if (hasBatch) expect(stats()).toMatchObject({ batches: 1 });
+    expect(core.getError()).toBe(GL.NO_ERROR);
+  } finally { core.dispose(); }
+});
+
 it('isolates packed Rust states during alternating access, compiler reentry, exceptions and disposal', () => {
   const instances = vi.spyOn(WebAssembly, 'Instance');
   try {
@@ -265,7 +279,7 @@ describe('actual Rust drawing Wasm', () => {
     const { core, draws } = setup();
     try {
       scene(core);
-      checkPrimitiveDraws(core, () => draws);
+      checkPrimitiveDraws(core, () => { core.drainPendingCommands?.(); return draws; });
     } finally {
       core.dispose();
     }
@@ -290,6 +304,7 @@ describe('actual Rust drawing Wasm', () => {
         core.bindBuffer(GL.ARRAY_BUFFER, buffer);
         core.invoke('vertexAttribPointer', [0, 2, GL.FLOAT, false, 0, 0]);
         core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+        core.drainPendingCommands?.();
         return draws.at(-1)!.attributes[0].data!;
       }
 
@@ -321,6 +336,7 @@ describe('actual Rust drawing Wasm', () => {
     try {
       const { buffer: first } = scene(core);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       const original = draws[0].attributes[0].data;
       for (let i = 0; i < 512; i++) {
         core.bindBuffer(GL.ARRAY_BUFFER, core.createBuffer()!);
@@ -331,6 +347,7 @@ describe('actual Rust drawing Wasm', () => {
       core.bindBuffer(GL.ARRAY_BUFFER, first);
       core.invoke('vertexAttribPointer', [0, 2, GL.FLOAT, false, 0, 0]);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       const latest = draws.at(-1)!.attributes[0].data;
       expect(draws).toHaveLength(514);
       expect(latest).toEqual(original);
@@ -368,6 +385,7 @@ describe('actual Rust drawing Wasm', () => {
       core.bufferSubData(GL.ARRAY_BUFFER, 0, new Uint8Array([9, 8]));
       core.invoke('uniform4f', [location, 0, 1, 0, 1]);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       expect(state.draws).toHaveLength(2);
       expect(Array.from(state.draws[0].attributes[0].data!.slice(0, 2))).toEqual([0, 0]);
       expect(Array.from(state.draws[1].attributes[0].data!.slice(0, 2))).toEqual([9, 8]);
@@ -380,6 +398,7 @@ describe('actual Rust drawing Wasm', () => {
       core.invoke('shaderSource', [fragment, 'modified']);
       core.invoke('compileShader', [fragment]);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       expect(state.draws).toHaveLength(3);
       expect(state.draws[2].attributes[0].data).toBe(state.draws[1].attributes[0].data);
       expect(state.draws[1].attributes[0].data).not.toBe(state.draws[0].attributes[0].data);
@@ -444,12 +463,14 @@ describe('actual Rust drawing Wasm', () => {
       core.invoke('viewport', [1, 2, 3, 4]);
       core.invoke('clearColor', [0.1, 0.2, 0.3, 1]);
       core.invoke('clear', [GL.COLOR_BUFFER_BIT]);
+      core.drainPendingCommands?.();
       expect(host.clear).toHaveBeenCalledTimes(1);
       expect(Array.from(core.invoke('getParameter', [GL.VIEWPORT]) as Int32Array)).toEqual([1, 2, 3, 4]);
       const indices = core.createBuffer()!;
       core.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, indices);
       core.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint8Array([0, 1, 2]), GL.STATIC_DRAW);
       core.invoke('drawElements', [GL.TRIANGLES, 3, GL.UNSIGNED_BYTE, 0]);
+      core.drainPendingCommands?.();
       expect(draws).toHaveLength(1);
       expect(Array.from(draws[0].indices!.data)).toEqual([0, 1, 2]);
       expect(core.invoke('getShaderPrecisionFormat', [GL.VERTEX_SHADER, GL.HIGH_FLOAT])).toEqual({
@@ -546,6 +567,7 @@ describe('typed uniform and raster draw snapshots', () => {
         size: 1,
       });
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       const bytes = state.draws[0].vertexUniforms;
       const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
       expect(view.getInt32(8, true)).toBe(16777217);
@@ -614,6 +636,7 @@ describe('typed uniform and raster draw snapshots', () => {
       core.invoke('blendEquationSeparate', [GL.FUNC_ADD, GL.FUNC_REVERSE_SUBTRACT]);
       core.invoke('frontFace', [GL.CW]);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       const raster = state.draws[0].state;
       expect(raster).toMatchObject({
         scissor: [-1, 2, 8, 9],
@@ -640,6 +663,7 @@ describe('typed uniform and raster draw snapshots', () => {
       core.invoke('blendFuncSeparate', [GL.ONE, GL.ZERO, GL.ONE, GL.SRC_ALPHA_SATURATE]);
       expect(core.getError()).toBe(GL.INVALID_ENUM);
       core.invoke('clear', [GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT]);
+      core.drainPendingCommands?.();
       expect(state.host.clear).toHaveBeenCalledWith(
         expect.anything(),
         raster,
@@ -741,22 +765,26 @@ describe('owned texture resource protocol', () => {
       const sampler = core.invoke('getUniformLocation', [program, 'u_texture']);
       core.invoke('uniform1i', [sampler, 1]);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       const original = state.draws[0].textures[0].storage!;
       expect(Array.from(original.data!)).toEqual([0, 0, 255, 255]);
       const source = new Uint8Array([0, 255, 0, 255]);
       core.invoke('texSubImage2D', [GL.TEXTURE_2D, 0, 0, 0, 1, 1, GL.RGBA, GL.UNSIGNED_BYTE, upload(source)]);
       source.fill(0);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       const updated = state.draws[1].textures[0].storage!;
       expect(Array.from(updated.update!.data)).toEqual([0, 255, 0, 255]);
       expect(updated.parent).toBe(original);
       expect(Array.from(original.data!)).toEqual([0, 0, 255, 255]);
       define(core, 1, 1, GL.RGBA, upload(new Uint8Array([1, 2, 3, 255])));
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       const reallocated = state.draws[2].textures[0].storage!;
       expect(reallocated.reference!.storageGeneration).toBe(2);
       core.invoke('deleteTexture', [second]);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       expect(state.draws[3].textures[0].storage).toBeNull();
       expect(Array.from(reallocated.data!)).toEqual([1, 2, 3, 255]);
       core.invoke('activeTexture', [GL.TEXTURE0]);
@@ -774,6 +802,7 @@ describe('owned texture resource protocol', () => {
       texture(core);
       define(core, 3, 2, GL.LUMINANCE, null);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       expect(state.draws[0].textures[0].storage).toBeNull();
       for (const [parameter, value] of [
         [GL.TEXTURE_MIN_FILTER, GL.LINEAR],
@@ -782,6 +811,7 @@ describe('owned texture resource protocol', () => {
       ])
         core.invoke('texParameteri', [GL.TEXTURE_2D, parameter, value]);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       const storage = state.draws[1].textures[0].storage!;
       expect(storage.width).toBe(3);
       expect(storage.height).toBe(2);
@@ -805,6 +835,7 @@ describe('owned texture resource protocol', () => {
       expect(core.getError()).toBe(GL.NO_ERROR);
       expect(state.operations).toHaveLength(count);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       expect(state.draws[2].textures[0].storage).toBe(storage);
     } finally {
       core.dispose();
@@ -821,12 +852,14 @@ describe('owned texture resource protocol', () => {
       define(core, 512, 512, GL.RGBA, upload(source));
       source.fill(0);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       const original = state.draws[0].textures[0].storage!;
       expect(original.data).toHaveLength(512 * 512 * 4);
       expect(original.data![0]).toBe(0x55);
       expect(original.data!.at(-1)).toBe(0x55);
       define(core, 512, 512, GL.RGBA, upload(new Uint8Array(512 * 512 * 4).fill(0x77)));
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       expect(state.draws[1].textures[0].storage!.data![0]).toBe(0x77);
       expect(original.data!.at(-1)).toBe(0x55);
     } finally {
@@ -901,8 +934,10 @@ describe('framebuffer targets and ordered GPU writes', () => {
       expect(core.invoke('getParameter', [GL.DEPTH_BITS])).toBe(24);
       core.invoke('clearColor', [1, 0, 0, 1]);
       core.invoke('clear', [GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT]);
+      core.drainPendingCommands?.();
       expect(state.events.slice(-2)).toEqual(['clear', 'write-texture']);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       expect(state.events.slice(-2)).toEqual(['draw', 'write-texture']);
       const drawn = state.draws[0].target;
       expect(drawn).toMatchObject({ width: 2, height: 2, isDefault: false, depthGeneration: 1 });
@@ -917,6 +952,7 @@ describe('framebuffer targets and ordered GPU writes', () => {
       });
       core.invoke('linkProgram', [program]);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       expect(state.draws[1].textures[0].storage).toBe(drawn.color);
       expect(state.operations.filter((op) => op.kind === 'define-texture')).toHaveLength(1);
       core.invoke('bindFramebuffer', [GL.FRAMEBUFFER, target.framebuffer]);
@@ -943,6 +979,7 @@ describe('framebuffer targets and ordered GPU writes', () => {
       expect(state.draws).toHaveLength(0);
       core.invoke('bindTexture', [GL.TEXTURE_2D, null]);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       expect(state.draws).toHaveLength(1);
       const previous = core.captureTarget();
       core.invoke('bindTexture', [GL.TEXTURE_2D, target.texture]);
@@ -1013,6 +1050,7 @@ describe('framebuffer targets and ordered GPU writes', () => {
       ).toEqual(first.texture);
       expect(core.invoke('checkFramebufferStatus', [GL.FRAMEBUFFER])).toBe(GL.FRAMEBUFFER_COMPLETE);
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.drainPendingCommands?.();
       const snapshot = state.draws[0].target;
       core.invoke('deleteFramebuffer', [second]);
       expect(state.host.retireStorage).toHaveBeenCalledWith(snapshot.color);
@@ -1491,6 +1529,7 @@ describe('CubeMap resource8 protocol', () => {
   }
   function draw(state: ReturnType<typeof setup>, count = 3) {
     state.core.invoke('drawArrays', [GL.TRIANGLES, 0, count]);
+    state.core.drainPendingCommands?.();
     return state.draws.at(-1)?.textures[0];
   }
 

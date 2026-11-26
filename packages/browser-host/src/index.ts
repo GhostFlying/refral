@@ -95,6 +95,31 @@ function prepareVertexLayout(previous: PreparedVertexLayout | undefined, attribu
   return { points, inputs, buffers, key: inputs.join(',') };
 }
 
+interface GeometryBuffers {
+  vertexBuffers: GPUBuffer[];
+  indexBuffer: GPUBuffer | null;
+}
+
+type VertexStream = Pick<AttributeSnapshot,
+  'bufferVersion' | 'shaderType' | 'size' | 'type' | 'normalized' | 'stride' | 'offset'>;
+
+interface ResidentGeometry extends GeometryBuffers {
+  indexVersion: string;
+  indexType: number;
+  vertexCount: number;
+  streams: VertexStream[];
+}
+
+function sameVertexStreams(streams: VertexStream[], attributes: AttributeSnapshot[]): boolean {
+  if (streams.length !== attributes.length) return false;
+  for (let i = 0; i < streams.length; i++) {
+    const a = streams[i]!, b = attributes[i]!;
+    if (a.bufferVersion !== b.bufferVersion || a.shaderType !== b.shaderType || a.size !== b.size ||
+        a.type !== b.type || a.normalized !== b.normalized || a.stride !== b.stride || a.offset !== b.offset) return false;
+  }
+  return true;
+}
+
 interface PassBindings {
   pipeline: GPURenderPipeline | null;
   textureGroup: GPUBindGroup | null;
@@ -225,6 +250,8 @@ export class BrowserHost implements SemanticHost {
   private targetCache = new WeakMap<GPUTexture, Target>();
   private initialized = new WeakSet<GPUTexture>();
   private readonly transientBuffers = new Set<GPUBuffer>();
+  private previousIndexVersion: string | undefined;
+  private residentGeometry: ResidentGeometry | null = null;
   private readonly geometryCache = new GeometryCache(geometryCacheBytes, geometryCacheEntries,
     buffer => { this.transientBuffers.delete(buffer); },
     // Evicted buffers can still be referenced by the active encoder.
@@ -836,6 +863,46 @@ export class BrowserHost implements SemanticHost {
     });
   }
 
+  private drawGeometry(operation: DrawOperation, points: boolean, wideIndices: boolean,
+    needsIndexExpansion: boolean): GeometryBuffers {
+    const { indices, attributes, vertexCount } = operation;
+    const indexVersion = points || wideIndices || needsIndexExpansion ? undefined : indices?.bufferVersion;
+    const previous = this.residentGeometry;
+    if (previous && previous.indexVersion === indexVersion && previous.indexType === indices!.type &&
+        previous.vertexCount === vertexCount && sameVertexStreams(previous.streams, attributes)) return previous;
+
+    // Only adjacent draws can reuse a set. Drop it before a miss can evict any of its buffers.
+    this.residentGeometry = null;
+    const repeatedIndices = !!indexVersion && indexVersion === this.previousIndexVersion;
+    this.previousIndexVersion = indexVersion;
+    this.geometryCache.beginDraw();
+    const vertexBuffers = operation.attributes.map(attribute =>
+      this.vertexBuffer(attribute, points && indices ? operation.count : operation.vertexCount, points ? indices : null));
+    let indexBuffer: GPUBuffer | null = null;
+    if (indices && wideIndices) {
+      const view = new DataView(indices.data.buffer, indices.data.byteOffset, indices.data.byteLength);
+      const widened = new Uint32Array(operation.count);
+      for (let index = 0; index < widened.length; index++) {
+        widened[index] = view.getUint16(indices.offset + index * 2, true);
+      }
+      indexBuffer = this.createBuffer(new Uint8Array(widened.buffer), GPUBufferUsage.INDEX, true);
+    } else if (indices && !points && !needsIndexExpansion) {
+      const key = indices.bufferVersion ? `i/${indices.bufferVersion}/${indices.type}` : null;
+      indexBuffer = this.geometryBuffer(key, GPUBufferUsage.INDEX, () =>
+        indices.type === GL.UNSIGNED_BYTE ? new Uint8Array(new Uint16Array(indices.data).buffer) : indices.data);
+    }
+    const resident = this.geometryCache.endDraw();
+    // Wait for repeated geometry before retaining metadata. The streams describe packed
+    // buffers by their immutable versions, without keeping the CPU upload bytes alive.
+    if (repeatedIndices && resident && attributes.every(a => !!a.bufferVersion)) {
+      this.residentGeometry = { vertexBuffers, indexBuffer, indexVersion, indexType: indices!.type, vertexCount,
+        streams: attributes.map(({ bufferVersion, shaderType, size, type, normalized, stride, offset }) =>
+          ({ bufferVersion, shaderType, size, type, normalized, stride, offset })) };
+      return this.residentGeometry;
+    }
+    return { vertexBuffers, indexBuffer };
+  }
+
   private packVertexData(attribute: AttributeSnapshot, vertices: number, components: number,
     gather: DrawOperation['indices']): Uint8Array {
     const { type, normalized, size, offset } = attribute;
@@ -978,9 +1045,7 @@ export class BrowserHost implements SemanticHost {
       resources.pipelines.set(key, pipeline);
       this.stats.pipelines++;
     }
-    this.geometryCache.beginDraw();
-    const vertexBuffers = operation.attributes.map(attribute =>
-      this.vertexBuffer(attribute, points && indices ? operation.count : operation.vertexCount, points ? indices : null));
+    const { vertexBuffers, indexBuffer } = this.drawGeometry(operation, points, wideIndices, needsIndexExpansion);
     const uniforms = this.uniforms.stage(resources.groups[0], operation.vertexUniforms, operation.fragmentUniforms);
     const textureEntries: GPUBindGroupEntry[] = [];
     for (let i = 0; i < resources.sampledElements.length; i++) {
@@ -1022,20 +1087,6 @@ export class BrowserHost implements SemanticHost {
       driverCache.set(driverKey, driverGroup);
       this.stats.bindGroups++;
     }
-    let indexBuffer: GPUBuffer | null = null;
-    if (indices && wideIndices) {
-      const view = new DataView(indices.data.buffer, indices.data.byteOffset, indices.data.byteLength);
-      const widened = new Uint32Array(operation.count);
-      for (let index = 0; index < widened.length; index++) {
-        widened[index] = view.getUint16(indices.offset + index * 2, true);
-      }
-      indexBuffer = this.createBuffer(new Uint8Array(widened.buffer), GPUBufferUsage.INDEX, true);
-    } else if (indices && !points && !needsIndexExpansion) {
-      const key = indices.bufferVersion ? `i/${indices.bufferVersion}/${indices.type}` : null;
-      indexBuffer = this.geometryBuffer(key, GPUBufferUsage.INDEX, () =>
-        indices.type === GL.UNSIGNED_BYTE ? new Uint8Array(new Uint16Array(indices.data).buffer) : indices.data);
-    }
-    this.geometryCache.endDraw();
     const pass = this.beginPass(target);
     const bindings = this.passBindings;
     if (bindings.pipeline !== pipeline) {
@@ -1426,6 +1477,8 @@ export class BrowserHost implements SemanticHost {
     if (this.ownsDevice) this.device.destroy();
     this.buffers.clear();
     this.transientBuffers.clear();
+    this.residentGeometry = null;
+    this.previousIndexVersion = undefined;
     this.geometryCache.clear();
     this.uniforms.clear();
     this.textures.clear();

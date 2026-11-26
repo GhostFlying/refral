@@ -43,3 +43,47 @@ for (const core of ['js', 'rust'] as const) {
     expect(result.third).toEqual(result.first);
   });
 }
+
+for (const core of ['native', 'js', 'rust'] as const) {
+  test(`consecutive indexed draws use the active byte ranges and versions on ${core}`, async ({ page }) => {
+    await page.goto('/tests/fixtures/runner.html');
+    const pixels = await page.evaluate(async core => {
+      const url = '/tests/fixtures/rtt-cases.ts';
+      const { prepareRttContext, rttProgram } =
+        await import(/* @vite-ignore */ url) as typeof import('../fixtures/rtt-cases');
+      const { gl, dispose } = await prepareRttContext(core, 4, 4);
+      try {
+        const program = rttProgram(gl);
+        gl.uniform4f(gl.getUniformLocation(program, 'u_color'), 1, 0, 0, 1);
+        const position = gl.getAttribLocation(program, 'a_position');
+        const triangle = [-1, -1, 3, -1, -1, 3];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([...triangle, 0, 0, 0, 0, 0, 0]), gl.STATIC_DRAW);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint8Array([0, 1, 2, 2, 2, 2]), gl.STATIC_DRAW);
+        const samples: number[] = [];
+        function sample(indexOffset = 0) {
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.drawElements(gl.TRIANGLES, 3, gl.UNSIGNED_BYTE, indexOffset);
+          const pixel = new Uint8Array(4);
+          gl.readPixels(1, 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+          samples.push(pixel[0]);
+        }
+        sample(); sample(); sample();
+        sample(3);
+        gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 24);
+        sample();
+        gl.bufferSubData(gl.ARRAY_BUFFER, 24, new Float32Array(triangle));
+        sample();
+        gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, new Uint8Array([2, 2, 2]));
+        sample();
+        gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, new Uint8Array([0, 1, 2]));
+        sample(); sample(); sample();
+        gl.disableVertexAttribArray(position);
+        gl.vertexAttrib2f(position, 0, 0);
+        sample();
+        return { samples, error: gl.getError() };
+      } finally { await dispose(); }
+    }, core);
+    expect(pixels).toEqual({ samples: [255, 255, 255, 0, 0, 255, 0, 255, 255, 255, 0], error: 0 });
+  });
+}

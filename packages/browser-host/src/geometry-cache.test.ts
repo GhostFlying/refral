@@ -12,21 +12,21 @@ it('keeps the current draw streams when a new stream requires eviction', () => {
   cache.use('position', position);
   cache.use('normal', normal);
   cache.use('old', old);
-  cache.endDraw();
+  expect(cache.endDraw()).toBe(true);
 
   cache.beginDraw();
   expect(cache.get('position')).toBe(position);
   cache.use('color', color);
   expect(cache.get('color')).toBe(color);
   expect(cache.get('normal')).toBe(normal);
-  cache.endDraw();
+  expect(cache.endDraw()).toBe(true);
 
   expect(retire.mock.calls).toEqual([[old]]);
   expect(retain.mock.calls).toEqual([[position], [normal], [old], [color]]);
   cache.beginDraw();
   for (const [key, buffer] of [['position', position], ['normal', normal], ['color', color]] as const)
     expect(cache.get(key)).toBe(buffer);
-  cache.endDraw();
+  expect(cache.endDraw()).toBe(true);
 });
 
 it('skips new admission for a draw exceeding either budget', () => {
@@ -36,12 +36,12 @@ it('skips new admission for a draw exceeding either budget', () => {
   const small = stream(4);
   cache.beginDraw();
   cache.use('small', small);
-  cache.endDraw();
+  expect(cache.endDraw()).toBe(true);
 
   for (const lengths of [[8, 12], [4, 4, 4]]) {
     cache.beginDraw();
     lengths.forEach((length, index) => cache.use(String(index), stream(length)));
-    cache.endDraw();
+    expect(cache.endDraw()).toBe(false);
   }
   cache.beginDraw();
   expect(cache.get('small')).toBe(small);

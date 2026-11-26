@@ -10,9 +10,11 @@ type Result = Awaited<ReturnType<typeof runHeavyScene>>;
 type Backend = 'native' | 'js' | 'rust';
 interface Run { round: number; scene: HeavyScene; backend: Backend; result: Result; path: string }
 
-const scenes: readonly HeavyScene[] = ['shapes-four', 'triangle-cloud', 'sobel-1080p', 'sobel-540p'];
+const defaultScenes: readonly HeavyScene[] = ['shapes-four', 'triangle-cloud', 'sobel-1080p', 'sobel-540p'];
+const largeScenes: readonly HeavyScene[] = ['suzanne-1000', 'suzanne-3000', 'interactive-cubes'];
+const scenes = [...defaultScenes, ...largeScenes];
 const order = [['native', 'js', 'rust'], ['js', 'rust', 'native'], ['rust', 'native', 'js']] as const;
-const requestedScenes = process.env.REFRAL_HEAVY_SCENES?.split(',') ?? scenes;
+const requestedScenes = process.env.REFRAL_HEAVY_SCENES?.split(',') ?? defaultScenes;
 const activeScenes = scenes.filter(scene => requestedScenes.includes(scene));
 if (activeScenes.length !== requestedScenes.length) throw new Error('Invalid REFRAL_HEAVY_SCENES.');
 
@@ -53,8 +55,9 @@ function digest(data: Uint8Array) { return createHash('sha256').update(data).dig
 
 test.beforeAll(async ({ browser }) => {
   await mkdir(output, { recursive: true });
-  const files = ['benchmarks/three-heavy.ts', 'tests/performance/three-heavy.spec.ts', 'pnpm-lock.yaml', 'artifacts/compiler/compiler.wasm',
+  const files = ['benchmarks/three-heavy.ts', 'benchmarks/three-large.ts', 'tests/performance/three-heavy.spec.ts', 'pnpm-lock.yaml', 'artifacts/compiler/compiler.wasm',
     'artifacts/core-wasm/refral_core.wasm', 'examples/three-shapes/uv_grid_opengl.jpg'];
+  if (activeScenes.some(scene => scene.startsWith('suzanne-'))) files.push('artifacts/three-scene-assets/suzanne_buffergeometry.json');
   const hashes = await Promise.all(files.map(async file => [file, digest(await readFile(file))]));
   const session = await browser.newBrowserCDPSession();
   try {
@@ -91,6 +94,7 @@ for (let round = 0; round < rounds; round++) {
         await writeFile(`${path}.json`, JSON.stringify({ round: round + 1, scene, backend, result, errors }, null, 2) + '\n');
         expect(errors).toEqual([]);
         expect(result.selectedCore).toBe(backend);
+        if (largeScenes.includes(scene) && backend !== 'native') expect(result.adapter).toMatchObject({ isFallbackAdapter: false });
         if (backend === 'rust') expect(result.afterBatchStats!.batches).toBeGreaterThan(result.beforeBatchStats!.batches);
         expect(result.glError).toBe(0);
         expect(result.gpuErrors).toEqual([]);
@@ -128,6 +132,15 @@ test.afterAll(async () => {
       const group = order[0].map(backend => runs.find(run =>
         run.round === round && run.scene === scene && run.backend === backend)!);
       const [native, js, rust] = await Promise.all(group.map(async run => PNG.sync.read(await readFile(`${run.path}.png`))));
+      if (largeScenes.includes(scene)) {
+        const background = scene === 'interactive-cubes' ? 240 : 255;
+        let nonBackground = 0;
+        const pixel = native!.data;
+        for (let i = 0; i < pixel.length; i += 4) {
+          if (pixel[i] !== background || pixel[i + 1] !== background || pixel[i + 2] !== background) nonBackground++;
+        }
+        expect(nonBackground).toBeGreaterThan(native!.width * native!.height * 0.05);
+      }
       const counts = (run: Run) => run.result.frames.map(({ seconds, calls, triangles, lines, points }) =>
         [seconds, calls, triangles, lines, points]);
       const equalWork = group.every(run => JSON.stringify(counts(run)) === JSON.stringify(counts(group[0]!)));

@@ -12,9 +12,13 @@ import { LuminosityShader } from 'three/addons/shaders/LuminosityShader.js';
 import { SobelOperatorShader } from 'three/addons/shaders/SobelOperatorShader.js';
 import { createThreeContext } from '../examples/three-context';
 import type { ThreeBackend } from '../examples/three-context';
+import { interactiveCubes, suzanneMeshes } from './three-large';
 import { createShapesScene } from '../examples/three-shapes/scene';
 
 export const heavyScenes = {
+  'suzanne-1000': { width: 1280, height: 720 },
+  'suzanne-3000': { width: 1280, height: 720 },
+  'interactive-cubes': { width: 1280, height: 720 },
   'shapes-four': { width: 1600, height: 1200 },
   'triangle-cloud': { width: 1280, height: 720 },
   'sobel-1080p': { width: 1920, height: 1080 },
@@ -176,6 +180,9 @@ export async function runHeavyScene(name: HeavyScene, backend: ThreeBackend, war
   };
   let scene: SceneWork;
   switch (name) {
+    case 'suzanne-1000': scene = await suzanneMeshes(renderer, width / height, 1000); break;
+    case 'suzanne-3000': scene = await suzanneMeshes(renderer, width / height, 3000); break;
+    case 'interactive-cubes': scene = interactiveCubes(renderer, width / height); break;
     case 'shapes-four': scene = await shapesViews(renderer, width, height); break;
     case 'triangle-cloud': scene = triangleCloud(renderer, width / height); break;
     default: scene = sobelWork(renderer, width, height);

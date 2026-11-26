@@ -46,6 +46,7 @@ if (operation === 'check') {
   const readbackProtocol = exports.rf_readback_protocol_version?.();
   const domUploadProtocol = exports.rf_dom_upload_protocol_version?.();
   const directCommandProtocol = exports.rf_direct_command_protocol_version?.();
+  const batchProtocol = exports.rf_batch_protocol_version?.();
   if (typeof exports.rf_draw_buffer_pointer !== 'function')
     throw new Error('The formal Rust module requires a draw Buffer resolver.');
   if (abi !== 7 || resourceProtocol !== 8 || readbackProtocol !== 1 || domUploadProtocol !== 2)
@@ -53,10 +54,13 @@ if (operation === 'check') {
   if (directCommandProtocol !== 1 || ['rf_direct_scalar', 'rf_direct_list_prepare', 'rf_direct_list_commit']
     .some(name => typeof exports[name] !== 'function'))
     throw new Error('The formal Rust module requires direct command protocol v1.');
+  if (batchProtocol !== 1 || ['rf_batch_run', 'rf_batch_input_pointer', 'rf_batch_output_pointer']
+    .some(name => typeof exports[name] !== 'function'))
+    throw new Error('The formal Rust module requires batch protocol v1.');
   await writeFile(resolve(dirname(output), 'build.json'), JSON.stringify({
     channel, target: 'wasm32-unknown-unknown', profile: 'release', bytes,
     sha256: createHash('sha256').update(binary).digest('hex'), abi, resourceProtocol, readbackProtocol, domUploadProtocol,
-    directCommandProtocol, imports,
+    directCommandProtocol, batchProtocol, imports,
   }, null, 2) + '\n');
   console.log(`Built formal semantic core Wasm (${bytes} bytes).`);
 } else {

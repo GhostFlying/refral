@@ -1,5 +1,6 @@
 import { createRasterState, GL, isDrawMode, vertexComponentBytes } from '@refral/core-api';
 import { createDirectCommands, noDirectCommand } from './direct.js';
+import { createCommandBatch } from './batch.js';
 import type {
   BufferHandle,
   BufferSnapshot,
@@ -12,6 +13,7 @@ import type {
   RasterState,
   TextureVersion,
   TextureBinding,
+  VertexArrayHandle,
   PixelUpload,
   ReadPixelsRequest,
   ReadPixelsPlan,
@@ -318,6 +320,41 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     return new Uint8Array(buffer, start, length);
   }
   const direct = createDirectCommands(exports, memory);
+  let batch: ReturnType<typeof createCommandBatch> = null;
+  let batchBuffers: Map<string, Uint8Array> | undefined;
+  let batchBufferBytes = 0;
+  function drain(): void { batch?.drain(); }
+  function enqueueVertexArrayBind(handle: VertexArrayHandle | null, acknowledged: (accepted: boolean) => void): boolean {
+    if (!batch?.bindVertexArray(handle, acknowledged)) return false;
+    schedule();
+    return true;
+  }
+  function finishBatch(): void {
+    batchBuffers = undefined;
+    batchBufferBytes = 0;
+  }
+  function applyBatch(kind: number, bytes: Uint8Array): void {
+    switch (kind) {
+      case 1:
+        batchBuffers ??= new Map();
+        executeDraw(bytes);
+        return;
+      case 2:
+        decode({ type: 'clear' }, bytes);
+        return;
+      case 3:
+        applyOperations(bytes);
+        return;
+      case 4: {
+        const reader = new Reader(bytes);
+        const ids: number[] = [];
+        for (let offset = 0; offset < bytes.byteLength; offset += 4) ids.push(reader.u32());
+        services.compiler.release(ids);
+        return;
+      }
+      default: throw new Error('Unknown Rust batch record.');
+    }
+  }
   function syncSurface(): void {
     const { width, height } = surface;
     if (direct) direct.surface(width, height);
@@ -411,8 +448,14 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     if (scheduled) return;
     scheduled = true;
     queueMicrotask(() => {
-      scheduled = false;
-      if (!abi.rf_is_context_lost()) services.host.flush();
+      try {
+        if (!abi.rf_is_context_lost()) {
+          drain();
+          services.host.flush();
+        }
+      } finally {
+        scheduled = false;
+      }
     });
   }
   function textureVersion(reader: Reader): TextureVersion {
@@ -569,13 +612,22 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       throw new Error('Invalid Rust draw buffer version.');
     }
     const key = `${slot}:${generation}:${storage}:${content}`;
-    let bytes = current.get(key) ?? previousBuffers.get(key);
+    let bytes = current.get(key) ?? batchBuffers?.get(key) ?? previousBuffers.get(key);
     if (bytes) {
       if (bytes.length !== length) throw new Error('Inconsistent Rust draw buffer length.');
     } else {
       const pointer = abi.rf_draw_buffer_pointer(owner, slot, generation, storage, content, length);
       if (!pointer) throw new Error('Rust draw references an unavailable buffer version.');
       bytes = memory(pointer, length).slice();
+      if (batchBuffers && batch) {
+        batch.stats.bufferCopies++;
+        batch.stats.bufferBytes += length;
+      }
+    }
+    if (batchBuffers && !batchBuffers.has(key) && batchBuffers.size < 512 &&
+        batchBufferBytes + length <= 32 * 1024 * 1024) {
+      batchBuffers.set(key, bytes);
+      batchBufferBytes += length;
     }
     current.set(key, bytes);
     return { data: bytes, bufferVersion: key };
@@ -761,35 +813,47 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     kind: 'rust' as const,
     contextId,
     maxBufferBytes,
-    createBuffer: () => bufferHandle(abi.rf_create_buffer()),
+    drainPendingCommands: drain,
+    get enqueueVertexArrayBind() {
+      if (!batch) return undefined;
+      return enqueueVertexArrayBind;
+    },
+    createBuffer() { drain(); return bufferHandle(abi.rf_create_buffer()); },
     bindBuffer(target: number, buffer: BufferHandle | null) {
+      drain();
       handle(buffer, (context, slot, generation) => abi.rf_bind_buffer(target, context, slot, generation));
     },
     deleteBuffer(buffer: BufferHandle | null) {
+      drain();
       previousBuffers.clear();
       handle(buffer, (context, slot, generation) => abi.rf_delete_buffer(context, slot, generation));
     },
     isBuffer(buffer: BufferHandle | null) {
+      drain();
       let result = false;
       handle(buffer, (context, slot, generation) => {
         result = abi.rf_is_buffer(context, slot, generation) === 1;
       });
       return result;
     },
-    getBinding: (parameter: number) => bufferHandle(abi.rf_get_binding(parameter)),
+    getBinding(parameter: number) { drain(); return bufferHandle(abi.rf_get_binding(parameter)); },
     bufferData(target: number, data: number | Uint8Array | null, usage: number) {
+      drain();
       if (data === null) abi.rf_buffer_data_null(target, usage);
       else if (typeof data === 'number') abi.rf_buffer_data_size(target, data, usage);
       else if (abi.rf_buffer_data_prepare(target, data.byteLength, usage)) upload(data);
     },
     bufferSubData(target: number, offset: number, data: Uint8Array) {
+      drain();
       if (abi.rf_buffer_sub_data_prepare(target, offset, data.byteLength)) upload(data);
     },
     getBufferParameter(target: number, parameter: number) {
+      drain();
       const value = abi.rf_get_buffer_parameter(target, parameter);
       return value < 0 ? null : value;
     },
     inspectBuffer(buffer: BufferHandle): BufferSnapshot | null {
+      drain();
       let valid = false;
       handle(buffer, (context, slot, generation) => {
         valid = abi.rf_inspect_buffer(context, slot, generation) === 1;
@@ -805,10 +869,12 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
         data: memory(abi.rf_snapshot_pointer(), byteLength).slice(),
       };
     },
-    getError: () => abi.rf_get_error() >>> 0,
+    getError() { drain(); return abi.rf_get_error() >>> 0; },
     markLost() {
       const changed = abi.rf_mark_lost() === 1;
       if (changed) {
+        batch?.discard();
+        batch = null;
         previousBuffers.clear();
         services.compiler.dispose();
         services.resources.dispose();
@@ -817,18 +883,22 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     },
     isContextLost: () => abi.rf_is_context_lost() === 1,
     dispose() {
+      batch?.discard();
+      batch = null;
       previousBuffers.clear();
       abi.rf_dispose();
       services.compiler.dispose();
       services.resources.dispose();
     },
     captureTarget() {
+      drain();
       if (abi.rf_is_context_lost()) throw new Error('Cannot capture a lost context.');
       syncSurface();
       const result = command('captureTarget', []);
       return decode(result.value, result.binary) as TargetSnapshot;
     },
     prepareReadPixels(request: ReadPixelsRequest) {
+      drain();
       if (abi.rf_is_context_lost()) return null;
       syncSurface();
       const result = command('prepareReadPixels', [
@@ -844,6 +914,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       return decode(result.value, result.binary) as ReadPixelsPlan | null;
     },
     prepareDomTextureUpload(request: DomTextureUploadRequest): DomTextureUploadPlan | null {
+      drain();
       if (abi.rf_is_context_lost()) return null;
       const result = command('prepareDomTextureUpload', [
         request.operation === 'texSubImage2D', request.target, request.level, request.internalFormat,
@@ -858,6 +929,13 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       return { flipY: values[0] === 1, premultiplyAlpha: values[1] === 1, colorSpaceConversion: values[2]! };
     },
     invoke(operation: string, args: unknown[]): unknown {
+      if (operation === 'enableCommandBatchForTesting') {
+        if (abi.rf_is_context_lost()) return false;
+        batch ??= createCommandBatch(exports, memory, applyBatch, finishBatch);
+        if (batch) batch.surface(surface.width, surface.height);
+        return !!batch;
+      }
+      if (operation === 'commandBatchStatsForTesting') return batch ? { ...batch.stats } : null;
       if (operation === 'supportsSrgbTextures') {
         const version = exports.rf_srgb_texture_protocol_version;
         return typeof version === 'function' && version() === 1;
@@ -883,6 +961,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
         return typeof version === 'function' && version() === 1;
       }
       if (operation === 'getTranslatedShaderSource') {
+        drain();
         if (abi.rf_is_context_lost()) return '';
         const result = command('getTranslatedShaderArtifact', args);
         const id = decode(result.value, result.binary);
@@ -901,8 +980,18 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
         return typeof version === 'function' && version() === 1;
       }
       if (operation === 'flush' || operation === 'finish') {
+        drain();
         if (!abi.rf_is_context_lost()) services.host[operation]();
         return undefined;
+      }
+      if (batch) {
+        if (operation === 'drawArrays' || operation === 'drawElements' || operation === 'clear')
+          batch.surface(surface.width, surface.height);
+        if (batch.enqueue(operation, args)) {
+          schedule();
+          return undefined;
+        }
+        drain();
       }
       if (abi.rf_is_context_lost()) {
         const result = command(operation, []);

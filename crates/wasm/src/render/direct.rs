@@ -1,7 +1,7 @@
 use super::*;
 
 // Keep the selector order in sync with the versioned JS adapter.
-const SCALARS: [&str; 8] = [
+pub(super) const SCALARS: [&str; 8] = [
     "uniform1f",
     "uniform2f",
     "uniform3f",
@@ -11,7 +11,7 @@ const SCALARS: [&str; 8] = [
     "uniform3i",
     "uniform4i",
 ];
-const LISTS: [&str; 11] = [
+pub(super) const LISTS: [&str; 11] = [
     "uniform1fv",
     "uniform2fv",
     "uniform3fv",
@@ -25,7 +25,7 @@ const LISTS: [&str; 11] = [
     "uniformMatrix4fv",
 ];
 
-fn object(kind: ObjectKind, context_id: u32, slot: u32, generation: u32) -> Argument {
+pub(super) fn object(kind: ObjectKind, context_id: u32, slot: u32, generation: u32) -> Argument {
     if context_id == 0 && slot == 0 && generation == 0 {
         return Argument::Null;
     }
@@ -102,7 +102,7 @@ pub extern "C" fn rf_direct_list_prepare(length: u32) -> usize {
     })
 }
 
-fn read_list<T>(bytes: &[u8], decode: impl Fn([u8; 4]) -> T) -> Option<Vec<T>> {
+pub(super) fn read_list<T>(bytes: &[u8], decode: impl Fn([u8; 4]) -> T) -> Option<Vec<T>> {
     let mut values = Vec::new();
     values.try_reserve_exact(bytes.len() / 4).ok()?;
     values.extend(

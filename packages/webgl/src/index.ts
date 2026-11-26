@@ -4,6 +4,7 @@ import { GL, SRGB, BLEND_MINMAX, SHADER_EXTENSIONS, DERIVATIVE_HINT_OES, VERTEX_
 import type { BufferHandle, BufferSnapshot, CoreKind, DrawingCore } from "@refral/core-api";
 import { createJsDrawingCore } from "@refral/core-js";
 import { prepareRustDrawingCores, prepareRustModule } from "@refral/core-wasm";
+import type { RustCommandBatchStats } from "@refral/core-wasm";
 import { BrowserHost } from "@refral/browser-host";
 import type { CapturedPixels } from "@refral/browser-host";
 import { createCompiler, createCompilerRegistry, COMPILER_LIMITS } from "@refral/compiler";
@@ -29,6 +30,8 @@ export interface TestingHooks {
   readonly core: CoreKind;
   inspectBuffer(buffer: WebGLBuffer): BufferSnapshot | null;
   capture(): Promise<CapturedPixels>;
+  enableRustCommandBuffer(): boolean;
+  rustCommandBatchStats(): RustCommandBatchStats | null;
   readonly stats: BrowserHost["stats"];
   readonly environment: Record<string, unknown>;
   readonly errors: string[];
@@ -233,9 +236,16 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: We
       }
     },
   });
-  const untrackBitmap = trackBitmapTransfer(canvas, () => current.host);
+  const untrackBitmap = trackBitmapTransfer(canvas, () => {
+    current.core.drainPendingCommands?.();
+    return current.host;
+  });
   const unregisterSource = registerCanvasSource(canvas, {
-    prepare: () => current.host.prepareCanvasSource(), isLost: () => current.core.isContextLost(),
+    prepare() {
+      current.core.drainPendingCommands?.();
+      current.host.prepareCanvasSource();
+    },
+    isLost: () => current.core.isContextLost(),
   });
   observeDeviceLoss(current.host.device, new WeakRef(lost));
   const invoke = (property: string, args: unknown[]): unknown => {
@@ -298,6 +308,10 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: We
     core: current.core.kind,
     inspectBuffer: buffer => current.bufferFacade.inspect(buffer),
     capture: () => current.host.capture(current.core.captureTarget()),
+    enableRustCommandBuffer: () => current.core.kind === 'rust' &&
+      current.core.invoke('enableCommandBatchForTesting', []) === true,
+    rustCommandBatchStats: () => current.core.kind === 'rust'
+      ? current.core.invoke('commandBatchStatsForTesting', []) as RustCommandBatchStats | null : null,
     get stats() { return current.host.stats; },
     get environment() { return current.host.environment; },
     get errors() { return current.host.errors; },

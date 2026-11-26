@@ -1,14 +1,14 @@
 import type { LogicalHandle } from '@refral/core-api';
 
 // Keep these selector orders in sync with direct command protocol v1 in Rust.
-const scalars = new Map([
+export const scalars = new Map([
   'uniform1f', 'uniform2f', 'uniform3f', 'uniform4f', 'uniform1i', 'uniform2i', 'uniform3i', 'uniform4i',
 ].map((name, index) => [name, index]));
-const lists = new Map([
+export const lists = new Map([
   'uniform1fv', 'uniform2fv', 'uniform3fv', 'uniform4fv', 'uniform1iv', 'uniform2iv', 'uniform3iv', 'uniform4iv',
   'uniformMatrix2fv', 'uniformMatrix3fv', 'uniformMatrix4fv',
 ].map((name, index) => [name, index]));
-const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+export const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 const bindVertexArray = 8;
 const setSurfaceSize = 9;
 const nullHandle = { contextId: 0, slot: 0, generation: 0 };
@@ -18,7 +18,7 @@ function u32(value: unknown): value is number {
   return typeof value === 'number' && value === value >>> 0;
 }
 
-function handle(arg: unknown, kind: LogicalHandle['kind']) {
+export function handle(arg: unknown, kind: LogicalHandle['kind']) {
   if (arg === null) return nullHandle;
   if (!arg || typeof arg !== 'object') return undefined;
   const value = arg as LogicalHandle;

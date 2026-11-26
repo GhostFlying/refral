@@ -39,8 +39,11 @@ test('Rust command buffer preserves draw snapshots and synchronous query order',
       for (let index = 0; index < 3_000; index++) gl.uniform4f(color, 0, 0, index % 2, 1);
       const overflowBatches = hooks.rustCommandBatchStats()!.batches;
       const lastUniform = [...gl.getUniform(program, color!) as Float32Array];
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.flush();
+      const reused = hooks.rustCommandBatchStats();
       return { enabled, pending, drained, binding, error, invalidEnum: gl.INVALID_ENUM, overflowBatches,
-        lastUniform, left: [...left], right: [...right], finalError: gl.getError(), validation: hooks.errors };
+        lastUniform, reused, left: [...left], right: [...right], finalError: gl.getError(), validation: hooks.errors };
     } finally { await hooks.dispose(); }
   });
   expect(result.enabled).toBe(true);
@@ -52,6 +55,7 @@ test('Rust command buffer preserves draw snapshots and synchronous query order',
   expect(result.right).toEqual([0, 255, 0, 255]);
   expect(result.overflowBatches).toBe(2);
   expect(result.lastUniform).toEqual([0, 0, 1, 1]);
+  expect(result.reused).toMatchObject({ batches: 4, bufferCopies: 1 });
   expect(result.finalError).toBe(0);
   expect(result.validation).toEqual([]);
 });

@@ -26,3 +26,7 @@ The semantic crate remains dependency-free. The Wasm binding pins serde 1.0.228 
 | memchr | Unlicense OR MIT |
 | ryu | Apache-2.0 OR BSL-1.0 |
 | unicode-ident | (MIT OR Apache-2.0) AND Unicode-3.0 |
+
+## Three.js large-scene benchmarks
+
+The scene code in `benchmarks/three-large.ts` adapts the separate-mesh path from the Three.js instancing-performance example and the interactive-cubes example. Both use Three.js r162. The example code's MIT license is retained at `examples/three-shapes/LICENSE`. The example paths, revision and original Suzanne geometry checksum are recorded in `fixtures.lock.json`. The optional benchmark fetches that model into `artifacts/three-scene-assets/`.

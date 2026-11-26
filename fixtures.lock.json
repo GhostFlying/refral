@@ -79,5 +79,17 @@
     "revision": "fd4401e2741a68ebb7c3beb33ed064a5859d22d7",
     "license": "BSD",
     "source": "webgl/webgl-render-to-texture.html"
+  },
+  "threeScenes": {
+    "repository": "https://github.com/mrdoob/three.js",
+    "revision": "ef80ac74e6716a50104a57d8add6c8a950bff8d7",
+    "examples": [
+      "examples/webgl_instancing_performance.html",
+      "examples/webgl_interactive_cubes.html"
+    ],
+    "model": {
+      "path": "examples/models/json/suzanne_buffergeometry.json",
+      "sha256": "8aa6f692a08b2ec0991b7903914cfa3154e2f553a4ca72ca3fb5d7e6c16f839f"
+    }
   }
 }

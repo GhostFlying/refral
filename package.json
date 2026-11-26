@@ -43,6 +43,7 @@
     "bench:rtt": "playwright test -c benchmarks/playwright.config.ts rtt-benchmark.spec.ts",
     "bench:three": "playwright test -c benchmarks/playwright.config.ts three-shapes.spec.ts",
     "bench:three:heavy": "REFRAL_HEADLESS=1 playwright test -c benchmarks/playwright.config.ts three-heavy.spec.ts",
+    "bench:three:large": "node --use-env-proxy tools/deps-three-scenes.mjs && REFRAL_HEAVY_SCENES=shapes-four,suzanne-1000,suzanne-3000,interactive-cubes pnpm bench:three:heavy",
     "check": "pnpm typecheck && pnpm test:unit && pnpm test:tools && pnpm rust:check && pnpm rust:test && node tools/check-support.mjs",
     "bench:dom": "playwright test -c benchmarks/dom-upload.config.ts"
   },

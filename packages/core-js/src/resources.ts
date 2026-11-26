@@ -1,4 +1,4 @@
-import { CUBE_FACES, GL } from "@refral/core-api";
+import { CUBE_FACES, GL, readElementIndex } from "@refral/core-api";
 import type { RenderbufferHandle, TextureHandle, TextureParameters, TextureStorage } from "@refral/core-api";
 export { GL, componentCount, createRasterState, snapshotRaster } from "@refral/core-api";
 export type { AttributeSnapshot, RasterState, TargetSnapshot, TextureParameters, TextureStorage } from "@refral/core-api";
@@ -17,6 +17,22 @@ export class BufferObject extends LogicalObject {
   target: number | null = null;
   generation = 0;
   version = 0;
+  private lastIndexRange?: { version: number; offset: number; end: number; bytes: number; vertices: number };
+
+  // The draw has already checked the byte range. Every successful write advances version.
+  indexedVertexCount(offset: number, end: number, bytes: number): number {
+    const cached = this.lastIndexRange;
+    if (cached?.version === this.version && cached.offset === offset && cached.end === end && cached.bytes === bytes) {
+      return cached.vertices;
+    }
+    const view = new DataView(this.data.buffer, this.data.byteOffset, this.data.byteLength);
+    let maximum = -1;
+    for (let i = offset; i < end; i += bytes) maximum = Math.max(maximum, readElementIndex(view, i, bytes));
+    const vertices = maximum + 1;
+    this.lastIndexRange = { version: this.version, offset, end, bytes, vertices };
+    return vertices;
+  }
+
   get executionVersion(): string { return `${this.id}:${this.generation}:${this.version}`; }
 }
 

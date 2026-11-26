@@ -1695,7 +1695,7 @@ impl ContextCore {
             let Some(index) = self.bound_index(ELEMENT_ARRAY_BUFFER) else {
                 return Reply::Null;
             };
-            let buffer = self.slots[index].buffer.as_ref().unwrap();
+            let buffer = self.slots[index].buffer.as_mut().unwrap();
             let Some(end) = (count as usize)
                 .checked_mul(bytes)
                 .and_then(|length| offset.checked_add(length))
@@ -1721,19 +1721,11 @@ impl ContextCore {
                         self.render.arrays.current().attributes[*location as usize].enabled
                     });
             if !no_array_inputs {
-                vertex_count = 0;
-                for value in buffer.data[offset..end].chunks_exact(bytes) {
-                    let value = match bytes {
-                        1 => u32::from(value[0]),
-                        2 => u32::from(u16::from_le_bytes([value[0], value[1]])),
-                        _ => u32::from_le_bytes(value.try_into().unwrap()),
-                    };
-                    let Some(end_vertex) = value.checked_add(1) else {
-                        self.record_error(INVALID_OPERATION);
-                        return Reply::Null;
-                    };
-                    vertex_count = vertex_count.max(end_vertex as usize);
-                }
+                let Some(vertices) = buffer.indexed_vertex_count(offset..end, bytes) else {
+                    self.record_error(INVALID_OPERATION);
+                    return Reply::Null;
+                };
+                vertex_count = vertices;
                 let handle = self.render.arrays.current().element.unwrap();
                 indices = Some((buffer.metadata(handle), ty, offset));
             }

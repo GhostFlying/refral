@@ -2,7 +2,7 @@ import type { TestingHooks } from '@refral/webgl';
 import { programCaseNames } from './case-names';
 
 export const dualCoreCaseNames = [
-  'float-uniform-setters', 'indexed-update-u8', 'indexed-update-u16', 'upload-view-snapshot',
+  'float-uniform-setters', 'indexed-update-u8', 'indexed-update-u16', 'indexed-range-validation', 'upload-view-snapshot',
   'attribute-layout-and-constants', 'matrix-attribute-columns', 'buffer-reallocation-and-delete', 'resize-attribute-size',
   'automatic-submit-and-flush', 'viewport-clear-regions', 'draw-validation-state',
   'triangle-strip-modes', 'line-and-fan-modes', 'polygon-offset-and-samples', 'point-sprites', 'integer-vertex-attributes', 'enabled-array-validation', 'location-name-validation',
@@ -97,6 +97,7 @@ function regions(name: DrawingCaseName): PixelRegion[] {
     case 'integer-vertex-attributes':
       return [red, [127, 0, 0, 255], red, green].map((color, index) => band(index * 16, 16, color));
     case 'location-name-validation':
+    case 'indexed-range-validation':
     case 'enabled-array-validation': return [band(0, 64, green)];
     case 'failed-current-program-relink': return [band(0, 64, [255, 127, 0, 255])];
     case 'successful-relink-reset':
@@ -524,6 +525,51 @@ async function execute(name: DrawingCaseName, gl: WebGLRenderingContext, canvas:
       gl.viewport(32, 32, 32, 32); draw(0, 1, 0);
       check('viewport origin and dimensions', Array.from(gl.getParameter(gl.VIEWPORT) as Int32Array), [32, 32, 32, 32]);
       break;
+    case 'indexed-range-validation': {
+      const target = gl.ELEMENT_ARRAY_BUFFER;
+      const indices = gl.createBuffer()!;
+      gl.bindBuffer(target, indices);
+      const values = new Uint8Array([0, 1, 2, 3, 4, 5, 9, 0, 0, 0, 0, 0]);
+      gl.bufferData(target, values, gl.DYNAMIC_DRAW);
+      const indexed = (count = 6, type: number = gl.UNSIGNED_BYTE, offset = 0) =>
+        gl.drawElements(gl.TRIANGLES, count, type, offset);
+      expectError('initial range', indexed, gl.NO_ERROR);
+      expectError('repeat the same range', indexed, gl.NO_ERROR);
+      const other = gl.createBuffer()!;
+      gl.bindBuffer(target, other);
+      gl.bufferData(target, new Uint8Array([0, 1, 9, 3, 4, 5]), gl.DYNAMIC_DRAW);
+      expectError('another buffer with the same range and version', indexed, gl.INVALID_OPERATION);
+      gl.deleteBuffer(other);
+      gl.bindBuffer(target, indices);
+      expectError('rebind the first buffer', indexed, gl.NO_ERROR);
+      expectError('same byte interval with a wider index', () => indexed(3, gl.UNSIGNED_SHORT), gl.INVALID_OPERATION);
+      expectError('restore byte indices', indexed, gl.NO_ERROR);
+      expectError('changed offset selects a larger index', () => indexed(6, gl.UNSIGNED_BYTE, 6), gl.INVALID_OPERATION);
+      expectError('restore the original offset', indexed, gl.NO_ERROR);
+      expectError('extend count across a larger index', () => indexed(9), gl.INVALID_OPERATION);
+      expectError('warm before updating the element buffer', indexed, gl.NO_ERROR);
+      gl.bufferSubData(target, 2, new Uint8Array([10]));
+      expectError('subdata raises the maximum', indexed, gl.INVALID_OPERATION);
+      expectError('zero indices skip the maximum', () => indexed(0), gl.NO_ERROR);
+      gl.bufferSubData(target, 2, new Uint8Array([2]));
+      expectError('subdata restores the range', indexed, gl.NO_ERROR);
+      expectError('rejected write', () => gl.bufferSubData(target, 12, new Uint8Array([9])), gl.INVALID_VALUE);
+      expectError('range survives a rejected write', indexed, gl.NO_ERROR);
+      gl.bufferData(gl.ARRAY_BUFFER, 3 * 2 * 4, gl.STATIC_DRAW);
+      expectError('vertex buffer shrank on a cache hit', indexed, gl.INVALID_OPERATION);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(quad), gl.STATIC_DRAW);
+      expectError('vertex buffer restored', indexed, gl.NO_ERROR);
+      gl.bufferData(target, new Uint8Array([0, 1, 9, 3, 4, 5]), gl.STATIC_DRAW);
+      expectError('redefined element storage', indexed, gl.INVALID_OPERATION);
+      gl.bufferData(target, 3, gl.STATIC_DRAW);
+      expectError('element buffer too short', indexed, gl.INVALID_OPERATION);
+      gl.deleteBuffer(indices);
+      gl.bindBuffer(target, gl.createBuffer());
+      gl.bufferData(target, values, gl.STATIC_DRAW);
+      gl.uniform4f(color, 0, 1, 0, 1);
+      expectError('new buffer with the original range', indexed, gl.NO_ERROR);
+      break;
+    }
     case 'draw-validation-state': {
       gl.uniform4f(color, 1, 1, 0, 1);
       expectError('invalid primitive enum', () => gl.drawArrays(0xdead, 0, 6), gl.INVALID_ENUM);

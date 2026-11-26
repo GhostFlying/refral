@@ -50,7 +50,14 @@ pub enum InitializationError {
     InvalidBufferLimit,
 }
 
+struct IndexRange {
+    range: std::ops::Range<usize>,
+    index_bytes: usize,
+    vertices: usize,
+}
+
 struct Buffer {
+    last_index_range: Option<IndexRange>,
     deleted: bool,
     vertex_references: u64,
     target: Option<u32>,
@@ -61,6 +68,36 @@ struct Buffer {
 }
 
 impl Buffer {
+    // The caller validated a nonempty byte range. replace_data invalidates it on every write.
+    fn indexed_vertex_count(
+        &mut self,
+        range: std::ops::Range<usize>,
+        index_bytes: usize,
+    ) -> Option<usize> {
+        if let Some(cached) = self
+            .last_index_range
+            .as_ref()
+            .filter(|cached| cached.range == range && cached.index_bytes == index_bytes)
+        {
+            return Some(cached.vertices);
+        }
+        let maximum = self.data[range.clone()]
+            .chunks_exact(index_bytes)
+            .map(|value| match index_bytes {
+                1 => u32::from(value[0]),
+                2 => u32::from(u16::from_le_bytes([value[0], value[1]])),
+                _ => u32::from_le_bytes(value.try_into().unwrap()),
+            })
+            .max()?;
+        let vertices = maximum.checked_add(1)? as usize;
+        self.last_index_range = Some(IndexRange {
+            range,
+            index_bytes,
+            vertices,
+        });
+        Some(vertices)
+    }
+
     fn metadata(&self, handle: BufferHandle) -> BufferMetadata {
         BufferMetadata {
             handle,
@@ -73,6 +110,7 @@ impl Buffer {
 
     fn new() -> Self {
         Self {
+            last_index_range: None,
             deleted: false,
             vertex_references: 0,
             target: None,
@@ -430,6 +468,7 @@ impl ContextCore {
             .buffer
             .as_mut()
             .expect("validated Buffer slot");
+        buffer.last_index_range = None;
         buffer.data = data;
         buffer.usage = usage;
         buffer.storage_generation = versions.0;

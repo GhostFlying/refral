@@ -1,5 +1,5 @@
 import {
-  CUBE_FACES, GL, SRGB, SHADER_EXTENSIONS, DERIVATIVE_HINT_OES, BLEND_MINMAX, elementIndexBytes, readElementIndex, isSrgbTextureFormat, VERTEX_ARRAY_BINDING_OES, createRasterState, snapshotRaster, componentCount, vertexComponentBytes, isColorRenderbufferFormat,
+  CUBE_FACES, GL, SRGB, SHADER_EXTENSIONS, DERIVATIVE_HINT_OES, BLEND_MINMAX, elementIndexBytes, isSrgbTextureFormat, VERTEX_ARRAY_BINDING_OES, createRasterState, snapshotRaster, componentCount, vertexComponentBytes, isColorRenderbufferFormat,
   isStencilRenderbufferFormat, stencilReference, isDrawMode,
 } from "@refral/core-api";
 import type {
@@ -763,19 +763,15 @@ export class SemanticContext {
     let vertices = first + count;
     if (indices && count) {
       const bytes = elementIndexBytes(indices.type);
-      if (indices.offset + count * bytes > indices.data.byteLength) return this.error(GL.INVALID_OPERATION);
+      const end = indices.offset + count * bytes;
+      if (end > indices.data.byteLength) return this.error(GL.INVALID_OPERATION);
       if (indices.type === GL.UNSIGNED_INT
         && !this.program.vertexInputs.some(input => this.attributes[input.location]!.enabled)) {
         // WebGL1 shaders cannot observe an index without an enabled vertex input.
         indices = null;
         vertices = count;
       } else {
-        const view = new DataView(indices.data.buffer, indices.data.byteOffset, indices.data.byteLength);
-        let maximum = -1;
-        for (let i = 0; i < count; i++) {
-          maximum = Math.max(maximum, readElementIndex(view, indices.offset + i * bytes, bytes));
-        }
-        vertices = maximum + 1;
+        vertices = this.elementBuffer!.indexedVertexCount(indices.offset, end, bytes);
       }
     }
     const attributes: AttributeSnapshot[] = [];

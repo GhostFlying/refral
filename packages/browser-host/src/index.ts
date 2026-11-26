@@ -67,6 +67,34 @@ interface Target {
   opaque: boolean;
 }
 
+interface PreparedVertexLayout {
+  points: boolean;
+  inputs: number[];
+  buffers: GPUVertexBufferLayout[];
+  key: string;
+}
+
+function prepareVertexLayout(previous: PreparedVertexLayout | undefined, attributes: AttributeSnapshot[],
+  points: boolean): PreparedVertexLayout {
+  if (previous && previous.points === points && previous.inputs.length === attributes.length * 2) {
+    let index = 0;
+    for (; index < attributes.length; index++) {
+      const attribute = attributes[index]!;
+      if (previous.inputs[2 * index] !== attribute.location || previous.inputs[2 * index + 1] !== attribute.shaderType) break;
+    }
+    if (index === attributes.length) return previous;
+  }
+  const inputs: number[] = [];
+  const buffers = attributes.map((attribute): GPUVertexBufferLayout => {
+    inputs.push(attribute.location, attribute.shaderType);
+    const components = componentCount(attribute.shaderType);
+    const format = (components === 1 ? "float32" : `float32x${components}`) as GPUVertexFormat;
+    return { arrayStride: components * 4, stepMode: points ? "instance" : "vertex",
+      attributes: [{ shaderLocation: attribute.location, offset: 0, format }] };
+  });
+  return { points, inputs, buffers, key: inputs.join(',') };
+}
+
 interface PassBindings {
   pipeline: GPURenderPipeline | null;
   textureGroup: GPUBindGroup | null;
@@ -209,6 +237,7 @@ export class BrowserHost implements SemanticHost {
     groups: [GPUBindGroupLayout, GPUBindGroupLayout, GPUBindGroupLayout];
     vertex: GPUShaderModule;
     fragment: GPUShaderModule;
+    lastVertexLayout?: PreparedVertexLayout;
     pipelines: Map<string, GPURenderPipeline>;
   }>>();
   private samplers = new Map<string, GPUSampler>();
@@ -917,13 +946,9 @@ export class BrowserHost implements SemanticHost {
       stencilFront: stencilFace(state.stencilFront), stencilBack: stencilFace(state.stencilBack),
       stencilReadMask: state.stencilFront.valueMask & 0xff, stencilWriteMask: state.stencilFront.writeMask & 0xff,
     } : undefined;
-    const layouts: GPUVertexBufferLayout[] = operation.attributes.map(attribute => {
-      const components = componentCount(attribute.shaderType);
-      const format = (components === 1 ? "float32" : `float32x${components}`) as GPUVertexFormat;
-      return { arrayStride: components * 4, stepMode: points ? "instance" : "vertex",
-        attributes: [{ shaderLocation: attribute.location, offset: 0, format }] };
-    });
-    const key = JSON.stringify([mode, topology, stripIndexFormat, layouts, target.color.format, target.depth?.format, target.opaque, state.depthTest, state.depthMask,
+    const layout = prepareVertexLayout(resources.lastVertexLayout, operation.attributes, points);
+    resources.lastVertexLayout = layout;
+    const key = JSON.stringify([mode, topology, stripIndexFormat, layout.key, target.color.format, target.depth?.format, target.opaque, state.depthTest, state.depthMask,
       state.depthFunc, state.depthClamp, depthBias, depthBiasSlopeScale, depthBiasClamp, state.colorMask,
       state.blend, state.blendSrcRGB, state.blendDstRGB,
       state.blendSrcAlpha, state.blendDstAlpha, state.blendEquationRGB, state.blendEquationAlpha,
@@ -935,7 +960,7 @@ export class BrowserHost implements SemanticHost {
         alpha: blendComponent(state.blendEquationAlpha, state.blendSrcAlpha, state.blendDstAlpha),
       } : undefined;
       pipeline = this.device.createRenderPipeline({ layout: resources.layout,
-        vertex: { module: resources.vertex, entryPoint: points ? "refralPointMain" : program.vertexEntryPoint, buffers: layouts },
+        vertex: { module: resources.vertex, entryPoint: points ? "refralPointMain" : program.vertexEntryPoint, buffers: layout.buffers },
         fragment: { module: resources.fragment, entryPoint: points ? "refralPointMain" : program.fragmentEntryPoint,
           targets: [{ format: target.color.format,
             writeMask: colorWriteMask(state.colorMask) & (target.opaque ? 7 : 15), blend }] },

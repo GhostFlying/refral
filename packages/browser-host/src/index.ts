@@ -120,6 +120,31 @@ function sameVertexStreams(streams: VertexStream[], attributes: AttributeSnapsho
   return true;
 }
 
+interface PipelineSelection {
+  layout: PreparedVertexLayout;
+  mode: DrawOperation['mode'];
+  stripIndexFormat: GPUIndexFormat | undefined;
+  colorFormat: GPUTextureFormat;
+  depthFormat: GPUTextureFormat | undefined;
+  opaque: boolean;
+  depthBias: number;
+  slope: number;
+  clamp: number;
+  state: RasterState;
+  pipeline: GPURenderPipeline;
+}
+
+// Dynamic pass values (viewport, blend constant, stencil reference, etc.) are applied per draw.
+function samePipelineRaster(a: RasterState, b: RasterState): boolean {
+  return a.depthTest === b.depthTest && a.depthMask === b.depthMask && a.depthFunc === b.depthFunc &&
+    a.depthClamp === b.depthClamp && a.blend === b.blend && a.blendSrcRGB === b.blendSrcRGB &&
+    a.blendDstRGB === b.blendDstRGB && a.blendSrcAlpha === b.blendSrcAlpha && a.blendDstAlpha === b.blendDstAlpha &&
+    a.blendEquationRGB === b.blendEquationRGB && a.blendEquationAlpha === b.blendEquationAlpha &&
+    a.cull === b.cull && a.cullFace === b.cullFace && a.frontFace === b.frontFace &&
+    a.colorMask[0] === b.colorMask[0] && a.colorMask[1] === b.colorMask[1] &&
+    a.colorMask[2] === b.colorMask[2] && a.colorMask[3] === b.colorMask[3];
+}
+
 interface PassBindings {
   pipeline: GPURenderPipeline | null;
   textureGroup: GPUBindGroup | null;
@@ -265,6 +290,7 @@ export class BrowserHost implements SemanticHost {
     vertex: GPUShaderModule;
     fragment: GPUShaderModule;
     lastVertexLayout?: PreparedVertexLayout;
+    lastPipeline?: PipelineSelection;
     pipelines: Map<string, GPURenderPipeline>;
   }>>();
   private samplers = new Map<string, GPUSampler>();
@@ -1015,35 +1041,47 @@ export class BrowserHost implements SemanticHost {
     } : undefined;
     const layout = prepareVertexLayout(resources.lastVertexLayout, operation.attributes, points);
     resources.lastVertexLayout = layout;
-    const key = JSON.stringify([mode, topology, stripIndexFormat, layout.key, target.color.format, target.depth?.format, target.opaque, state.depthTest, state.depthMask,
-      state.depthFunc, state.depthClamp, depthBias, depthBiasSlopeScale, depthBiasClamp, state.colorMask,
-      state.blend, state.blendSrcRGB, state.blendDstRGB,
-      state.blendSrcAlpha, state.blendDstAlpha, state.blendEquationRGB, state.blendEquationAlpha,
-      state.cull, state.cullFace, state.frontFace, stencil]);
-    let pipeline = resources.pipelines.get(key);
-    if (!pipeline) {
-      const blend: GPUBlendState | undefined = state.blend ? {
-        color: blendComponent(state.blendEquationRGB, state.blendSrcRGB, state.blendDstRGB),
-        alpha: blendComponent(state.blendEquationAlpha, state.blendSrcAlpha, state.blendDstAlpha),
-      } : undefined;
-      pipeline = this.device.createRenderPipeline({ layout: resources.layout,
-        vertex: { module: resources.vertex, entryPoint: points ? "refralPointMain" : program.vertexEntryPoint, buffers: layout.buffers },
-        fragment: { module: resources.fragment, entryPoint: points ? "refralPointMain" : program.fragmentEntryPoint,
-          targets: [{ format: target.color.format,
-            writeMask: colorWriteMask(state.colorMask) & (target.opaque ? 7 : 15), blend }] },
-        primitive: { topology, stripIndexFormat, unclippedDepth: state.depthClamp,
-          frontFace: points || state.frontFace !== GL.CCW ? "ccw" : "cw",
-          cullMode: line || !state.cull ? "none" : state.cullFace === GL.FRONT ? "front" : "back" },
-        depthStencil: target.depth ? { format: target.depth.format,
-          ...stencil,
-          ...(target.depth.format === "stencil8" ? {} : {
-            depthBias, depthBiasSlopeScale, depthBiasClamp,
-            depthWriteEnabled: state.depthTest && state.depthMask,
-            depthCompare: state.depthTest ? compareFunction(state.depthFunc) : "always",
-          }) } : undefined,
-      });
-      resources.pipelines.set(key, pipeline);
-      this.stats.pipelines++;
+    const last = resources.lastPipeline;
+    let pipeline: GPURenderPipeline | undefined;
+    if (!stencil && last && last.mode === mode && last.layout === layout && last.stripIndexFormat === stripIndexFormat &&
+        last.colorFormat === target.color.format && last.depthFormat === target.depth?.format && last.opaque === target.opaque &&
+        last.depthBias === depthBias && last.slope === depthBiasSlopeScale && last.clamp === depthBiasClamp &&
+        samePipelineRaster(last.state, state)) {
+      pipeline = last.pipeline;
+    } else {
+      const key = JSON.stringify([mode, topology, stripIndexFormat, layout.key, target.color.format, target.depth?.format, target.opaque, state.depthTest, state.depthMask,
+        state.depthFunc, state.depthClamp, depthBias, depthBiasSlopeScale, depthBiasClamp, state.colorMask,
+        state.blend, state.blendSrcRGB, state.blendDstRGB,
+        state.blendSrcAlpha, state.blendDstAlpha, state.blendEquationRGB, state.blendEquationAlpha,
+        state.cull, state.cullFace, state.frontFace, stencil]);
+      pipeline = resources.pipelines.get(key);
+      if (!pipeline) {
+        const blend: GPUBlendState | undefined = state.blend ? {
+          color: blendComponent(state.blendEquationRGB, state.blendSrcRGB, state.blendDstRGB),
+          alpha: blendComponent(state.blendEquationAlpha, state.blendSrcAlpha, state.blendDstAlpha),
+        } : undefined;
+        pipeline = this.device.createRenderPipeline({ layout: resources.layout,
+          vertex: { module: resources.vertex, entryPoint: points ? "refralPointMain" : program.vertexEntryPoint, buffers: layout.buffers },
+          fragment: { module: resources.fragment, entryPoint: points ? "refralPointMain" : program.fragmentEntryPoint,
+            targets: [{ format: target.color.format,
+              writeMask: colorWriteMask(state.colorMask) & (target.opaque ? 7 : 15), blend }] },
+          primitive: { topology, stripIndexFormat, unclippedDepth: state.depthClamp,
+            frontFace: points || state.frontFace !== GL.CCW ? "ccw" : "cw",
+            cullMode: line || !state.cull ? "none" : state.cullFace === GL.FRONT ? "front" : "back" },
+          depthStencil: target.depth ? { format: target.depth.format,
+            ...stencil,
+            ...(target.depth.format === "stencil8" ? {} : {
+              depthBias, depthBiasSlopeScale, depthBiasClamp,
+              depthWriteEnabled: state.depthTest && state.depthMask,
+              depthCompare: state.depthTest ? compareFunction(state.depthFunc) : "always",
+            }) } : undefined,
+        });
+        resources.pipelines.set(key, pipeline);
+        this.stats.pipelines++;
+      }
+      resources.lastPipeline = stencil ? undefined : { pipeline, layout, mode, stripIndexFormat,
+        colorFormat: target.color.format, depthFormat: target.depth?.format, opaque: target.opaque,
+        depthBias, slope: depthBiasSlopeScale, clamp: depthBiasClamp, state };
     }
     const { vertexBuffers, indexBuffer } = this.drawGeometry(operation, points, wideIndices, needsIndexExpansion);
     const uniforms = this.uniforms.stage(resources.groups[0], operation.vertexUniforms, operation.fragmentUniforms);

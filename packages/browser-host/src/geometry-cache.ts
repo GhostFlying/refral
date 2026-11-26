@@ -34,15 +34,17 @@ export class GeometryCache {
     this.newCount++;
   }
 
-  endDraw(): void {
-    if (!this.newCount || this.workingSet.size > this.entryLimit) return;
+  /** Whether all keyed streams used by this draw are now resident. */
+  endDraw(): boolean {
+    if (!this.newCount) return true;
+    if (this.workingSet.size > this.entryLimit) return false;
     let totalBytes = 0;
     let addedBytes = 0;
     for (const [key, buffer] of this.workingSet) {
       totalBytes += buffer.size;
       if (!this.resident.has(key)) addedBytes += buffer.size;
     }
-    if (totalBytes > this.byteLimit) return;
+    if (totalBytes > this.byteLimit) return false;
 
     // Hits were moved to the end. A fitting draw can evict only older,
     // unrelated streams until there is room for every newly used stream.
@@ -58,6 +60,7 @@ export class GeometryCache {
       this.residentBytes += buffer.size;
       this.retain(buffer);
     }
+    return true;
   }
 
   clear(): void {

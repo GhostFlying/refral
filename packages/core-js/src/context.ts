@@ -1588,6 +1588,7 @@ export class SemanticContext {
 
   getParameter(parameter: number): unknown {
     if (this.lost) return null;
+    if (parameter === GL.CURRENT_PROGRAM) return this.program;
     if (parameter === GL.COMPRESSED_TEXTURE_FORMATS) return new Uint32Array(0);
     if (parameter === GL.ALIASED_POINT_SIZE_RANGE) return new Float32Array([1, 64]);
     if (parameter === GL.ALIASED_LINE_WIDTH_RANGE) return new Float32Array([1, 1]);
@@ -1618,7 +1619,7 @@ export class SemanticContext {
     const { stencilFront: front, stencilBack: back } = this.state;
     const values: Record<number, unknown> = {
       [GL.ARRAY_BUFFER_BINDING]: this.arrayBuffer, [GL.ELEMENT_ARRAY_BUFFER_BINDING]: this.elementBuffer,
-      [GL.CURRENT_PROGRAM]: this.program, [GL.FRAMEBUFFER_BINDING]: this.framebuffer,
+      [GL.FRAMEBUFFER_BINDING]: this.framebuffer,
       [GL.RENDERBUFFER_BINDING]: this.renderbuffer, [GL.ACTIVE_TEXTURE]: GL.TEXTURE0 + this.activeUnit,
       [GL.TEXTURE_BINDING_2D]: this.textureUnits[this.activeUnit]!.texture2D,
       [GL.TEXTURE_BINDING_CUBE_MAP]: this.textureUnits[this.activeUnit]!.cubeMap,

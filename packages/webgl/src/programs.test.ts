@@ -67,6 +67,27 @@ describe('program facade boundary', () => {
     expect(values[1]).toEqual(new Float32Array([0.5, NaN, Infinity, -Infinity]));
   });
 
+  it('converts matrix storage before dispatch even after a previously accepted view detaches', () => {
+    const facade = setup();
+    const set = (view: Float32Array) => facade.methods.uniformMatrix2fv!(null, false, view);
+    const source = new Float32Array([1, 0, 0, 1]);
+    const buffer = source.buffer;
+    Object.defineProperty(source, 'buffer', { get() { throw new Error('shadowed buffer'); } });
+    set(source);
+    set(source);
+    structuredClone(buffer, { transfer: [buffer] });
+    expect(() => set(source)).toThrow(TypeError);
+    const variable = Reflect.construct(ArrayBuffer, [16, { maxByteLength: 32 }]);
+    expect(() => set(new Float32Array(variable, 0, 4))).toThrow(TypeError);
+    const shared = new Float32Array(new SharedArrayBuffer(16));
+    shared[0] = 2;
+    set(shared);
+    const dispatched = facade.invoke.mock.lastCall![1][2] as Float32Array;
+    shared[0] = 3;
+    expect(dispatched[0]).toBe(2);
+    expect(() => set(new Float32Array(Reflect.construct(SharedArrayBuffer, [16, { maxByteLength: 32 }])))).toThrow(TypeError);
+  });
+
   it('applies signed/unsigned numeric conversion before dispatch', () => {
     const facade = setup();
     facade.methods.drawArrays!(0x1_0000_0004, 0x1_0000_0001, 3.9);

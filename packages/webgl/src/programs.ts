@@ -11,6 +11,11 @@ const typedArrayBuffer = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'b
 const typedArrayOffset = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'byteOffset')!.get!;
 const typedArrayLength = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'length')!.get!;
 
+const resizable = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'resizable')?.get;
+const growable = typeof SharedArrayBuffer === 'undefined' ? undefined
+  : Object.getOwnPropertyDescriptor(SharedArrayBuffer.prototype, 'growable')?.get;
+const matrixViews = new WeakMap<object, Float32Array>();
+
 function unwrap(value: unknown, kind: ObjectKind, nullable = false): LogicalHandle | null {
   if (nullable && (value === null || value === undefined)) return null;
   const handle = value !== null && (typeof value === 'object' || typeof value === 'function')
@@ -27,27 +32,37 @@ function domString(value: unknown): string {
 function float(value: unknown): number { return Math.fround(+(value as number)); }
 function integer(value: unknown): number { return +(value as number) | 0; }
 
-function list(value: unknown, integral: boolean): Float32Array | Int32Array {
+function list(value: unknown, integral: boolean, matrix = false): Float32Array | Int32Array {
   if (value === null || value === undefined
     || (typeof value !== 'object' && typeof value !== 'function')) {
     throw new TypeError('Expected an iterable uniform or attribute value list.');
+  }
+  if (matrix) {
+    const view = matrixViews.get(value);
+    // A fixed nonempty view becomes empty on detachment. Repeat conversion to report the error.
+    if (view && typedArrayLength.call(view) > 0) return view;
   }
   // The union accepts fixed shared typed arrays. Resizable storage is excluded
   // by the pinned IDL, including views whose current length is fixed.
   const expectedType = integral ? 'Int32Array' : 'Float32Array';
   if (ArrayBuffer.isView(value) && typedArrayTag.call(value) === expectedType) {
     const buffer = typedArrayBuffer.call(value) as ArrayBufferLike;
-    const descriptor = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'resizable');
-    const sharedDescriptor = typeof SharedArrayBuffer === 'undefined' ? undefined
-      : Object.getOwnPropertyDescriptor(SharedArrayBuffer.prototype, 'growable');
-    let variable = false;
-    try { variable = descriptor?.get?.call(buffer) ?? false; }
-    catch { variable = sharedDescriptor?.get?.call(buffer) ?? false; }
+    let ordinary = true;
+    let variable: boolean;
+    try { variable = resizable?.call(buffer) ?? false; }
+    catch { ordinary = false; variable = growable?.call(buffer) ?? false; }
     if (variable) throw new TypeError('WebGL value lists require fixed-length storage.');
     const offset = typedArrayOffset.call(value) as number;
     const length = typedArrayLength.call(value) as number;
-    return integral ? new Int32Array(buffer, offset, length).slice()
-      : new Float32Array(buffer, offset, length).slice();
+    if (integral) return new Int32Array(buffer, offset, length).slice();
+    const floats = new Float32Array(buffer, offset, length);
+    // Both cores consume matrix values synchronously. Normalize the view so caller
+    // properties and foreign prototypes cannot affect reads or command encoding.
+    if (matrix && ordinary && resizable) {
+      if (length > 0) matrixViews.set(value, floats);
+      return floats;
+    }
+    return floats.slice();
   }
   if (typeof (value as Iterable<unknown>)[Symbol.iterator] !== 'function') {
     throw new TypeError('Expected an iterable uniform or attribute value list.');
@@ -140,7 +155,7 @@ export function createProgramFacade(core: DrawingCore, interfaces = webglInterfa
       method(`uniform${width}${type}v`, 2, args => [location(args[0]), list(args[1], integral)]);
     }
     if (width >= 2) method(`uniformMatrix${width}fv`, 3, args => [
-      location(args[0]), Boolean(args[1]), list(args[2], false),
+      location(args[0]), Boolean(args[1]), list(args[2], false, true),
     ]);
     method(`vertexAttrib${width}f`, width + 1, args => [
       toEnum(args[0]), ...args.slice(1, width + 1).map(float),

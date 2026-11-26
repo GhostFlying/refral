@@ -39,3 +39,36 @@ for (const backend of ['native', 'js', 'rust'] as const) {
       right: [0, 255, 0, 255], error: 0 });
   });
 }
+
+for (const backend of ['native', 'js', 'rust'] as const) {
+  test(`matrix setters capture the current contents of a reused foreign subview on ${backend}`, async ({ page }) => {
+    await page.goto('/tests/fixtures/runner.html');
+    const result = await page.evaluate(async backend => {
+      const url = '/tests/fixtures/rtt-cases.ts';
+      const { prepareRttContext, rttProgram } = await import(/* @vite-ignore */ url) as typeof RttCases;
+      const { gl, dispose } = await prepareRttContext(backend, 4, 4);
+      const iframe = document.createElement('iframe');
+      document.body.append(iframe);
+      try {
+        const program = rttProgram(gl, undefined,
+          'precision mediump float; uniform mat2 m; void main(){gl_FragColor=vec4(m[0],0.,1.);}');
+        const m = gl.getUniformLocation(program, 'm')!;
+        const ForeignFloats = (iframe.contentWindow as Window & typeof globalThis).Float32Array;
+        const values = new ForeignFloats([12, 1, 0, 0, 1, 13]).subarray(1, 5);
+        gl.uniformMatrix2fv(m, false, values);
+        values.set([0, 1, 1, 0]);
+        gl.viewport(0, 0, 2, 4);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.uniformMatrix2fv(m, false, values);
+        values.fill(0);
+        gl.viewport(2, 0, 2, 4);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        const pixels = new Uint8Array(8);
+        gl.readPixels(1, 1, 2, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        const query = Array.from(gl.getUniform(program, m));
+        return { pixels: [...pixels], query, error: gl.getError() };
+      } finally { iframe.remove(); await dispose(); }
+    }, backend);
+    expect(result).toEqual({ pixels: [255, 0, 0, 255, 0, 255, 0, 255], query: [0, 1, 1, 0], error: 0 });
+  });
+}

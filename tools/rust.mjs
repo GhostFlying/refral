@@ -54,13 +54,16 @@ if (operation === 'check') {
   if (directCommandProtocol !== 1 || ['rf_direct_scalar', 'rf_direct_list_prepare', 'rf_direct_list_commit']
     .some(name => typeof exports[name] !== 'function'))
     throw new Error('The formal Rust module requires direct command protocol v1.');
+  const batchNumericOpcodeMax = exports.rf_batch_numeric_opcode_max?.();
+  if (batchNumericOpcodeMax < 28 || batchNumericOpcodeMax === undefined)
+    throw new Error('The release module must accept batched frontFace.');
   if (batchProtocol !== 1 || ['rf_batch_run', 'rf_batch_input_pointer', 'rf_batch_output_pointer']
     .some(name => typeof exports[name] !== 'function'))
     throw new Error('The formal Rust module requires batch protocol v1.');
   await writeFile(resolve(dirname(output), 'build.json'), JSON.stringify({
     channel, target: 'wasm32-unknown-unknown', profile: 'release', bytes,
     sha256: createHash('sha256').update(binary).digest('hex'), abi, resourceProtocol, readbackProtocol, domUploadProtocol,
-    directCommandProtocol, batchProtocol, imports,
+    directCommandProtocol, batchProtocol, batchNumericOpcodeMax, imports,
   }, null, 2) + '\n');
   console.log(`Built formal semantic core Wasm (${bytes} bytes).`);
 } else {

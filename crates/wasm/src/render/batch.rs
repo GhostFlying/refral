@@ -6,7 +6,7 @@ const INVALID_BATCH: u32 = u32::MAX;
 const VAO: u32 = 19;
 const USE_PROGRAM: u32 = 20;
 const DRAW_ARRAYS: u32 = 21;
-const NUMERIC: [&str; 7] = [
+const NUMERIC: [&str; 8] = [
     "drawArrays",
     "drawElements",
     "clear",
@@ -14,6 +14,7 @@ const NUMERIC: [&str; 7] = [
     "scissor",
     "enable",
     "disable",
+    "frontFace",
 ];
 
 #[derive(Default)]
@@ -53,6 +54,11 @@ impl<'a> Input<'a> {
 #[no_mangle]
 pub extern "C" fn rf_batch_protocol_version() -> u32 {
     1
+}
+
+#[no_mangle]
+pub extern "C" fn rf_batch_numeric_opcode_max() -> u32 {
+    DRAW_ARRAYS + NUMERIC.len() as u32 - 1
 }
 
 #[no_mangle]

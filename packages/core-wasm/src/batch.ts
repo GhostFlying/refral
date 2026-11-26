@@ -2,10 +2,13 @@ import type { DrawingSurface, VertexArrayHandle } from '@refral/core-api';
 import { handle, lists, littleEndian, scalars } from './direct.js';
 
 const capacity = 128 * 1024;
-const numericCommands = new Map([
+const baseNumericCommands = new Map([
   ['drawArrays', [21, 3]], ['drawElements', [22, 4]], ['clear', [23, 1]],
   ['viewport', [24, 4]], ['scissor', [25, 4]], ['enable', [26, 1]], ['disable', [27, 1]],
 ]);
+const frontFaceOpcode = 28;
+const extendedNumericCommands = new Map(baseNumericCommands).set('frontFace', [frontFaceOpcode, 1]);
+
 type Acknowledge = (accepted: boolean) => void;
 
 export interface RustCommandBatchStats {
@@ -27,6 +30,9 @@ export function createCommandBatch(exports: WebAssembly.Exports,
   if (!littleEndian || typeof version !== 'function' || version() !== 1 ||
       typeof open !== 'function' || typeof run !== 'function' || typeof output !== 'function') return null;
 
+  const numericMax = exports.rf_batch_numeric_opcode_max;
+  const numericCommands = typeof numericMax === 'function' && numericMax() >= frontFaceOpcode
+    ? extendedNumericCommands : baseNumericCommands;
   const pointer = open() as number;
   if (!pointer) return null;
   let bytes = memory(pointer, capacity);

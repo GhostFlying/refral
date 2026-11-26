@@ -6,6 +6,7 @@ use refral_core::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+mod batch;
 mod direct;
 
 const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
@@ -81,6 +82,7 @@ pub(super) struct Transport {
     resource_after: Vec<refral_core::ResourceOperation>,
     direct_list: Vec<u8>,
     direct_list_prepared: bool,
+    batch: batch::Storage,
 }
 
 fn reserve(bytes: &mut Vec<u8>, length: usize) -> bool {
@@ -635,107 +637,115 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             json!({"type":"read-pixels"})
         }
         Reply::Clear(snapshot) => {
-            crate::resources::target(output, snapshot.target);
-            raster(output, snapshot.state);
-            u32_value(output, snapshot.mask);
-            for value in snapshot.color {
-                f32_value(output, value);
-            }
-            f32_value(output, snapshot.depth);
+            encode_clear(output, snapshot);
             json!({"type":"clear"})
         }
         Reply::Draw(snapshot) => {
-            u32_value(output, 0x38444652);
-            u32_value(output, 8);
-            u32_value(output, snapshot.artifact_id);
-            for value in [
-                snapshot.program.context_id,
-                snapshot.program.slot,
-                snapshot.program.generation,
-            ] {
-                u32_value(output, value);
-            }
-            output.extend_from_slice(&snapshot.link_generation.to_le_bytes());
-            crate::resources::target(output, snapshot.target);
-            raster(output, snapshot.state);
-            let raster_flags = u32::from(snapshot.state.polygon_offset_fill)
-                | (u32::from(snapshot.state.depth_clamp) << 1);
-            u32_value(output, raster_flags);
-            f32_value(output, snapshot.state.polygon_offset_factor);
-            f32_value(output, snapshot.state.polygon_offset_units);
-            f32_value(output, snapshot.state.polygon_offset_clamp);
-            for value in [
-                snapshot.mode,
-                snapshot.vertex_count,
-                snapshot.first,
-                snapshot.count,
-                snapshot.attributes.len() as u32,
-            ] {
-                u32_value(output, value);
-            }
-            for attribute in snapshot.attributes {
-                for value in [
-                    attribute.location,
-                    attribute.shader_type,
-                    attribute.size,
-                    attribute.ty,
-                    u32::from(attribute.normalized),
-                    attribute.stride,
-                    attribute.offset as u32,
-                ] {
-                    u32_value(output, value);
-                }
-                for value in attribute.constant {
-                    f32_value(output, value);
-                }
-                u32_value(output, u32::from(attribute.data.is_some()));
-                if let Some(snapshot) = attribute.data {
-                    buffer(output, snapshot);
-                }
-            }
-            u32_value(output, u32::from(snapshot.indices.is_some()));
-            if let Some((snapshot, ty, offset)) = snapshot.indices {
-                u32_value(output, ty);
-                u32_value(output, offset as u32);
-                buffer(output, snapshot);
-            }
-            bytes(output, &snapshot.vertex_uniforms);
-            bytes(output, &snapshot.fragment_uniforms);
-            u32_value(output, snapshot.textures.len() as u32);
-            for binding in snapshot.textures {
-                match binding.images {
-                    TextureImages::Texture2D(version) => {
-                        u32_value(output, 0);
-                        u32_value(output, u32::from(version.is_some()));
-                        if let Some(version) = version {
-                            crate::resources::version(output, version);
-                        }
-                    }
-                    TextureImages::Cube(versions) => {
-                        u32_value(output, 1);
-                        u32_value(output, u32::from(versions.is_some()));
-                        if let Some(versions) = versions {
-                            for version in versions {
-                                crate::resources::version(output, version);
-                            }
-                        }
-                    }
-                    TextureImages::MipChain {
-                        cube,
-                        levels,
-                        images,
-                    } => {
-                        u32_value(output, u32::from(cube));
-                        u32_value(output, levels as u32);
-                        for version in images {
-                            crate::resources::version(output, version);
-                        }
-                    }
-                }
-                crate::resources::parameters(output, binding.parameters);
-            }
+            encode_draw(output, snapshot);
             json!({"type":"draw"})
         }
+    }
+}
+
+fn encode_clear(output: &mut Vec<u8>, snapshot: refral_core::ClearSnapshot) {
+    crate::resources::target(output, snapshot.target);
+    raster(output, snapshot.state);
+    u32_value(output, snapshot.mask);
+    for value in snapshot.color {
+        f32_value(output, value);
+    }
+    f32_value(output, snapshot.depth);
+}
+
+fn encode_draw(output: &mut Vec<u8>, snapshot: refral_core::DrawSnapshot) {
+    u32_value(output, 0x38444652);
+    u32_value(output, 8);
+    u32_value(output, snapshot.artifact_id);
+    for value in [
+        snapshot.program.context_id,
+        snapshot.program.slot,
+        snapshot.program.generation,
+    ] {
+        u32_value(output, value);
+    }
+    output.extend_from_slice(&snapshot.link_generation.to_le_bytes());
+    crate::resources::target(output, snapshot.target);
+    raster(output, snapshot.state);
+    let raster_flags = u32::from(snapshot.state.polygon_offset_fill)
+        | (u32::from(snapshot.state.depth_clamp) << 1);
+    u32_value(output, raster_flags);
+    f32_value(output, snapshot.state.polygon_offset_factor);
+    f32_value(output, snapshot.state.polygon_offset_units);
+    f32_value(output, snapshot.state.polygon_offset_clamp);
+    for value in [
+        snapshot.mode,
+        snapshot.vertex_count,
+        snapshot.first,
+        snapshot.count,
+        snapshot.attributes.len() as u32,
+    ] {
+        u32_value(output, value);
+    }
+    for attribute in snapshot.attributes {
+        for value in [
+            attribute.location,
+            attribute.shader_type,
+            attribute.size,
+            attribute.ty,
+            u32::from(attribute.normalized),
+            attribute.stride,
+            attribute.offset as u32,
+        ] {
+            u32_value(output, value);
+        }
+        for value in attribute.constant {
+            f32_value(output, value);
+        }
+        u32_value(output, u32::from(attribute.data.is_some()));
+        if let Some(snapshot) = attribute.data {
+            buffer(output, snapshot);
+        }
+    }
+    u32_value(output, u32::from(snapshot.indices.is_some()));
+    if let Some((snapshot, ty, offset)) = snapshot.indices {
+        u32_value(output, ty);
+        u32_value(output, offset as u32);
+        buffer(output, snapshot);
+    }
+    bytes(output, &snapshot.vertex_uniforms);
+    bytes(output, &snapshot.fragment_uniforms);
+    u32_value(output, snapshot.textures.len() as u32);
+    for binding in snapshot.textures {
+        match binding.images {
+            TextureImages::Texture2D(version) => {
+                u32_value(output, 0);
+                u32_value(output, u32::from(version.is_some()));
+                if let Some(version) = version {
+                    crate::resources::version(output, version);
+                }
+            }
+            TextureImages::Cube(versions) => {
+                u32_value(output, 1);
+                u32_value(output, u32::from(versions.is_some()));
+                if let Some(versions) = versions {
+                    for version in versions {
+                        crate::resources::version(output, version);
+                    }
+                }
+            }
+            TextureImages::MipChain {
+                cube,
+                levels,
+                images,
+            } => {
+                u32_value(output, u32::from(cube));
+                u32_value(output, levels as u32);
+                for version in images {
+                    crate::resources::version(output, version);
+                }
+            }
+        }
+        crate::resources::parameters(output, binding.parameters);
     }
 }
 

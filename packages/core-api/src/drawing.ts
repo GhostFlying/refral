@@ -1,4 +1,4 @@
-import type { BufferCore, BufferCoreOptions } from './index.js';
+import type { BufferCore, BufferCoreOptions, VertexArrayHandle } from './index.js';
 import type { CompiledShader, LinkedProgram, ShaderStage } from './compiler.js';
 import type {
   ContextAttributes, DrawingSurface, RuntimeProfile, SemanticHost, TargetSnapshot,
@@ -33,6 +33,8 @@ export interface DrawingCoreServices {
 /** Arguments contain normalized scalar/data values and logical object handles. */
 export interface DrawingCore extends BufferCore {
   invoke(operation: string, args: unknown[]): unknown;
+  drainPendingCommands?(): void;
+  enqueueVertexArrayBind?(handle: VertexArrayHandle | null, acknowledged: (accepted: boolean) => void): boolean;
   captureTarget(): TargetSnapshot;
   prepareReadPixels(request: ReadPixelsRequest): ReadPixelsPlan | null;
   prepareDomTextureUpload(request: DomTextureUploadRequest): DomTextureUploadPlan | null;

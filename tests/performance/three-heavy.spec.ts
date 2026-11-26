@@ -24,6 +24,7 @@ function sampleCount(variable: string, fallback: number) {
 const warmup = sampleCount('REFRAL_HEAVY_WARMUP', 30);
 const samples = sampleCount('REFRAL_HEAVY_SAMPLES', 120);
 const rounds = sampleCount('REFRAL_HEAVY_ROUNDS', 3);
+const batchRust = process.env.REFRAL_HEAVY_RUST_BATCH === '1';
 const runStartedAt = new Date().toISOString();
 const output = `artifacts/three-heavy/${runStartedAt.replaceAll(':', '-')}`;
 const runs: Run[] = [];
@@ -67,7 +68,7 @@ test.beforeAll(async ({ browser }) => {
       trackedDiffSha256: digest(execFileSync('git', ['diff', 'HEAD'])), hashes: Object.fromEntries(hashes),
       browser: browser.version(), channel: 'chrome', headless: test.info().project.use.headless, commandLine,
       platform: platform(), release: release(), architecture: arch(), cpu: cpus()[0]?.model,
-      warmup, samples, rounds, scenes: activeScenes, order,
+      warmup, samples, rounds, scenes: activeScenes, order, batchRust,
     }, null, 2) + '\n');
   } finally { await session.detach(); }
 });
@@ -81,11 +82,11 @@ for (let round = 0; round < rounds; round++) {
         page.on('pageerror', error => errors.push(String(error)));
         page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
         await page.goto('/tests/fixtures/runner.html');
-        const result: Result = await page.evaluate(async ({ scene, backend, warmup, samples }) => {
+        const result: Result = await page.evaluate(async ({ scene, backend, warmup, samples, batchRust }) => {
           const path = '/benchmarks/three-heavy.ts';
           const { runHeavyScene }: typeof import('../../benchmarks/three-heavy') = await import(/* @vite-ignore */ path);
-          return runHeavyScene(scene, backend, warmup, samples);
-        }, { scene, backend, warmup, samples });
+          return runHeavyScene(scene, backend, warmup, samples, batchRust);
+        }, { scene, backend, warmup, samples, batchRust: backend === 'rust' && batchRust });
         const path = `${output}/round-${round + 1}-${scene}-${backend}`;
         await page.locator('canvas').screenshot({ path: `${path}.png` });
         await writeFile(`${path}.json`, JSON.stringify({ round: round + 1, scene, backend, result, errors }, null, 2) + '\n');
@@ -104,9 +105,11 @@ for (let round = 0; round < rounds; round++) {
 test.afterAll(async () => {
   if (runs.length !== rounds * activeScenes.length * order[0].length) return;
   const measurements = runs.map(({ round, scene, backend, result, path }) => {
-    const { width, height, first, contextMs, sceneMs, firstImageMs, frames, beforeStats, afterStats, firstStats } = result;
+    const { width, height, first, contextMs, sceneMs, firstImageMs, frames, beforeStats, afterStats, firstStats,
+      beforeBatchStats, afterBatchStats } = result;
     const interval = frames.map(frame => frame.intervalMs);
     const counters = ['draws', 'submits', 'passes', 'copies', 'pipelines', 'bindGroups', 'uploadedBytes'] as const;
+    const batchCounters = ['commands', 'batches', 'inputBytes', 'outputBytes', 'bufferCopies', 'bufferBytes'] as const;
     return { round, scene, backend, width, height, firstCalls: first.calls, firstTriangles: first.triangles,
       calls: metrics(frames.map(frame => frame.calls)), triangles: metrics(frames.map(frame => frame.triangles)),
       cpuMs: metrics(frames.map(frame => frame.cpuMs)), intervalMs: metrics(interval),
@@ -115,6 +118,8 @@ test.afterAll(async () => {
       contextMs, sceneMs, firstCpuMs: first.cpuMs, firstImageMs, firstStats,
       hostPerFrame: beforeStats && afterStats ? Object.fromEntries(counters.map(counter =>
         [counter, (afterStats[counter] - beforeStats[counter]) / frames.length])) : null,
+      batchPerFrame: beforeBatchStats && afterBatchStats ? Object.fromEntries(batchCounters.map(counter =>
+        [counter, (afterBatchStats[counter] - beforeBatchStats[counter]) / frames.length])) : null,
       allocatedBufferBytes: afterStats?.allocatedBufferBytes ?? null, image: `${path}.png` };
   });
   const comparisons = [];

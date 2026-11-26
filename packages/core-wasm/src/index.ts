@@ -181,3 +181,4 @@ export async function createRustBufferCore(
   });
 }
 export { createRustDrawingCore, createRustDrawingCoreFromModule, prepareRustDrawingCores, prepareRustModule } from './render.js';
+export type { RustCommandBatchStats } from './batch.js';

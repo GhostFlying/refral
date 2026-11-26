@@ -54,6 +54,9 @@ export function createVertexArrayExtension(core: DrawingCore, bufferPrototype: o
       if (this !== extension) throw new ErrorType('Expected an OES_vertex_array_object receiver.');
       requireArguments('bindVertexArrayOES', arguments, 1, ErrorType);
       const handle = unwrap(value);
+      if (core.enqueueVertexArrayBind?.(handle, accepted => {
+        if (accepted) bound = value ?? null;
+      })) return;
       if (core.invoke('bindVertexArrayOES', [handle])) bound = handle ? wrap(handle) : null;
     },
     deleteVertexArrayOES(value: WebGLVertexArrayObjectOES | null) {

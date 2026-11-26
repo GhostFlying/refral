@@ -19,8 +19,7 @@ export interface RustCommandBatchStats {
 
 export function createCommandBatch(exports: WebAssembly.Exports,
   memory: (pointer: number, length: number) => Uint8Array,
-  apply: (kind: number, bytes: Uint8Array) => void,
-  finish: () => void) {
+  apply: (kind: number, bytes: Uint8Array) => void) {
   const version = exports.rf_batch_protocol_version;
   const open = exports.rf_batch_input_pointer;
   const run = exports.rf_batch_run;
@@ -73,7 +72,6 @@ export function createCommandBatch(exports: WebAssembly.Exports,
       if (acknowledged !== acknowledgments.length) throw new Error('Missing Rust VAO acknowledgment.');
     } finally {
       acknowledgments.length = 0;
-      finish();
     }
   }
 

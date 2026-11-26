@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { CUBE_FACES, GL, ExecutionResources } from '@refral/core-api';
 import type {
+  BufferHandle,
   CompiledShader,
   CompilerRegistry,
   DrawingCore,
@@ -274,6 +275,70 @@ describe('actual Rust drawing Wasm', () => {
       (options) => setup(options.contextId, options.maxBufferBytes).core,
     );
     expect(result.evidence.checks.filter((check) => !check.passed)).toEqual([]);
+  });
+  it('reuses interleaved Buffer versions across submissions and replaces changed storage', () => {
+    const { core, draws } = setup();
+    try {
+      const { buffer: first } = scene(core);
+      const second = core.createBuffer()!;
+      const source = new Uint8Array(24).fill(5);
+      core.bindBuffer(GL.ARRAY_BUFFER, second);
+      core.bufferData(GL.ARRAY_BUFFER, source, GL.STATIC_DRAW);
+      source.fill(99);
+
+      function draw(buffer: BufferHandle): Uint8Array {
+        core.bindBuffer(GL.ARRAY_BUFFER, buffer);
+        core.invoke('vertexAttribPointer', [0, 2, GL.FLOAT, false, 0, 0]);
+        core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+        return draws.at(-1)!.attributes[0].data!;
+      }
+
+      const firstVersion = draw(first);
+      const secondVersion = draw(second);
+      core.invoke('flush', []);
+      expect(draw(first)).toBe(firstVersion);
+      expect(draw(second)).toBe(secondVersion);
+      expect(secondVersion[0]).toBe(5);
+
+      core.bufferSubData(GL.ARRAY_BUFFER, 0, new Uint8Array([7]));
+      expect(draw(second)[0]).toBe(7);
+      core.bufferData(GL.ARRAY_BUFFER, new Uint8Array(24).fill(8), GL.STATIC_DRAW);
+      expect(draw(second)[0]).toBe(8);
+      expect(secondVersion[0]).toBe(5);
+      core.deleteBuffer(second);
+      const replacement = core.createBuffer()!;
+      core.bindBuffer(GL.ARRAY_BUFFER, replacement);
+      core.bufferData(GL.ARRAY_BUFFER, new Uint8Array(24).fill(9), GL.STATIC_DRAW);
+      expect(draw(replacement)[0]).toBe(9);
+      expect(draw(first)).toBe(firstVersion);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally {
+      core.dispose();
+    }
+  });
+  it('evicts old Buffer snapshots when the snapshot count reaches its limit', () => {
+    const { core, draws } = setup();
+    try {
+      const { buffer: first } = scene(core);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      const original = draws[0].attributes[0].data;
+      for (let i = 0; i < 512; i++) {
+        core.bindBuffer(GL.ARRAY_BUFFER, core.createBuffer()!);
+        core.bufferData(GL.ARRAY_BUFFER, 24, GL.STATIC_DRAW);
+        core.invoke('vertexAttribPointer', [0, 2, GL.FLOAT, false, 0, 0]);
+        core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      }
+      core.bindBuffer(GL.ARRAY_BUFFER, first);
+      core.invoke('vertexAttribPointer', [0, 2, GL.FLOAT, false, 0, 0]);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      const latest = draws.at(-1)!.attributes[0].data;
+      expect(draws).toHaveLength(514);
+      expect(latest).toEqual(original);
+      expect(latest).not.toBe(original);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+    } finally {
+      core.dispose();
+    }
   });
   it('roundtrips UTF16 source and names, including lone surrogate code units', () => {
     const { core, compile } = setup();

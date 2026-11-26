@@ -25,6 +25,16 @@ const DEFAULT_URL = '/artifacts/core-wasm/refral_core.wasm';
 const modules = new Map<string, Promise<WebAssembly.Module>>();
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const maxCachedBufferVersions = 512;
+const maxCachedBufferBytes = 32 * 1024 * 1024;
+
+interface DrawBufferVersion {
+  generation: number;
+  storage: number;
+  content: number;
+  data: Uint8Array;
+  bufferVersion: string;
+}
 
 interface ABI {
   memory: WebAssembly.Memory;
@@ -321,23 +331,16 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
   }
   const direct = createDirectCommands(exports, memory);
   let batch: ReturnType<typeof createCommandBatch> = null;
-  let batchBuffers: Map<string, Uint8Array> | undefined;
-  let batchBufferBytes = 0;
   function drain(): void { batch?.drain(); }
   function enqueueVertexArrayBind(handle: VertexArrayHandle | null, acknowledged: (accepted: boolean) => void): boolean {
     if (!batch?.bindVertexArray(handle, acknowledged)) return false;
     schedule();
     return true;
   }
-  function finishBatch(): void {
-    batchBuffers = undefined;
-    batchBufferBytes = 0;
-  }
   function applyBatch(kind: number, bytes: Uint8Array): void {
     switch (kind) {
       case 1:
-        batchBuffers ??= new Map();
-        executeDraw(bytes);
+        executeDraw(bytes, true);
         return;
       case 2:
         decode({ type: 'clear' }, bytes);
@@ -599,8 +602,26 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
   }
   // Retain owned bytes only for the current/last draw. The reply carries
   // versions, and Rust lends the data only until another GL operation.
-  let previousBuffers = new Map<string, Uint8Array>();
-  function drawBuffer(reader: Reader, current: Map<string, Uint8Array>) {
+  const bufferVersions = new Map<number, DrawBufferVersion>();
+  let cachedBufferBytes = 0;
+  let previousOversize = new Map<number, DrawBufferVersion>();
+  let currentOversize = new Map<number, DrawBufferVersion>();
+
+  function forgetBufferVersion(slot: number): void {
+    const version = bufferVersions.get(slot);
+    if (!version) return;
+    cachedBufferBytes -= version.data.byteLength;
+    bufferVersions.delete(slot);
+  }
+
+  function clearBufferVersions(): void {
+    bufferVersions.clear();
+    cachedBufferBytes = 0;
+    previousOversize.clear();
+    currentOversize.clear();
+  }
+
+  function drawBuffer(reader: Reader, fromBatch: boolean): DrawBufferVersion {
     const owner = reader.u32();
     const slot = reader.u32();
     const generation = reader.u32();
@@ -611,28 +632,36 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       || (length && (!storage || !content))) {
       throw new Error('Invalid Rust draw buffer version.');
     }
-    const key = `${slot}:${generation}:${storage}:${content}`;
-    let bytes = current.get(key) ?? batchBuffers?.get(key) ?? previousBuffers.get(key);
-    if (bytes) {
-      if (bytes.length !== length) throw new Error('Inconsistent Rust draw buffer length.');
+    const oversize = length > maxCachedBufferBytes;
+    let version = bufferVersions.get(slot) ?? currentOversize.get(slot) ?? previousOversize.get(slot);
+    if (version?.generation === generation && version.storage === storage && version.content === content) {
+      if (version.data.byteLength !== length) throw new Error('Inconsistent Rust draw buffer length.');
     } else {
       const pointer = abi.rf_draw_buffer_pointer(owner, slot, generation, storage, content, length);
       if (!pointer) throw new Error('Rust draw references an unavailable buffer version.');
-      bytes = memory(pointer, length).slice();
-      if (batchBuffers && batch) {
+      version = {
+        generation, storage, content,
+        data: memory(pointer, length).slice(),
+        bufferVersion: `${slot}:${generation}:${storage}:${content}`,
+      };
+      if (fromBatch && batch) {
         batch.stats.bufferCopies++;
         batch.stats.bufferBytes += length;
       }
+      forgetBufferVersion(slot);
+      previousOversize.delete(slot);
+      if (!oversize) {
+        // Evict in insertion order so the common hit path performs no writes.
+        while (bufferVersions.size >= maxCachedBufferVersions || cachedBufferBytes + length > maxCachedBufferBytes)
+          forgetBufferVersion(bufferVersions.keys().next().value!);
+        bufferVersions.set(slot, version);
+        cachedBufferBytes += length;
+      }
     }
-    if (batchBuffers && !batchBuffers.has(key) && batchBuffers.size < 512 &&
-        batchBufferBytes + length <= 32 * 1024 * 1024) {
-      batchBuffers.set(key, bytes);
-      batchBufferBytes += length;
-    }
-    current.set(key, bytes);
-    return { data: bytes, bufferVersion: key };
+    if (oversize) currentOversize.set(slot, version);
+    return version;
   }
-  function executeDraw(bytes: Uint8Array): void {
+  function executeDraw(bytes: Uint8Array, fromBatch = false): void {
     const reader = new Reader(bytes);
     const magic = reader.u32();
     const version = reader.u32();
@@ -655,7 +684,6 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     const count = reader.u32();
     const attributeCount = reader.u32();
     const vertexAttributes: DrawOperation['attributes'] = [];
-    const currentBuffers = new Map<string, Uint8Array>();
     for (let index = 0; index < attributeCount; index++) {
       const location = reader.u32();
       const shaderType = reader.u32();
@@ -666,18 +694,29 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       const stride = reader.u32();
       const offset = reader.u32();
       const constant = [reader.f32(), reader.f32(), reader.f32(), reader.f32()];
-      const buffer = reader.u32() ? drawBuffer(reader, currentBuffers) : { data: null };
+      const buffer = reader.u32() ? drawBuffer(reader, fromBatch) : null;
       vertexAttributes.push({ location, shaderType, size, type, normalized: normalized === 1,
-        stride, offset, constant, ...buffer });
+        stride, offset, constant, data: buffer?.data ?? null, bufferVersion: buffer?.bufferVersion });
     }
-    const indices = reader.u32() ? { type: reader.u32(), offset: reader.u32(), ...drawBuffer(reader, currentBuffers) } : null;
+    let indices: DrawOperation['indices'] = null;
+    if (reader.u32()) {
+      const type = reader.u32();
+      const offset = reader.u32();
+      const { data, bufferVersion } = drawBuffer(reader, fromBatch);
+      indices = { type, offset, data, bufferVersion };
+    }
     const vertexUniforms = reader.bytes();
     const fragmentUniforms = reader.bytes();
     const textureCount = reader.u32();
     const textures: TextureBinding[] = [];
     for (let index = 0; index < textureCount; index++) textures.push(textureBinding(reader));
     reader.finish();
-    previousBuffers = currentBuffers;
+    if (previousOversize.size || currentOversize.size) {
+      const scratch = previousOversize;
+      previousOversize = currentOversize;
+      currentOversize = scratch;
+      currentOversize.clear();
+    }
     services.host.draw({
       program,
       mode,
@@ -825,8 +864,13 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     },
     deleteBuffer(buffer: BufferHandle | null) {
       drain();
-      previousBuffers.clear();
-      handle(buffer, (context, slot, generation) => abi.rf_delete_buffer(context, slot, generation));
+      handle(buffer, (context, slot, generation) => {
+        abi.rf_delete_buffer(context, slot, generation);
+        if (context === contextId) {
+          if (bufferVersions.get(slot)?.generation === generation) forgetBufferVersion(slot);
+          if (previousOversize.get(slot)?.generation === generation) previousOversize.delete(slot);
+        }
+      });
     },
     isBuffer(buffer: BufferHandle | null) {
       drain();
@@ -875,7 +919,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       if (changed) {
         batch?.discard();
         batch = null;
-        previousBuffers.clear();
+        clearBufferVersions();
         services.compiler.dispose();
         services.resources.dispose();
       }
@@ -885,7 +929,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     dispose() {
       batch?.discard();
       batch = null;
-      previousBuffers.clear();
+      clearBufferVersions();
       abi.rf_dispose();
       services.compiler.dispose();
       services.resources.dispose();
@@ -931,7 +975,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     invoke(operation: string, args: unknown[]): unknown {
       if (operation === 'enableCommandBatchForTesting') {
         if (abi.rf_is_context_lost()) return false;
-        batch ??= createCommandBatch(exports, memory, applyBatch, finishBatch);
+        batch ??= createCommandBatch(exports, memory, applyBatch);
         if (batch) batch.surface(surface.width, surface.height);
         return !!batch;
       }

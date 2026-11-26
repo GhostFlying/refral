@@ -67,6 +67,23 @@ interface Target {
   opaque: boolean;
 }
 
+interface PassBindings {
+  pipeline: GPURenderPipeline | null;
+  textureGroup: GPUBindGroup | null;
+  driverGroup: GPUBindGroup | null;
+  vertexBuffers: GPUBuffer[];
+  indexBuffer: GPUBuffer | null;
+  indexFormat: GPUIndexFormat | null;
+  viewport: RasterState['viewport'] | null;
+  depthRange: RasterState['depthRange'] | null;
+  blendColor: readonly number[] | null;
+  stencilReference: number;
+  scissorX: number;
+  scissorY: number;
+  scissorWidth: number;
+  scissorHeight: number;
+}
+
 const TEXTURE_USAGE = 0x10 | 0x04 | 0x01 | 0x02;
 
 function textureAllocationBytes(texture: GPUTexture): number {
@@ -163,6 +180,12 @@ export class BrowserHost implements SemanticHost {
   private encoder: GPUCommandEncoder | null = null;
   private pass: GPURenderPassEncoder | null = null;
   private passTarget: Target | null = null;
+  private readonly passBindings: PassBindings = {
+    pipeline: null, textureGroup: null, driverGroup: null, vertexBuffers: [],
+    indexBuffer: null, indexFormat: null, viewport: null, depthRange: null,
+    blendColor: null, stencilReference: -1,
+    scissorX: -1, scissorY: -1, scissorWidth: 0, scissorHeight: 0,
+  };
   private defaultTarget: Target | null = null;
   private defaultDirty = false;
   private readonly attachmentViews = new WeakMap<GPUTexture, GPUTextureView>();
@@ -655,9 +678,16 @@ export class BrowserHost implements SemanticHost {
   }
 
   private endPass(): void {
-    this.pass?.end();
+    if (!this.pass) return;
+    this.pass.end();
     this.pass = null;
     this.passTarget = null;
+    const bindings = this.passBindings;
+    bindings.pipeline = bindings.textureGroup = bindings.driverGroup = null;
+    bindings.vertexBuffers.length = 0;
+    bindings.indexBuffer = bindings.indexFormat = null;
+    bindings.viewport = bindings.depthRange = bindings.blendColor = null;
+    bindings.stencilReference = bindings.scissorX = -1;
   }
 
   replaceStorage(previous: TextureStorage | null, next: TextureStorage): void {
@@ -969,29 +999,69 @@ export class BrowserHost implements SemanticHost {
     }
     this.geometryCache.endDraw();
     const pass = this.beginPass(target);
-    pass.setPipeline(pipeline);
-    pass.setViewport(...state.viewport, ...state.depthRange);
-    if (stencil) pass.setStencilReference(stencilReference(state.stencilFront.reference));
+    const bindings = this.passBindings;
+    if (bindings.pipeline !== pipeline) {
+      pass.setPipeline(pipeline);
+      bindings.pipeline = pipeline;
+    }
+    const viewport = bindings.viewport;
+    const depthRange = state.depthRange;
+    if (!viewport || viewport[0] !== x || viewport[1] !== y || viewport[2] !== width || viewport[3] !== height ||
+        bindings.depthRange![0] !== depthRange[0] || bindings.depthRange![1] !== depthRange[1]) {
+      pass.setViewport(x, y, width, height, depthRange[0], depthRange[1]);
+      bindings.viewport = state.viewport;
+      bindings.depthRange = depthRange;
+    }
+    if (stencil) {
+      const reference = stencilReference(state.stencilFront.reference);
+      if (reference !== bindings.stencilReference) {
+        pass.setStencilReference(reference);
+        bindings.stencilReference = reference;
+      }
+    }
     this.applyScissor(pass, state, target);
-    const alphaConstants = [GL.CONSTANT_ALPHA, GL.ONE_MINUS_CONSTANT_ALPHA] as number[];
-    const usesConstantAlphaRGB = alphaConstants.includes(state.blendSrcRGB) || alphaConstants.includes(state.blendDstRGB);
+    const usesConstantAlphaRGB = state.blendSrcRGB === GL.CONSTANT_ALPHA || state.blendSrcRGB === GL.ONE_MINUS_CONSTANT_ALPHA
+      || state.blendDstRGB === GL.CONSTANT_ALPHA || state.blendDstRGB === GL.ONE_MINUS_CONSTANT_ALPHA;
     const blendAlpha = state.blendColor[3];
-    pass.setBlendConstant(usesConstantAlphaRGB
-      ? [blendAlpha, blendAlpha, blendAlpha, blendAlpha] : state.blendColor);
+    const r = usesConstantAlphaRGB ? blendAlpha : state.blendColor[0];
+    const g = usesConstantAlphaRGB ? blendAlpha : state.blendColor[1];
+    const b = usesConstantAlphaRGB ? blendAlpha : state.blendColor[2];
+    const color = bindings.blendColor;
+    if (!color || color[0] !== r || color[1] !== g || color[2] !== b || color[3] !== blendAlpha) {
+      bindings.blendColor = usesConstantAlphaRGB ? [r, g, b, blendAlpha] : state.blendColor;
+      pass.setBlendConstant(bindings.blendColor);
+    }
     pass.setBindGroup(0, uniforms.group, uniforms.offsets);
-    pass.setBindGroup(1, textureGroup);
-    pass.setBindGroup(2, driverGroup);
-    vertexBuffers.forEach((buffer, index) => pass.setVertexBuffer(index, buffer));
+    if (bindings.textureGroup !== textureGroup) {
+      pass.setBindGroup(1, textureGroup);
+      bindings.textureGroup = textureGroup;
+    }
+    if (bindings.driverGroup !== driverGroup) {
+      pass.setBindGroup(2, driverGroup);
+      bindings.driverGroup = driverGroup;
+    }
+    for (let index = 0; index < vertexBuffers.length; index++) {
+      const buffer = vertexBuffers[index]!;
+      if (bindings.vertexBuffers[index] !== buffer) {
+        pass.setVertexBuffer(index, buffer);
+        bindings.vertexBuffers[index] = buffer;
+      }
+    }
     if (points) {
       pass.draw(4, operation.count, 0, indices ? 0 : operation.first);
     } else if (needsIndexExpansion) {
+      bindings.indexBuffer = null;
       for (const batch of primitiveIndexBatches(mode, operation.first, operation.count, indices)) {
         const buffer = this.createBuffer(new Uint8Array(batch.buffer), GPUBufferUsage.INDEX, true);
         pass.setIndexBuffer(buffer, 'uint32');
         pass.drawIndexed(batch.length);
       }
     } else if (indexBuffer && indices) {
-      pass.setIndexBuffer(indexBuffer, indexFormat);
+      if (bindings.indexBuffer !== indexBuffer || bindings.indexFormat !== indexFormat) {
+        pass.setIndexBuffer(indexBuffer, indexFormat);
+        bindings.indexBuffer = indexBuffer;
+        bindings.indexFormat = indexFormat;
+      }
       const size = elementIndexBytes(indices.type);
       pass.drawIndexed(operation.count, 1, wideIndices ? 0 : indices.offset / size);
     } else pass.draw(operation.count, 1, operation.first);
@@ -1000,12 +1070,19 @@ export class BrowserHost implements SemanticHost {
   }
 
   private applyScissor(pass: GPURenderPassEncoder, state: RasterState, target: Target): void {
-    const box = state.scissorTest ? state.scissor : [0, 0, target.width, target.height];
-    const x = Math.max(0, Math.min(target.width, box[0]!));
-    const y = Math.max(0, Math.min(target.height, box[1]!));
-    const right = Math.max(x, Math.min(target.width, box[0]! + box[2]!));
-    const bottom = Math.max(y, Math.min(target.height, box[1]! + box[3]!));
-    pass.setScissorRect(x, y, right - x, bottom - y);
+    const [sx, sy, sw, sh] = state.scissor;
+    const x = state.scissorTest ? Math.max(0, Math.min(target.width, sx)) : 0;
+    const y = state.scissorTest ? Math.max(0, Math.min(target.height, sy)) : 0;
+    const width = state.scissorTest ? Math.max(x, Math.min(target.width, sx + sw)) - x : target.width;
+    const height = state.scissorTest ? Math.max(y, Math.min(target.height, sy + sh)) - y : target.height;
+    const bindings = this.passBindings;
+    if (x === bindings.scissorX && y === bindings.scissorY &&
+        width === bindings.scissorWidth && height === bindings.scissorHeight) return;
+    pass.setScissorRect(x, y, width, height);
+    bindings.scissorX = x;
+    bindings.scissorY = y;
+    bindings.scissorWidth = width;
+    bindings.scissorHeight = height;
   }
 
   clear(snapshot: TargetSnapshot, state: RasterState, mask: number,
@@ -1058,8 +1135,13 @@ export class BrowserHost implements SemanticHost {
       entries: [{ binding: 0, resource: { buffer } }] });
     const pass = this.beginPass(target);
     pass.setPipeline(pipeline);
+    this.passBindings.pipeline = pipeline;
     pass.setViewport(0, 0, target.width, target.height, 0, 1);
-    if (stencilWriteMask) pass.setStencilReference(state.stencilClear & 0xff);
+    this.passBindings.viewport = null;
+    if (stencilWriteMask) {
+      this.passBindings.stencilReference = state.stencilClear & 0xff;
+      pass.setStencilReference(this.passBindings.stencilReference);
+    }
     this.applyScissor(pass, state, target);
     pass.setBindGroup(0, group);
     pass.draw(3);

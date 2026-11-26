@@ -253,6 +253,29 @@ function scene(core: DrawingCore) {
   return { vertex, fragment, program, location, buffer };
 }
 describe('actual Rust drawing Wasm', () => {
+  it('preserves winding and GL errors across queued draws on each supported transport', () => {
+    const { core, draws } = setup();
+    const batchedWinding = WebAssembly.Module.exports(module).some(entry => entry.name === 'rf_batch_numeric_opcode_max');
+    try {
+      scene(core);
+      core.getError();
+      const stats = () => core.invoke('commandBatchStatsForTesting', []) as { commands: number; batches: number } | null;
+      const before = stats();
+      core.invoke('frontFace', [GL.CW]);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.invoke('frontFace', [0xffff]);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.invoke('frontFace', [GL.CCW]);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      if (before && batchedWinding) expect(stats()).toMatchObject({ commands: before.commands + 6, batches: before.batches });
+      expect(core.invoke('getParameter', [GL.FRONT_FACE])).toBe(GL.CCW);
+      expect(core.getError()).toBe(GL.INVALID_ENUM);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      expect(draws.map(draw => draw.state.frontFace)).toEqual([GL.CW, GL.CW, GL.CCW]);
+      if (before) expect(stats()!.batches - before.batches).toBe(batchedWinding ? 1 : 3);
+    } finally { core.dispose(); }
+  });
+
   it('gates sRGB encodings and preserves upload and attachment state', () => {
     const { core, resources } = setup();
     try { checkSrgbTextureState(core, resources); } finally { core.dispose(); }

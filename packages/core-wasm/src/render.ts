@@ -330,7 +330,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     return new Uint8Array(buffer, start, length);
   }
   const direct = createDirectCommands(exports, memory);
-  let batch: ReturnType<typeof createCommandBatch> = null;
+  let batch = createCommandBatch(exports, memory, applyBatch, surface);
   function drain(): void { batch?.drain(); }
   function enqueueVertexArrayBind(handle: VertexArrayHandle | null, acknowledged: (accepted: boolean) => void): boolean {
     if (!batch?.bindVertexArray(handle, acknowledged)) return false;
@@ -973,12 +973,6 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       return { flipY: values[0] === 1, premultiplyAlpha: values[1] === 1, colorSpaceConversion: values[2]! };
     },
     invoke(operation: string, args: unknown[]): unknown {
-      if (operation === 'enableCommandBatchForTesting') {
-        if (abi.rf_is_context_lost()) return false;
-        batch ??= createCommandBatch(exports, memory, applyBatch);
-        if (batch) batch.surface(surface.width, surface.height);
-        return !!batch;
-      }
       if (operation === 'commandBatchStatsForTesting') return batch ? { ...batch.stats } : null;
       if (operation === 'supportsSrgbTextures') {
         const version = exports.rf_srgb_texture_protocol_version;

@@ -48,10 +48,12 @@ for (const kind of ['standalone', 'transferred'] as const) {
             const start = performance.now();
             gl.clear(mask);
             const ms = performance.now() - start;
+            // Observe host probes after the pending clear has reached the host.
+            const error = gl.getError();
             const probes = probeCount() - before;
             const pixel = new Uint8Array(4);
             gl.readPixels(2, 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-            if (index >= 0) samples.push({ ms, probes, pixel: [...pixel] });
+            if (index >= 0) samples.push({ ms, probes, error, pixel: [...pixel] });
           }
           if (hooks) await hooks.device.queue.onSubmittedWorkDone();
           records.push({ core, actual: hooks?.core ?? 'native', scenario, complete, warmups, attributes,
@@ -76,6 +78,7 @@ for (const kind of ['standalone', 'transferred'] as const) {
       if (row.scenario === 'masked-alpha' && !retained) expected[3] = 0;
       const pixel = row.scenario === 'scissor' || noWrite ? (retained ? [255, 0, 0, 255] : [0, 0, 0, 0]) : expected;
       for (const sample of row.samples) {
+        expect(sample.error).toBe(0);
         expect(sample.pixel).toEqual(pixel);
         if (row.core !== 'native') expect(sample.probes).toBe(row.complete || noWrite ? 0 : 1);
       }

@@ -156,8 +156,7 @@ function sobelWork(renderer: WebGL1Renderer, width: number, height: number): Sce
   };
 }
 
-export async function runHeavyScene(name: HeavyScene, backend: ThreeBackend, warmup: number, samples: number,
-  batchRust = false) {
+export async function runHeavyScene(name: HeavyScene, backend: ThreeBackend, warmup: number, samples: number) {
   const canvas = document.createElement('canvas');
   canvas.style.display = 'block';
   document.body.style.margin = '0';
@@ -165,7 +164,6 @@ export async function runHeavyScene(name: HeavyScene, backend: ThreeBackend, war
   const { width, height } = heavyScenes[name];
   const started = performance.now();
   const { gl, attributes, hooks } = await createThreeContext(canvas, backend, { width, height });
-  if (batchRust && !hooks?.enableRustCommandBuffer()) throw new Error('Rust command buffer is unavailable.');
   const contextMs = performance.now() - started;
   const sceneStarted = performance.now();
   const renderer = new WebGL1Renderer({ canvas, context: gl, ...attributes });
@@ -214,7 +212,7 @@ export async function runHeavyScene(name: HeavyScene, backend: ThreeBackend, war
   }
 
   const beforeStats = hooks ? { ...hooks.stats } : null;
-  const beforeBatchStats = batchRust ? hooks!.rustCommandBatchStats() : null;
+  const beforeBatchStats = hooks?.rustCommandBatchStats() ?? null;
   const frames = [];
   let previous = await nextFrame();
   for (let frame = 0; frame < samples; frame++) {
@@ -224,7 +222,7 @@ export async function runHeavyScene(name: HeavyScene, backend: ThreeBackend, war
     previous = next;
   }
   const afterStats = hooks ? { ...hooks.stats } : null;
-  const afterBatchStats = batchRust ? hooks!.rustCommandBatchStats() : null;
+  const afterBatchStats = hooks?.rustCommandBatchStats() ?? null;
   // Repeat the last pose to produce a comparable screenshot outside sampling.
   step(warmup + samples);
   await hooks?.device.queue.onSubmittedWorkDone();

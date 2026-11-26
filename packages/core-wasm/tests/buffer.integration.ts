@@ -10,7 +10,9 @@ const originalInstantiate = WebAssembly.instantiate;
 
 beforeAll(async () => {
   try {
-    wasm = new Uint8Array(await readFile(new URL('../../../artifacts/core-wasm/refral_core.wasm', import.meta.url)));
+    wasm = new Uint8Array(await readFile(new URL(
+      process.env.REFRAL_WASM_TEST_PATH ?? '../../../artifacts/core-wasm/refral_core.wasm', import.meta.url,
+    )));
   } catch (error) {
     throw new Error('Build the real Rust core artifact with pnpm rust:build before test:wasm.', { cause: error });
   }

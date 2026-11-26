@@ -29,6 +29,8 @@ The JS implementation lives in `packages/core-js`. Shared contracts cover Buffer
 - `packages/browser-host` owns GPU resources and executes ordered rendering work.
 - The testing harness uses native WebGL references, the public synchronous readPixels entry and an internal asynchronous pixel-capture entry.
 
+Rust contexts automatically use the ABI7 batch v1 command buffer when present. JS writes normalized hot calls into Wasm memory, Rust validates and plans them in order, and the shared host consumes binary replies. Synchronous observations drain preceding commands. The [Rust transport](../packages/core-wasm/README.md) documents the wire format and the per-call compatibility path.
+
 ## Initial execution
 
 Use a single owner thread. Batch default and offscreen framebuffer work until the microtask checkpoint or an explicit `flush`. Native DOM consumers in the same call stack can observe an older or empty canvas bitmap before submission. GL-owned read paths submit their ordered copies when needed. Per-task staging and cache retirement still run at those checkpoints. Uniform and resource updates preserve the values observed by earlier draws. GPU work holds resource references through submission.

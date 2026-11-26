@@ -2,7 +2,12 @@ import { GL } from "./gl.js";
 import type { LinkedProgram } from "./compiler.js";
 import type { TextureVersion } from './resources.js';
 
-export interface DrawingSurface { readonly width: number; readonly height: number }
+export interface DrawingSurface {
+  readonly width: number;
+  readonly height: number;
+  /** Replay preceding draws before an observed canvas resize. Poll before queuing or replaying draws. */
+  bindResizeBarrier?(replay: () => void): () => void;
+}
 export interface ContextAttributes {
   alpha?: boolean;
   depth?: boolean;

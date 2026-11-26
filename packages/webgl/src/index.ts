@@ -30,7 +30,6 @@ export interface TestingHooks {
   readonly core: CoreKind;
   inspectBuffer(buffer: WebGLBuffer): BufferSnapshot | null;
   capture(): Promise<CapturedPixels>;
-  enableRustCommandBuffer(): boolean;
   rustCommandBatchStats(): RustCommandBatchStats | null;
   readonly stats: BrowserHost["stats"];
   readonly environment: Record<string, unknown>;
@@ -308,8 +307,6 @@ function wrapContext(canvas: HTMLCanvasElement | OffscreenCanvas, attributes: We
     core: current.core.kind,
     inspectBuffer: buffer => current.bufferFacade.inspect(buffer),
     capture: () => current.host.capture(current.core.captureTarget()),
-    enableRustCommandBuffer: () => current.core.kind === 'rust' &&
-      current.core.invoke('enableCommandBatchForTesting', []) === true,
     rustCommandBatchStats: () => current.core.kind === 'rust'
       ? current.core.invoke('commandBatchStatsForTesting', []) as RustCommandBatchStats | null : null,
     get stats() { return current.host.stats; },

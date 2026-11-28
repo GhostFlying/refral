@@ -80,9 +80,10 @@ A read-pixels reply contains the existing target encoding, sourceX/sourceY/copyW
 
 ## Compact batch replies
 
-The optional `rf_batch_run_compact(length, width, height, supported)` entry point has the same input and record framing as `rf_batch_run`. The adapter passes the draw-reference bits it can decode (`3`); the producer only emits agreed bits and ignores unknown requests. Both the legacy entry point and individual commands always emit complete version-8 draw records. In compact replies the low byte of the version word is 8 and the upper bits mark omitted groups:
+The optional `rf_batch_run_compact(length, width, height, supported)` entry point has the same input and record framing as `rf_batch_run`. The adapter passes the draw-reference bits it can decode (`7`); the producer only emits agreed bits and ignores unknown requests. Both the legacy entry point and individual commands always emit complete version-8 draw records. In compact replies the low byte of the version word is 8 and the upper bits mark omitted groups:
 
 - Flag bit 0 references the preceding draw's raster group, including polygon offset.
-- Flag bit 1 references the preceding draw's geometry group, from the attribute count through the optional index descriptor. Attribute order, format, offset, stride, constant bits and full buffer identities and versions must match; so must index format, offset and buffer version. Draw mode, first, count, vertex count, uniforms, target and textures are still sent per draw.
+- Flag bit 1 references the preceding draw's geometry group, from the attribute count through the optional index descriptor. Attribute order, format, offset, stride, constant bits and full buffer identities and versions must match; so must index format, offset and buffer version. Draw mode, first, count, vertex count, uniforms and target are still sent per draw.
+- Flag bit 2 references the preceding draw's ordered nonempty sampled bindings. Dimensions, completeness, every face and mip image identity and both versions, and all sampler parameters must match. A hit omits the texture count and binding payload.
 
 Each drain starts with empty references and its first draw includes every field. Clear, resource and acknowledgment records are independent. Nested drains own separate histories and acknowledgments. Decoded geometry retains its owned buffer snapshots; a reference also renews the last-draw cache for buffers too large for the regular cache.

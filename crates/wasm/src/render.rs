@@ -1,7 +1,7 @@
 use super::*;
 use refral_core::{
     ActiveInfo, Argument, AttributeInfo, BufferMetadata, CompileOutcome, LinkOutcome, ObjectHandle,
-    ObjectKind, PixelView, ProgramLayout, Reply, TextureImages, UniformInfo,
+    ObjectKind, PixelView, ProgramLayout, Reply, TextureBinding, TextureImages, UniformInfo,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -659,6 +659,7 @@ fn encode_clear(output: &mut Vec<u8>, snapshot: refral_core::ClearSnapshot) {
 
 const RASTER_REFERENCE: u32 = 1;
 const GEOMETRY_REFERENCE: u32 = 2;
+const TEXTURE_REFERENCE: u32 = 4;
 
 // References are local to a single batch reply and are disabled for direct draws.
 #[derive(Default)]
@@ -666,6 +667,7 @@ struct DrawReferences {
     enabled: u32,
     raster: Option<refral_core::RasterState>,
     geometry: Option<DrawGeometry>,
+    textures: Vec<TextureBinding>,
 }
 
 struct DrawGeometry {
@@ -727,8 +729,10 @@ fn encode_draw(
         .geometry
         .as_ref()
         .is_some_and(|geometry| geometry.matches(&snapshot));
+    let reuse_textures = !snapshot.textures.is_empty() && previous.textures == snapshot.textures;
     let flags = (u32::from(reuse_raster) * RASTER_REFERENCE)
-        | (u32::from(reuse_geometry) * GEOMETRY_REFERENCE);
+        | (u32::from(reuse_geometry) * GEOMETRY_REFERENCE)
+        | (u32::from(reuse_textures) * TEXTURE_REFERENCE);
     u32_value(output, 0x38444652);
     u32_value(output, 8 | (flags << 8));
     u32_value(output, snapshot.artifact_id);
@@ -766,14 +770,23 @@ fn encode_draw(
     }
     bytes(output, &snapshot.vertex_uniforms);
     bytes(output, &snapshot.fragment_uniforms);
-    u32_value(output, snapshot.textures.len() as u32);
-    for binding in snapshot.textures {
-        match binding.images {
+    if !reuse_textures {
+        draw_textures(output, &snapshot.textures);
+        if previous.enabled & TEXTURE_REFERENCE != 0 {
+            previous.textures = snapshot.textures;
+        }
+    }
+}
+
+fn draw_textures(output: &mut Vec<u8>, textures: &[TextureBinding]) {
+    u32_value(output, textures.len() as u32);
+    for binding in textures {
+        match &binding.images {
             TextureImages::Texture2D(version) => {
                 u32_value(output, 0);
                 u32_value(output, u32::from(version.is_some()));
                 if let Some(version) = version {
-                    crate::resources::version(output, version);
+                    crate::resources::version(output, *version);
                 }
             }
             TextureImages::Cube(versions) => {
@@ -781,7 +794,7 @@ fn encode_draw(
                 u32_value(output, u32::from(versions.is_some()));
                 if let Some(versions) = versions {
                     for version in versions {
-                        crate::resources::version(output, version);
+                        crate::resources::version(output, *version);
                     }
                 }
             }
@@ -790,10 +803,10 @@ fn encode_draw(
                 levels,
                 images,
             } => {
-                u32_value(output, u32::from(cube));
-                u32_value(output, levels as u32);
+                u32_value(output, u32::from(*cube));
+                u32_value(output, *levels as u32);
                 for version in images {
-                    crate::resources::version(output, version);
+                    crate::resources::version(output, *version);
                 }
             }
         }

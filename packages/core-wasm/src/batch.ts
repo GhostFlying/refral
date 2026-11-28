@@ -1,4 +1,4 @@
-import type { DrawingSurface, RasterState, VertexArrayHandle } from '@refral/core-api';
+import type { DrawingSurface, RasterState, TextureBinding, VertexArrayHandle } from '@refral/core-api';
 import { handle, lists, littleEndian, scalars } from './direct.js';
 import type { DrawGeometry } from './render.js';
 
@@ -12,11 +12,13 @@ const extendedNumericCommands = new Map(baseNumericCommands).set('frontFace', [f
 
 export const rasterReference = 1;
 export const geometryReference = 2;
+export const textureReference = 4;
 
 export interface BatchDrawReferences {
   supported: number;
   raster?: RasterState;
   geometry?: DrawGeometry;
+  textures?: TextureBinding[];
 }
 
 type Acknowledge = (accepted: boolean) => void;
@@ -41,7 +43,7 @@ export function createCommandBatch(exports: WebAssembly.Exports,
       typeof open !== 'function' || typeof run !== 'function' || typeof output !== 'function') return null;
 
   const compact = exports.rf_batch_run_compact;
-  const supported = typeof compact === 'function' ? rasterReference | geometryReference : 0;
+  const supported = typeof compact === 'function' ? rasterReference | geometryReference | textureReference : 0;
   const runBatch = typeof compact === 'function'
     ? (length: number, width: number, height: number) => compact(length, width, height, supported)
     : run;

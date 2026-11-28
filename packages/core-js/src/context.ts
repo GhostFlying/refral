@@ -13,6 +13,7 @@ import {
   LogicalObject, BufferObject, VertexArrayObject, TextureObject, RenderbufferObject, FramebufferObject,
   ErrorState, framebufferAttachmentPoint, isPowerOfTwo, textureBase, textureSamplingLevelCount, textureTargets,
 } from "./resources.js";
+import { UniformSnapshots } from "./uniform-snapshots.js";
 import type { TextureImage, VertexAttribute } from "./resources.js";
 
 export type {
@@ -76,6 +77,7 @@ interface TextureUnit {
 
 export class SemanticContext {
   private readonly owner = {};
+  private readonly uniformSnapshots = new UniformSnapshots();
   private readonly errors = new ErrorState();
   private readonly objects = new Set<LogicalObject>();
   private readonly state: RasterState;
@@ -819,7 +821,8 @@ export class SemanticContext {
         (mode >= GL.TRIANGLES && this.state.cull && this.state.cullFace === GL.FRONT_AND_BACK)) return;
     this.host.draw({ program: this.program.executable, mode, target, state: snapshotRaster(this.state),
       attributes, vertexCount: vertices, first, count, indices,
-      vertexUniforms: this.program.vertexUniforms.slice(), fragmentUniforms: this.program.fragmentUniforms.slice(),
+      vertexUniforms: this.uniformSnapshots.copy(this.program.vertexUniforms),
+      fragmentUniforms: this.uniformSnapshots.copy(this.program.fragmentUniforms),
       textures });
     this.wroteColorTarget();
     this.schedule();
@@ -1761,6 +1764,7 @@ export class SemanticContext {
   markLost(): boolean {
     if (this.lost) return false;
     this.lost = true;
+    this.uniformSnapshots.clear();
     this.errors.clear();
     this.errors.set(GL.CONTEXT_LOST_WEBGL);
     return true;

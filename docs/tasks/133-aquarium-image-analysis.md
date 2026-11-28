@@ -56,3 +56,5 @@ node artifacts/aquarium-visual/make.mjs
 python3 artifacts/geometry-performance/lock.py node artifacts/aquarium-visual/run.mjs
 REFRAL_CASES=aquarium REFRAL_WARMUP=2 REFRAL_SAMPLES=2 python3 artifacts/geometry-performance/lock.py node artifacts/aquarium-visual/texture.mjs
 ```
+
+[The system WebKit comparison](134-webkit-aquarium-mips.md) checks the same normal-map reduction against the Safari 27.2 system engine on the Mini.

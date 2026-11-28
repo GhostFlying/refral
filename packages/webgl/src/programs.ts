@@ -149,9 +149,9 @@ export function createProgramFacade(core: DrawingCore, interfaces = webglInterfa
     for (const type of ['f', 'i']) {
       const integral = type === 'i';
       const convert = integral ? integer : float;
-      method(`uniform${width}${type}`, width + 1, args => [
-        location(args[0]), ...args.slice(1, width + 1).map(convert),
-      ]);
+      method(`uniform${width}${type}`, width + 1, width === 1
+        ? args => [location(args[0]), convert(args[1])]
+        : args => [location(args[0]), ...args.slice(1, width + 1).map(convert)]);
       method(`uniform${width}${type}v`, 2, args => [location(args[0]), list(args[1], integral)]);
     }
     if (width >= 2) method(`uniformMatrix${width}fv`, 3, args => [

@@ -104,8 +104,8 @@ type VertexStream = Pick<AttributeSnapshot,
   'bufferVersion' | 'shaderType' | 'size' | 'type' | 'normalized' | 'stride' | 'offset'>;
 
 interface ResidentGeometry extends GeometryBuffers {
-  indexVersion: string;
-  indexType: number;
+  indexVersionOrVertexCount: string | number;
+  indexType: number | undefined;
   vertexCount: number;
   streams: VertexStream[];
 }
@@ -275,7 +275,7 @@ export class BrowserHost implements SemanticHost {
   private targetCache = new WeakMap<GPUTexture, Target>();
   private initialized = new WeakSet<GPUTexture>();
   private readonly transientBuffers = new Set<GPUBuffer>();
-  private previousIndexVersion: string | undefined;
+  private previousIndexVersionOrVertexCount: string | number | undefined;
   private residentGeometry: ResidentGeometry | null = null;
   private readonly geometryCache = new GeometryCache(geometryCacheBytes, geometryCacheEntries,
     buffer => { this.transientBuffers.delete(buffer); },
@@ -898,15 +898,17 @@ export class BrowserHost implements SemanticHost {
   private drawGeometry(operation: DrawOperation, points: boolean, wideIndices: boolean,
     needsIndexExpansion: boolean): GeometryBuffers {
     const { indices, attributes, vertexCount } = operation;
-    const indexVersion = points || wideIndices || needsIndexExpansion ? undefined : indices?.bufferVersion;
+    // Repeated drawArrays can reuse the packed prefix when its length and every stream match.
+    const indexVersionOrVertexCount = points || wideIndices || needsIndexExpansion ? undefined
+      : indices ? indices.bufferVersion : vertexCount;
     const previous = this.residentGeometry;
-    if (previous && previous.indexVersion === indexVersion && previous.indexType === indices!.type &&
+    if (previous && previous.indexVersionOrVertexCount === indexVersionOrVertexCount && previous.indexType === indices?.type &&
         previous.vertexCount === vertexCount && sameVertexStreams(previous.streams, attributes)) return previous;
 
     // Only adjacent draws can reuse a set. Drop it before a miss can evict any of its buffers.
     this.residentGeometry = null;
-    const repeatedIndices = !!indexVersion && indexVersion === this.previousIndexVersion;
-    this.previousIndexVersion = indexVersion;
+    const repeated = indexVersionOrVertexCount !== undefined && indexVersionOrVertexCount === this.previousIndexVersionOrVertexCount;
+    this.previousIndexVersionOrVertexCount = indexVersionOrVertexCount;
     this.geometryCache.beginDraw();
     const vertexBuffers = operation.attributes.map(attribute =>
       this.vertexBuffer(attribute, points && indices ? operation.count : operation.vertexCount, points ? indices : null));
@@ -926,8 +928,8 @@ export class BrowserHost implements SemanticHost {
     const resident = this.geometryCache.endDraw();
     // Wait for repeated geometry before retaining metadata. The streams describe packed
     // buffers by their immutable versions, without keeping the CPU upload bytes alive.
-    if (repeatedIndices && resident && attributes.every(a => !!a.bufferVersion)) {
-      this.residentGeometry = { vertexBuffers, indexBuffer, indexVersion, indexType: indices!.type, vertexCount,
+    if (repeated && resident && attributes.every(a => !!a.bufferVersion)) {
+      this.residentGeometry = { vertexBuffers, indexBuffer, indexVersionOrVertexCount, indexType: indices?.type, vertexCount,
         streams: attributes.map(({ bufferVersion, shaderType, size, type, normalized, stride, offset }) =>
           ({ bufferVersion, shaderType, size, type, normalized, stride, offset })) };
       return this.residentGeometry;
@@ -1545,7 +1547,7 @@ export class BrowserHost implements SemanticHost {
     this.buffers.clear();
     this.transientBuffers.clear();
     this.residentGeometry = null;
-    this.previousIndexVersion = undefined;
+    this.previousIndexVersionOrVertexCount = undefined;
     this.geometryCache.clear();
     this.uniforms.clear();
     this.textures.clear();

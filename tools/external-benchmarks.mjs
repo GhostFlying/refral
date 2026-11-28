@@ -7,11 +7,13 @@ import { extname, join, resolve, sep } from 'node:path';
 import { chromium } from '@playwright/test';
 import { createServer } from 'vite';
 import { installExternalPage } from '../benchmarks/external-page.mjs';
+import { specializeUniformSweep, uniformSweep } from './animometer-uniform-sweep.mjs';
 import { sources as pins } from './deps-external-benchmarks.mjs';
 
 const sources = resolve('artifacts/external-benchmarks/sources');
 const output = resolve('artifacts/external-benchmarks', new Date().toISOString().replaceAll(':', '-'));
 const cases = {
+  ...Object.fromEntries([...uniformSweep.keys()].map(name => [name, 'animometer/Animometer/tests/3d/webgl.html'])),
   aquarium: 'samples/aquarium/aquarium.html',
   'aquarium-20k': 'samples/aquarium/aquarium.html?numFish=20000',
   animometer: 'animometer/Animometer/tests/3d/webgl.html',
@@ -38,7 +40,7 @@ for (const [name, , revision] of pins.filter(([name]) => selected.some(key => ca
 }
 const hashes = {};
 for (const file of ['artifacts/compiler/compiler.wasm', 'artifacts/core-wasm/refral_core.wasm',
-  'benchmarks/external-page.mjs', 'tools/external-benchmarks.mjs']) {
+  'tools/animometer-uniform-sweep.mjs', 'benchmarks/external-page.mjs', 'tools/external-benchmarks.mjs']) {
   hashes[file] = createHash('sha256').update(await readFile(file)).digest('hex');
 }
 await writeFile(join(output, 'environment.json'), JSON.stringify({
@@ -90,6 +92,8 @@ try {
                 assert(body.includes('enableVR: true'));
                 body = Buffer.from(body.toString().replace('enableVR: true', 'enableVR: false'));
               }
+              if (uniformSweep.has(name) && request.pathname.endsWith('/3d/resources/webgl.js'))
+                body = Buffer.from(specializeUniformSweep(body.toString(), uniformSweep.get(name)));
               const type = { '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' }[extname(file)];
               await route.fulfill({ body, contentType: type });
             } catch (error) {
@@ -98,7 +102,7 @@ try {
             }
           });
           await page.goto(url);
-          await page.evaluate(installExternalPage, { backend, unity: name === 'unity' });
+          await page.evaluate(installExternalPage, { backend, unity: name === 'unity', auditUniforms: uniformSweep.has(name) || name === 'animometer' });
           let html = await readFile(join(sources, cases[name].split('?')[0]), 'utf8');
           if (name === 'animometer-attrib-256') {
             assert(html.includes('b.tune(20000)'));
@@ -125,11 +129,16 @@ try {
             await page.waitForLoadState('networkidle');
             result.measurement = await page.evaluate(([warmup, samples]) => externalBench.run(warmup, samples), [warmup, samples]);
             const measurement = result.measurement;
-            assert(measurement.auditDraws > 0, 'No draws in audit frame');
+            if (uniformSweep.has(name) || name === 'animometer') {
+              const draws = name === 'animometer-setup' ? 0 : 20000;
+              assert.equal(measurement.auditDraws, draws);
+              assert.equal(measurement.auditUniforms, name === 'animometer' ? 6 * draws : 6 + draws * (uniformSweep.get(name) ?? 0));
+              if (backend !== 'native') assert.equal(measurement.after.draws - measurement.before.draws, samples * draws);
+            } else assert(measurement.auditDraws > 0, 'No draws in audit frame');
             assert.equal(measurement.glError, 0);
             assert.deepEqual(measurement.errors, []);
             if (backend !== 'native') {
-              assert(measurement.after.draws > measurement.before.draws);
+              if (name !== 'animometer-setup') assert(measurement.after.draws > measurement.before.draws);
               assert.equal(measurement.adapter.isFallbackAdapter, false);
             } else {
               assert.doesNotMatch(measurement.adapter, /swiftshader|llvmpipe|software rasterizer/i);

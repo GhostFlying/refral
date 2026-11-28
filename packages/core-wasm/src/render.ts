@@ -1,6 +1,6 @@
 import { createRasterState, GL, isDrawMode, vertexComponentBytes } from '@refral/core-api';
 import { createDirectCommands, noDirectCommand } from './direct.js';
-import { createCommandBatch } from './batch.js';
+import { createCommandBatch, rasterReference, type BatchDrawReferences } from './batch.js';
 import type {
   BufferHandle,
   BufferSnapshot,
@@ -337,10 +337,10 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     schedule();
     return true;
   }
-  function applyBatch(kind: number, bytes: Uint8Array): void {
+  function applyBatch(kind: number, bytes: Uint8Array, previous: BatchDrawReferences): void {
     switch (kind) {
       case 1:
-        executeDraw(bytes, true);
+        executeDraw(bytes, previous);
         return;
       case 2:
         decode({ type: 'clear' }, bytes);
@@ -661,22 +661,30 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     if (oversize) currentOversize.set(slot, version);
     return version;
   }
-  function executeDraw(bytes: Uint8Array, fromBatch = false): void {
-    const reader = new Reader(bytes);
-    const magic = reader.u32();
-    const version = reader.u32();
-    if (magic !== 0x38444652 || version !== 8)
-      throw new Error('Invalid Rust draw snapshot version.');
-    const program = services.compiler.executable(reader.u32());
-    reader.skip(12 + 8);
-    const drawTarget = readTarget(reader);
-    const state = readRaster(reader, drawTarget.width, drawTarget.height);
+  function readDrawRaster(reader: Reader, width: number, height: number): RasterState {
+    const state = readRaster(reader, width, height);
     const rasterFlags = reader.u32();
     state.polygonOffsetFill = (rasterFlags & 1) !== 0;
     state.depthClamp = (rasterFlags & 2) !== 0;
     state.polygonOffsetFactor = reader.f32();
     state.polygonOffsetUnits = reader.f32();
     state.polygonOffsetClamp = reader.f32();
+    return state;
+  }
+  function executeDraw(bytes: Uint8Array, previous?: BatchDrawReferences): void {
+    const fromBatch = previous !== undefined;
+    const reader = new Reader(bytes);
+    const magic = reader.u32();
+    const tag = reader.u32();
+    const flags = tag >>> 8;
+    if (magic !== 0x38444652 || (tag & 0xff) !== 8 || (flags & ~(previous?.supported ?? 0)) !== 0)
+      throw new Error('Invalid Rust draw snapshot version.');
+    const program = services.compiler.executable(reader.u32());
+    reader.skip(12 + 8);
+    const drawTarget = readTarget(reader);
+    const state = flags & rasterReference ? previous?.raster : readDrawRaster(reader, drawTarget.width, drawTarget.height);
+    if (!state) throw new Error('Missing Rust batch raster reference.');
+    if (previous) previous.raster = state;
     const mode = reader.u32();
     if (!isDrawMode(mode)) throw new Error('Invalid Rust draw mode.');
     const vertexCount = reader.u32();

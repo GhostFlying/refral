@@ -82,6 +82,16 @@ pub extern "C" fn rf_batch_output_pointer() -> usize {
 
 #[no_mangle]
 pub extern "C" fn rf_batch_run(length: u32, width: u32, height: u32) -> u32 {
+    rf_batch_run_compact(length, width, height, 0)
+}
+
+#[no_mangle]
+pub extern "C" fn rf_batch_run_compact(
+    length: u32,
+    width: u32,
+    height: u32,
+    supported: u32,
+) -> u32 {
     with_state(INVALID_BATCH, |state| {
         let storage = &mut state.render_transport.batch;
         storage.output.clear();
@@ -98,6 +108,10 @@ pub extern "C" fn rf_batch_run(length: u32, width: u32, height: u32) -> u32 {
                 Argument::Number(height.into()),
             ],
         );
+        let mut previous = DrawReferences {
+            enabled: supported & RASTER_REFERENCE,
+            ..Default::default()
+        };
         while !input.0.is_empty() {
             let Some(opcode) = input.u32() else {
                 return INVALID_BATCH;
@@ -111,6 +125,7 @@ pub extern "C" fn rf_batch_run(length: u32, width: u32, height: u32) -> u32 {
                 &mut storage.resource_owners,
                 reply,
                 opcode,
+                &mut previous,
             ) {
                 return INVALID_BATCH;
             }
@@ -172,6 +187,7 @@ fn publish(
     owners: &mut Vec<ResourceOperation>,
     reply: Reply,
     opcode: u32,
+    previous: &mut DrawReferences,
 ) -> bool {
     let (before, after) = core.take_resource_operations();
     let releases = core.take_artifact_releases();
@@ -200,7 +216,7 @@ fn publish(
         record(output, 3, |bytes| crate::resources::encode(bytes, &before));
     }
     match reply {
-        Reply::Draw(snapshot) => record(output, 1, |bytes| encode_draw(bytes, snapshot)),
+        Reply::Draw(snapshot) => record(output, 1, |bytes| encode_draw(bytes, snapshot, previous)),
         Reply::Clear(snapshot) => record(output, 2, |bytes| encode_clear(bytes, snapshot)),
         Reply::Boolean(accepted) if opcode == VAO => {
             record(output, 5, |bytes| u32_value(bytes, u32::from(accepted)));

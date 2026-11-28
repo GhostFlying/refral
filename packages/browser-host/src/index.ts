@@ -282,6 +282,12 @@ export class BrowserHost implements SemanticHost {
     // Evicted buffers can still be referenced by the active encoder.
     buffer => { this.transientBuffers.add(buffer); });
   private readonly uniforms: UniformArena;
+  private lastSampledGroup?: {
+    layout: GPUBindGroupLayout;
+    textures: GPUTexture[];
+    samplers: GPUSampler[];
+    group: GPUBindGroup;
+  };
   private readonly emptyTextureGroups = new WeakMap<GPUBindGroupLayout, GPUBindGroup>();
   private programs = new WeakMap<LinkedProgram, Map<string, {
     layout: GPUPipelineLayout;
@@ -971,6 +977,48 @@ export class BrowserHost implements SemanticHost {
     return new Uint8Array(values.buffer);
   }
 
+  private sampledGroup(resources: ReturnType<BrowserHost['programResources']>, bindings: DrawOperation['textures']) {
+    const layout = resources.groups[1];
+    const elements = resources.sampledElements;
+    if (!elements.length) {
+      let group = this.emptyTextureGroups.get(layout);
+      if (!group) {
+        group = this.device.createBindGroup({ layout, entries: [] });
+        this.emptyTextureGroups.set(layout, group);
+        this.stats.bindGroups++;
+      }
+      return group;
+    }
+    const previous = this.lastSampledGroup;
+    let matches = previous?.layout === layout;
+    const textures: GPUTexture[] = [];
+    const samplers: GPUSampler[] = [];
+    for (const [i, element] of elements.entries()) {
+      const binding = bindings[i]!;
+      const cube = element.type === GL.SAMPLER_CUBE;
+      if (cube !== (binding.dimension === 'cube')) throw new Error('Sampler and execution texture dimensions differ.');
+      const images = binding.mipImages ?? binding.cubeFaces;
+      const texture = images ? this.materializeSampledImages(images, cube ? 6 : 1)
+        : cube ? this.getBlackCubeTexture()
+          : binding.storage ? this.materializeTexture(binding.storage) : this.getBlackTexture();
+      const sampler = this.sampler(binding.parameters);
+      textures.push(texture);
+      samplers.push(sampler);
+      matches &&= previous!.textures[i] === texture && previous!.samplers[i] === sampler;
+    }
+    if (matches) return previous!.group;
+    const entries: GPUBindGroupEntry[] = [];
+    for (const [i, element] of elements.entries()) {
+      entries.push({ binding: element.samplerBinding, resource: samplers[i]! });
+      const dimension = element.type === GL.SAMPLER_CUBE ? 'cube' : '2d';
+      entries.push({ binding: element.textureBinding, resource: textures[i]!.createView({ dimension }) });
+    }
+    const group = this.device.createBindGroup({ layout, entries });
+    this.stats.bindGroups++;
+    this.lastSampledGroup = { layout, textures, samplers, group };
+    return group;
+  }
+
   private sampler(parameters: TextureParameters): GPUSampler {
     const key = JSON.stringify(parameters);
     let sampler = this.samplers.get(key);
@@ -1085,26 +1133,7 @@ export class BrowserHost implements SemanticHost {
     }
     const { vertexBuffers, indexBuffer } = this.drawGeometry(operation, points, wideIndices, needsIndexExpansion);
     const uniforms = this.uniforms.stage(resources.groups[0], operation.vertexUniforms, operation.fragmentUniforms);
-    const textureEntries: GPUBindGroupEntry[] = [];
-    for (let i = 0; i < resources.sampledElements.length; i++) {
-      const sampler = resources.sampledElements[i]!;
-      const binding = operation.textures[i]!;
-      const cube = sampler.type === GL.SAMPLER_CUBE;
-      if (cube !== (binding.dimension === 'cube')) throw new Error('Sampler and execution texture dimensions differ.');
-      const images = binding.mipImages ?? binding.cubeFaces;
-      const texture = images ? this.materializeSampledImages(images, cube ? 6 : 1)
-        : cube ? this.getBlackCubeTexture()
-          : binding.storage ? this.materializeTexture(binding.storage) : this.getBlackTexture();
-      textureEntries.push({ binding: sampler.samplerBinding, resource: this.sampler(binding.parameters) });
-      textureEntries.push({ binding: sampler.textureBinding, resource: texture.createView({ dimension: cube ? 'cube' : '2d' }) });
-    }
-    const textureLayout = resources.groups[1];
-    let textureGroup = textureEntries.length ? undefined : this.emptyTextureGroups.get(textureLayout);
-    if (!textureGroup) {
-      textureGroup = this.device.createBindGroup({ layout: textureLayout, entries: textureEntries });
-      this.stats.bindGroups++;
-      if (!textureEntries.length) this.emptyTextureGroups.set(textureLayout, textureGroup);
-    }
+    const textureGroup = this.sampledGroup(resources, operation.textures);
     const driverKey = JSON.stringify([target.width, target.height, state.depthRange, points ? [width, height] : null]);
     let driverCache = this.driverGroups.get(resources.groups[2]);
     if (!driverCache) { driverCache = new Map(); this.driverGroups.set(resources.groups[2], driverCache); }
@@ -1521,6 +1550,7 @@ export class BrowserHost implements SemanticHost {
     this.uniforms.clear();
     this.textures.clear();
     this.sampledImageCache.clear();
+    this.lastSampledGroup = undefined;
     this.stats.allocatedBufferBytes = 0;
     this.stats.allocatedTextureBytes = 0;
   }

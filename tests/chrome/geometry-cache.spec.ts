@@ -45,7 +45,7 @@ for (const core of ['js', 'rust'] as const) {
 }
 
 for (const core of ['native', 'js', 'rust'] as const) {
-  test(`consecutive indexed draws use the active byte ranges and versions on ${core}`, async ({ page }) => {
+  test(`consecutive indexed and non-indexed draws use the active byte ranges and versions on ${core}`, async ({ page }) => {
     await page.goto('/tests/fixtures/runner.html');
     const pixels = await page.evaluate(async core => {
       const url = '/tests/fixtures/rtt-cases.ts';
@@ -61,15 +61,23 @@ for (const core of ['native', 'js', 'rust'] as const) {
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint8Array([0, 1, 2, 2, 2, 2]), gl.STATIC_DRAW);
         const samples: number[] = [];
-        function sample(indexOffset = 0) {
+        function sample(offset = 0, mode: 'elements' | 'arrays' = 'elements') {
           gl.clear(gl.COLOR_BUFFER_BIT);
-          gl.drawElements(gl.TRIANGLES, 3, gl.UNSIGNED_BYTE, indexOffset);
+          if (mode === 'elements') gl.drawElements(gl.TRIANGLES, 3, gl.UNSIGNED_BYTE, offset);
+          else gl.drawArrays(gl.TRIANGLES, offset, 3);
           const pixel = new Uint8Array(4);
           gl.readPixels(1, 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
           samples.push(pixel[0]);
         }
         sample(); sample(); sample();
         sample(3);
+        sample(0, 'arrays'); sample(0, 'arrays'); sample(0, 'arrays');
+        sample(3, 'arrays');
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array(6));
+        sample(0, 'arrays');
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array(triangle));
+        sample(0, 'arrays');
+
         gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 24);
         sample();
         gl.bufferSubData(gl.ARRAY_BUFFER, 24, new Float32Array(triangle));
@@ -84,6 +92,6 @@ for (const core of ['native', 'js', 'rust'] as const) {
         return { samples, error: gl.getError() };
       } finally { await dispose(); }
     }, core);
-    expect(pixels).toEqual({ samples: [255, 255, 255, 0, 0, 255, 0, 255, 255, 255, 0], error: 0 });
+    expect(pixels).toEqual({ samples: [255, 255, 255, 0, 255, 255, 255, 0, 0, 255, 0, 255, 0, 255, 255, 255, 0], error: 0 });
   });
 }

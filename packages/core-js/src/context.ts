@@ -34,6 +34,16 @@ class ShaderObject extends LogicalObject {
   constructor(owner: object, readonly type: number) { super(owner); }
 }
 
+interface UniformState {
+  uniform: ProgramUniform;
+  values: Float32Array | Int32Array;
+  components: number;
+  dimension: number;
+  integer: boolean;
+  boolean: boolean;
+  stages: DataView[];
+}
+
 class ProgramObject extends LogicalObject {
   shaders: ShaderObject[] = [];
   attributeLocations: Record<string, number> = Object.create(null);
@@ -45,7 +55,7 @@ class ProgramObject extends LogicalObject {
   generation = 0;
   vertexUniforms = new Uint8Array(16);
   fragmentUniforms = new Uint8Array(16);
-  values = new Map<string, Float32Array | Int32Array>();
+  uniforms = new Map<string, UniformState>();
   samplerUnits = new Map<string, Int32Array>();
 }
 
@@ -456,12 +466,20 @@ export class SemanticContext {
     if (previous) this.compiler.releaseProgram?.(previous);
     program.vertexUniforms = new Uint8Array(Math.max(16, executable.vertexUniformBufferSize));
     program.fragmentUniforms = new Uint8Array(Math.max(16, executable.fragmentUniformBufferSize));
-    program.values.clear(); program.samplerUnits.clear();
+    program.uniforms.clear(); program.samplerUnits.clear();
     for (const uniform of executable.uniforms) {
       const integer = [GL.INT, GL.INT_VEC2, GL.INT_VEC3, GL.INT_VEC4,
         GL.BOOL, GL.BOOL_VEC2, GL.BOOL_VEC3, GL.BOOL_VEC4].includes(uniform.type as 0x1404);
-      const size = componentCount(uniform.type) * uniform.size;
-      program.values.set(baseName(uniform.name), integer ? new Int32Array(size) : new Float32Array(size));
+      const components = componentCount(uniform.type);
+      const size = components * uniform.size;
+      const boolean = [GL.BOOL, GL.BOOL_VEC2, GL.BOOL_VEC3, GL.BOOL_VEC4].includes(uniform.type as 0x8b56);
+      const dimension = uniform.type === GL.FLOAT_MAT2 ? 2 : uniform.type === GL.FLOAT_MAT3 ? 3 :
+        uniform.type === GL.FLOAT_MAT4 ? 4 : 0;
+      const stages: DataView[] = [];
+      if (uniform.vertexOffset !== null) stages.push(new DataView(program.vertexUniforms.buffer, uniform.vertexOffset));
+      if (uniform.fragmentOffset !== null) stages.push(new DataView(program.fragmentUniforms.buffer, uniform.fragmentOffset));
+      program.uniforms.set(baseName(uniform.name), { uniform, components, dimension, boolean, integer, stages,
+        values: integer ? new Int32Array(size) : new Float32Array(size) });
     }
     for (const sampler of executable.samplers) program.samplerUnits.set(baseName(sampler.name), new Int32Array(sampler.size));
   }
@@ -547,7 +565,7 @@ export class SemanticContext {
     program.executable = null;
     program.vertexUniforms = new Uint8Array(0);
     program.fragmentUniforms = new Uint8Array(0);
-    program.values.clear();
+    program.uniforms.clear();
     program.samplerUnits.clear();
     for (const shader of shaders) this.releaseShader(shader);
   }
@@ -580,42 +598,25 @@ export class SemanticContext {
       for (let i = 0; i < count; ++i) units[location.index + i] = values[i]!;
       return;
     }
-    const uniform = program.executable!.uniforms.find(value => baseName(value.name) === location.name)!;
-    const isInteger = [GL.INT, GL.INT_VEC2, GL.INT_VEC3, GL.INT_VEC4,
-      GL.BOOL, GL.BOOL_VEC2, GL.BOOL_VEC3, GL.BOOL_VEC4].includes(uniform.type as 0x1404);
-    const isBoolean = [GL.BOOL, GL.BOOL_VEC2, GL.BOOL_VEC3, GL.BOOL_VEC4].includes(uniform.type as 0x8b56);
-    const expectedMatrix = uniform.type === GL.FLOAT_MAT2 ? 2 : uniform.type === GL.FLOAT_MAT3 ? 3 :
-      uniform.type === GL.FLOAT_MAT4 ? 4 : 0;
-    if ((!isBoolean && integer !== isInteger) || expectedMatrix !== matrix || componentCount(uniform.type) !== components ||
-        (values.length / components > 1 && !isUniformArray(uniform))) {
+    const state = program.uniforms.get(location.name)!;
+    const { uniform, values: stored, dimension } = state;
+    if ((!state.boolean && integer !== state.integer) || dimension !== matrix || state.components !== components ||
+        (values.length > components && !isUniformArray(uniform))) {
       return this.error(GL.INVALID_OPERATION);
     }
-    const stored = program.values.get(location.name)!;
-    const length = Math.min(values.length, (uniform.size - location.index) * components);
-    for (let i = 0; i < length; i++) {
-      const value = isBoolean ? (Number(values[i]) === 0 ? 0 : 1) : Number(values[i]);
-      stored[location.index * components + i] = value;
-    }
-    this.packUniform(program, uniform, stored);
-  }
-  private packUniform(program: ProgramObject, uniform: ProgramUniform, values: ArrayLike<number>): void {
-    const components = componentCount(uniform.type);
-    const dimension = uniform.type === GL.FLOAT_MAT2 ? 2 : uniform.type === GL.FLOAT_MAT3 ? 3 :
-      uniform.type === GL.FLOAT_MAT4 ? 4 : 0;
-    const integer = [GL.INT, GL.INT_VEC2, GL.INT_VEC3, GL.INT_VEC4,
-      GL.BOOL, GL.BOOL_VEC2, GL.BOOL_VEC3, GL.BOOL_VEC4].includes(uniform.type as 0x1404);
-    for (const [data, start] of [[program.vertexUniforms, uniform.vertexOffset],
-      [program.fragmentUniforms, uniform.fragmentOffset]] as const) {
-      if (start === null) continue;
-      const view = new DataView(data.buffer);
-      for (let element = 0; element < uniform.size; element++) {
-        const offset = start + element * (uniform.arrayStride || components * 4);
-        for (let component = 0; component < components; component++) {
-          const position = dimension ? offset + Math.floor(component / dimension) * (uniform.matrixStride || 16) +
-            component % dimension * 4 : offset + component * 4;
-          const value = Number(values[element * components + component]);
-          if (integer) view.setInt32(position, value, true);
-          else view.setFloat32(position, value, true);
+    const count = Math.min(values.length / components, uniform.size - location.index);
+    for (let i = 0; i < count; i++) {
+      const element = location.index + i;
+      const offset = element * (uniform.arrayStride || components * 4);
+      for (let component = 0; component < components; component++) {
+        const value = Number(values[i * components + component]);
+        const index = element * components + component;
+        stored[index] = state.boolean ? Number(value !== 0) : value;
+        const position = dimension ? offset + Math.floor(component / dimension) * (uniform.matrixStride || 16)
+          + component % dimension * 4 : offset + component * 4;
+        for (const view of state.stages) {
+          if (state.integer) view.setInt32(position, stored[index]!, true);
+          else view.setFloat32(position, stored[index]!, true);
         }
       }
     }
@@ -654,10 +655,7 @@ export class SemanticContext {
       this.error(GL.INVALID_OPERATION); return null;
     }
     if (program.samplerUnits.has(location.name)) return program.samplerUnits.get(location.name)![location.index];
-    const uniform = program.executable!.uniforms.find(value => baseName(value.name) === location.name)!;
-    const values = program.values.get(location.name)!;
-    const components = componentCount(uniform.type);
-    const boolean = [GL.BOOL, GL.BOOL_VEC2, GL.BOOL_VEC3, GL.BOOL_VEC4].includes(uniform.type as 0x8b56);
+    const { values, components, boolean } = program.uniforms.get(location.name)!;
     if (components === 1) return boolean ? !!values[location.index] : values[location.index];
     const result = values.slice(location.index * components, (location.index + 1) * components);
     return boolean ? [...result].map(value => !!value) : result;
@@ -1734,7 +1732,7 @@ export class SemanticContext {
         if (object.executable) this.compiler.releaseProgram?.(object.executable);
         object.executable = null;
         object.shaders = [];
-        object.values.clear();
+        object.uniforms.clear();
         object.samplerUnits.clear();
         object.vertexUniforms = new Uint8Array(0);
         object.fragmentUniforms = new Uint8Array(0);

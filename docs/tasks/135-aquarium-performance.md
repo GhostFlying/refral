@@ -41,3 +41,7 @@ The short before/after raw runs are in `artifacts/external-benchmarks/2026-11-28
 ## Remaining cost
 
 With the change applied, the Rust adapter's texture-binding decoder including callees still accounts for 44.6% of the 20K profile. A bounded follow-up can measure how often adjacent draws bind the same sampler parameters and versions of every sampled face and level. That hit rate would quantify the opportunity to reuse complete bindings across adjacent draws. Shared-host view and bind-group creation is a separate cost on both cores.
+
+## Verification and delivery
+
+On the Mini, `pnpm check` passed (248 unit tests and 77 native Rust tests), `pnpm ci:check` passed, and `pnpm rust:test:wasm` passed all 70 tests. The headless Chrome CubeMap suite passed all 10 cases with one worker. See [PR 118](https://github.com/GhostFlying/refral/pull/118) for the integration revision and required check. The Mini's `artifacts/aquarium-performance/` contains the verification logs and `summary.json` with pooled samples, per-round work counters and image hashes.

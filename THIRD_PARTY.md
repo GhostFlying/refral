@@ -30,3 +30,7 @@ The semantic crate remains dependency-free. The Wasm binding pins serde 1.0.228 
 ## Three.js large-scene benchmarks
 
 The scene code in `benchmarks/three-large.ts` adapts the separate-mesh path from the Three.js instancing-performance example and the interactive-cubes example. Both use Three.js r162. The example code's MIT license is retained at `examples/three-shapes/LICENSE`. The example paths, revision and original Suzanne geometry checksum are recorded in `fixtures.lock.json`. The optional benchmark fetches that model into `artifacts/three-scene-assets/`.
+
+## External WebGL1 benchmarks
+
+The acquisition script pins Git revisions and retains the upstream files under ignored `artifacts/external-benchmarks/sources/`. The Refral runner supplies the context selection, clock and measurement code. The WebGL Samples repository specifies BSD-3-Clause with per-file exceptions. The Animometer extraction identifies its WebKit provenance in its README. Mozilla's AreWeFastYet license explicitly distinguishes the bundled third-party benchmarks from its MPL-2.0 harness. Unity player binaries and assets are fetched from that pinned upstream checkout. [WebGL Samples](https://github.com/WebGLSamples/WebGLSamples.github.io) · [Animometer extraction](https://github.com/kenrussell/webgl-animometer) · [Mozilla AreWeFastYet](https://github.com/mozilla/arewefastyet)

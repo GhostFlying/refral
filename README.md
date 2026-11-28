@@ -35,6 +35,8 @@ Run `pnpm bench:three:heavy` for the optional headless comparison of four-view S
 
 Run `pnpm bench:three:large` to compare Shapes, 1,000 and 3,000 separate Suzanne meshes, and 2,000 interactive cubes. This optional headless benchmark fetches and verifies the pinned model. See the [scene adaptations, CPU timings, and index-scan experiment](docs/tasks/127-large-three-scenes.md).
 
+Run `pnpm bench:external:deps` and `pnpm bench:external` for the pinned WebGL1 Aquarium, Animometer and Dynamic Cube Map scenes. Run `pnpm bench:external:report <result-directory>` for per-route frame timings and paired screenshot differences. The [external benchmark record](docs/tasks/131-external-webgl-benchmarks.md) includes optional workloads, hardware results and reproduction settings.
+
 Refral publishes default framebuffer work at its automatic microtask checkpoint or on `gl.flush()`. If synchronous platform calls such as Canvas2D `drawImage()` or canvas serialization need the latest drawing, call `gl.flush()` before taking the snapshot. Native WebGL can provide the drawing directly when taking a same-stack snapshot.
 
 The build produces a standalone `dist` tree containing the browser bundles, compiler Wasm, formal Rust core Wasm, core-selection experiment Wasm, and pinned demo resources. Serve it over localhost or HTTPS.

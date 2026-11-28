@@ -1,0 +1,14 @@
+[workspace]
+
+[package]
+name = "refral-native-animometer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+refral-core = { path = "../../../crates/core" }
+serde_json = "=1.0.145"

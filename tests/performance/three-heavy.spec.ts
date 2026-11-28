@@ -27,7 +27,7 @@ const warmup = sampleCount('REFRAL_HEAVY_WARMUP', 30);
 const samples = sampleCount('REFRAL_HEAVY_SAMPLES', 120);
 const rounds = sampleCount('REFRAL_HEAVY_ROUNDS', 3);
 const runStartedAt = new Date().toISOString();
-const output = `artifacts/three-heavy/${runStartedAt.replaceAll(':', '-')}`;
+const output = process.env.REFRAL_HEAVY_OUTPUT ?? `artifacts/three-heavy/${runStartedAt.replaceAll(':', '-')}`;
 const runs: Run[] = [];
 
 function percentile(values: number[], p: number) {
@@ -153,7 +153,7 @@ test.afterAll(async () => {
     intervalBoundary: 'requestAnimationFrame callback interval including refresh pacing and scheduling',
     firstImageBoundary: 'context creation through first resolved createImageBitmap including scene and RAF wait',
   }, null, 2) + '\n');
-  await writeFile('artifacts/three-heavy/latest.txt', output + '\n');
+  if (!process.env.REFRAL_HEAVY_OUTPUT) await writeFile('artifacts/three-heavy/latest.txt', output + '\n');
   for (const comparison of comparisons) {
     expect(comparison.equalWork, comparison.scene).toBe(true);
     expect(comparison.jsRust.byteExact, comparison.scene).toBe(true);

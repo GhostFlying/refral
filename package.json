@@ -23,7 +23,7 @@
     "typecheck": "tsc --noEmit",
     "ci:check": "node --test tools/ci.test.mjs && node tools/ci.mjs verify && node tools/check-support.mjs",
     "test:unit": "vitest run",
-    "test:tools": "node --test tools/conformance-adapter.test.mjs tools/conformance-assets.test.mjs tools/conformance-run-state.test.mjs tools/conformance-report.test.mjs tools/deps-conformance.test.mjs",
+    "test:tools": "node --test tools/conformance-adapter.test.mjs tools/conformance-assets.test.mjs tools/conformance-run-state.test.mjs tools/conformance-report.test.mjs tools/deps-conformance.test.mjs tools/browser-baseline-metrics.test.mjs",
     "test:chrome": "playwright test",
     "test:probe": "playwright test probe.spec.ts",
     "test:cts": "playwright test cts.spec.ts",
@@ -46,6 +46,7 @@
     "bench:three:large": "node --use-env-proxy tools/deps-three-scenes.mjs && REFRAL_HEAVY_SCENES=shapes-four,suzanne-1000,suzanne-3000,interactive-cubes pnpm bench:three:heavy",
     "bench:external:deps": "node tools/deps-external-benchmarks.mjs",
     "bench:external": "python3 tools/external-benchmark-lock.py",
+    "bench:baseline": "python3 tools/browser-baseline.py",
     "bench:external:report": "node tools/external-benchmark-report.mjs",
     "check": "pnpm typecheck && pnpm test:unit && pnpm test:tools && pnpm rust:check && pnpm rust:test && node tools/check-support.mjs",
     "bench:dom": "playwright test -c benchmarks/dom-upload.config.ts"

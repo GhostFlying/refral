@@ -10,6 +10,7 @@ Current direction is parallel JS/TypeScript and Rust/Wasm semantic cores sharing
 | [Support matrix](support.json) | Actual implementation scope and evidence |
 | [WebGL1 extension coverage](validation/webgl1-extensions.md) | The pinned extension inventory, enabled coverage and WebGPU feasibility |
 | [Actions and PR delivery](ci.md) | Required checks, optional runs, and repository integration constraints |
+| [Browser performance baseline v1](tasks/139-browser-performance-baseline.md) | Frozen eight-scene suite, local A/A controls and performance-change acceptance |
 | [Shared core contract](core-api.md) | Object handles, shader/program state, draw snapshots, validation, and lifecycle |
 | [Specification map](spec-map.md) | Pinned WebGL/IDL/GLES sources, semantic assertions, and original CTS identities |
 | [Architecture decisions](adr/) | Decisions, proposals and their recorded status |

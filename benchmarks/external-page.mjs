@@ -37,6 +37,17 @@ export async function installExternalPage({ backend, unity }) {
   window.externalBench = {
     ready: () => contexts.size > 0 && callbacks.size > 0,
     contexts: () => [...contexts.values()].map(gl => factory ? api.getTestingHooks(gl).core : 'native'),
+    unityGraphics() {
+      const gl = contexts.get(window.Module?.canvas);
+      if (!gl) return null;
+      if (factory) {
+        const hooks = api.getTestingHooks(gl);
+        return { core: hooks.core, adapter: hooks.environment.adapter, draws: hooks.stats.draws,
+          errors: hooks.errors.slice(0, 10) };
+      }
+      const debug = gl.getExtension('WEBGL_debug_renderer_info');
+      return { core: 'native', adapter: gl.getParameter(debug?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER) };
+    },
     async run(warmup, samples) {
       const canvas = [...contexts.keys()].find(canvas => canvas.isConnected);
       const gl = contexts.get(canvas);

@@ -67,6 +67,10 @@ try {
           });
           page.on('console', msg => {
             if (messages.length < 80) messages.push(msg.type() + ': ' + msg.text().slice(0, 300));
+            if (name === 'unity' && /creation of shader|failed compiling|error: 0:|unsupported shader/i.test(msg.text())) {
+              result.shaderDiagnostics ??= [];
+              if (result.shaderDiagnostics.length < 20) result.shaderDiagnostics.push(msg.text().slice(0, 400));
+            }
             if (name === 'unity' && (msg.type() === 'error' || /^(Mandelbrot|Instantiate|CryptoHash|Animation|Asteroid|Particles|Physics|2D Physics|AI Agents|Overall)/.test(msg.text())))
               console.log(backend, msg.text().slice(0, 150));
           });
@@ -103,10 +107,16 @@ try {
           await page.evaluate(html => { document.open(); document.write(html); document.close(); }, html);
           if (name === 'unity') {
             await page.waitForFunction(() => window.didShowErrorMessage || window.results?.some(row => row.benchmark === 'Overall'),
-              undefined, { polling: 500, timeout: 900000 });
+              undefined, { polling: 500, timeout: 360000 });
             result.scores = await page.evaluate(() => window.results);
             result.contexts = await page.evaluate(() => externalBench.contexts());
             assert(result.contexts.includes(backend));
+            result.graphics = await page.evaluate(() => externalBench.unityGraphics());
+            assert.equal(result.graphics?.core, backend);
+            if (backend !== 'native') {
+              assert(result.graphics.draws > 0 && !result.graphics.adapter.isFallbackAdapter);
+              assert.deepEqual(result.graphics.errors, []);
+            }
             assert(await page.evaluate(() => [...benchmarks, 'Overall'].every(name =>
               results.some(row => row.benchmark === name && Number.isFinite(row.result) && row.result > 0))),
             'Unity did not complete all thirteen subtests and Overall');
@@ -133,7 +143,7 @@ try {
           result.failure = String(error);
           if (name === 'unity' && !page.isClosed()) {
             result.diagnostic = await page.evaluate(() => ({
-              contexts: externalBench.contexts(), scores: window.results,
+              contexts: externalBench.contexts(), scores: window.results, graphics: externalBench.unityGraphics(),
               status: document.body.innerText.slice(-1000),
             })).catch(() => null);
           }

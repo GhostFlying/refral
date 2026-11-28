@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "externalDraws": { "animometer": 20000, "animometer-attrib-256": 256, "aquarium": 610, "aquarium-20k": 20110, "cubemap": 176 },
+  "three": ["suzanne-3000", "interactive-cubes", "shapes-four"],
+  "routes": ["native", "js", "rust"],
+  "rounds": 3,
+  "warmup": 30,
+  "samples": 120
+}

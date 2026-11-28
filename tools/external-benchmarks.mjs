@@ -11,7 +11,7 @@ import { specializeUniformSweep, uniformSweep } from './animometer-uniform-sweep
 import { sources as pins } from './deps-external-benchmarks.mjs';
 
 const sources = resolve('artifacts/external-benchmarks/sources');
-const output = resolve('artifacts/external-benchmarks', new Date().toISOString().replaceAll(':', '-'));
+const output = resolve(process.env.REFRAL_EXTERNAL_OUTPUT ?? join('artifacts/external-benchmarks', new Date().toISOString().replaceAll(':', '-')));
 const cases = {
   ...Object.fromEntries([...uniformSweep.keys()].map(name => [name, 'animometer/Animometer/tests/3d/webgl.html'])),
   aquarium: 'samples/aquarium/aquarium.html',

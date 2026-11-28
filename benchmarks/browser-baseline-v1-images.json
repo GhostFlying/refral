@@ -1,0 +1,14 @@
+{
+  "browser": "158.0.8127.37",
+  "cpu": "Apple M6",
+  "os": "27.2.0",
+  "alternates": [{
+  "cells": ["aquarium-20k/native"],
+  "captures": ["00d2908d3579c9d4eef2347c17d16e686a66b57ea0fe7e20041b49f5b8024d84", "0dcf13b724ec10a2352e9c5b1d6d6b161d1cd96664340f441703c61206574a68"],
+  "reason": "Mini v1 A/A: at (265,325) one native pixel differs by one RGB level, with equal alpha, dimensions and work."
+  }, {
+  "cells": ["cubemap/js", "cubemap/rust"],
+  "captures": ["b75e883505cf4f16c7418f9c63cbf65e7668122531e1139afd498dfaca2cf1bc", "c37aae170fe6b9ef25577bd3f11e60526a6f15a1f9e6d554d5927e3f579b5919"],
+  "reason": "Mini v1 A/A: the two observed polyfill poses differ at one of 480,000 pixels by at most seven RGB levels."
+  }]
+}

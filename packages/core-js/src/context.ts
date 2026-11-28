@@ -3,7 +3,7 @@ import {
   isStencilRenderbufferFormat, stencilReference, isDrawMode,
 } from "@refral/core-api";
 import type {
-  AttributeSnapshot, RasterState, StencilFaceState, TargetSnapshot, TextureBinding, TextureCopy,
+  AttributeSnapshot, RasterState, StencilFaceState, TargetSnapshot, TextureBinding, TextureCopy, TextureStorage,
   Compiler, CompiledShader, LinkedProgram, ProgramUniform, DrawingSurface,
   ContextAttributes, RuntimeProfile, SemanticHost, ResourceRegistry, TextureVersion, PixelUpload,
   ReadPixelsPlan, ReadPixelsRequest, DomTextureUploadPlan, DomTextureUploadRequest,
@@ -800,15 +800,12 @@ export class SemanticContext {
         const cube = sampler.type === GL.SAMPLER_CUBE;
         if (!cube && sampler.type !== GL.SAMPLER_2D) return unsupported("sampler type");
         const texture = cube ? binding.cubeMap : binding.texture2D;
-        const levels = texture ? textureSamplingLevelCount(texture, this.floatLinearTextures) : 0;
+        const mipImages: TextureStorage[] = [];
+        const levels = texture ? textureSamplingLevelCount(texture, this.floatLinearTextures, mipImages) : 0;
         if (this.framebuffer?.color === texture && levels > this.framebuffer.colorLevel) return this.error(GL.INVALID_OPERATION);
         const parameters = texture ? { ...texture.parameters } :
           { minFilter: GL.NEAREST, magFilter: GL.NEAREST, wrapS: GL.CLAMP_TO_EDGE, wrapT: GL.CLAMP_TO_EDGE };
         if (levels > 1 && texture) {
-          const mipImages = [];
-          for (let level = 0; level < levels; level++) {
-            for (const target of textureTargets(texture)) mipImages.push(texture.image(target, level)!.storage!);
-          }
           textures.push({ dimension: cube ? "cube" : "2d", storage: null, parameters, mipImages });
         } else if (cube) {
           const snapshot: TextureBinding = { dimension: "cube", storage: null, parameters };

@@ -132,8 +132,10 @@ export function isPowerOfTwo(value: number): boolean {
   return value > 0 && (value & (value - 1)) === 0;
 }
 
+const texture2DTargets = [GL.TEXTURE_2D] as const;
+
 export function textureTargets(texture: TextureObject): readonly number[] {
-  return texture.target === GL.TEXTURE_CUBE_MAP ? CUBE_FACES : [GL.TEXTURE_2D];
+  return texture.target === GL.TEXTURE_CUBE_MAP ? CUBE_FACES : texture2DTargets;
 }
 
 export function textureBase(texture: TextureObject): TextureImage | undefined {
@@ -149,7 +151,7 @@ export function textureBase(texture: TextureObject): TextureImage | undefined {
   return base;
 }
 
-export function textureSamplingLevelCount(texture: TextureObject, floatLinear = false): number {
+export function textureSamplingLevelCount(texture: TextureObject, floatLinear = false, mipImages?: TextureStorage[]): number {
   const base = textureBase(texture);
   if (!base?.storage) return 0;
   const { width, height } = base.storage;
@@ -163,12 +165,16 @@ export function textureSamplingLevelCount(texture: TextureObject, floatLinear = 
   if (nonMip) return 1;
   const levels = Math.floor(Math.log2(Math.max(width, height))) + 1;
   const targets = textureTargets(texture);
+  if (mipImages && levels > 1) {
+    for (const target of targets) mipImages.push(texture.image(target)!.storage!);
+  }
   for (let level = 1; level < levels; level++) {
     for (const target of targets) {
       const image = texture.image(target, level);
       if (image?.storage?.width !== Math.max(1, width >> level)
         || image.storage.height !== Math.max(1, height >> level)
         || image.format !== base.format || image.type !== base.type) return 0;
+      mipImages?.push(image.storage);
     }
   }
   return levels;

@@ -15,6 +15,7 @@ import type {
   SemanticHost,
   ResourceOperation,
   ContextAttributes,
+  VertexArrayHandle,
   ReadPixelsRequest,
   DomTextureUploadRequest,
   PixelUpload,
@@ -26,6 +27,7 @@ import { runBufferCoreContract } from '../../../tests/core/buffer-contract';
 import { observeBatchDraws } from './batch-replies';
 
 let module: WebAssembly.Module;
+const expectGeometryReferences = process.env.REFRAL_WASM_TEST_LEGACY_GEOMETRY !== '1';
 beforeAll(async () => {
   module = await WebAssembly.compile(
     await readFile(
@@ -325,6 +327,196 @@ describe('actual Rust drawing Wasm', () => {
       corrupt = true;
       core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
       expect(() => core.getError()).toThrow(/raster|reference/i);
+      expect(draws).toHaveLength(1);
+    } finally { core.dispose(); }
+  });
+
+  for (const { supported, geometry, raster } of [
+    { supported: undefined, geometry: true, raster: true },
+    { supported: 1, geometry: false, raster: true },
+    { supported: 0x82, geometry: true, raster: false },
+  ]) {
+    it(`negotiates geometry independently of raster (requested=${supported ?? 'default'})`, ({ skip }) => {
+      if (!WebAssembly.Module.exports(module).some(entry => entry.name === 'rf_batch_run_compact')) skip();
+      const { state: { core, draws }, batches } = observeBatchDraws(() => setup(), { supported });
+      try {
+        const { location } = scene(core);
+        core.invoke('uniform4f', [location, 1, 0, 0, 1]);
+        core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+        core.invoke('uniform4f', [location, 0, 1, 0, 1]);
+        core.invoke('drawArrays', [GL.TRIANGLES, 1, 2]);
+        expect(core.getError()).toBe(GL.NO_ERROR);
+        core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+        expect(core.getError()).toBe(GL.NO_ERROR);
+        const reused = geometry && expectGeometryReferences;
+        const flags = (reused ? 0x200 : 0) | (raster ? 0x100 : 0);
+        expect(batches.map(batch => batch.supported)).toEqual([supported ?? 3, supported ?? 3]);
+        expect(batches.map(batch => batch.tags)).toEqual([[8, 8 | flags], [8]]);
+        expect(draws.map(draw => [draw.first, draw.count])).toEqual([[0, 3], [1, 2], [0, 3]]);
+        expect([...new Float32Array(draws[0].fragmentUniforms.slice().buffer)]).toEqual([1, 0, 0, 1]);
+        expect([...new Float32Array(draws[1].fragmentUniforms.slice().buffer)]).toEqual([0, 1, 0, 1]);
+        expect(draws[0].attributes).toEqual(draws[1].attributes);
+        expect(draws[2].attributes).not.toBe(draws[1].attributes);
+        expect(draws[0].attributes === draws[1].attributes).toBe(reused);
+      } finally { core.dispose(); }
+    });
+  }
+
+  it('decodes complete individual draw replies with batching disabled', () => {
+    const { state: { core, draws }, batches } = observeBatchDraws(() => setup(), { direct: true });
+    try {
+      scene(core);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      expect(batches).toEqual([]);
+      expect(draws).toHaveLength(2);
+      expect(draws[0].attributes).toEqual(draws[1].attributes);
+      expect(draws[0].attributes).not.toBe(draws[1].attributes);
+    } finally { core.dispose(); }
+  });
+
+  it('retains indexed geometry only when the exact descriptors match', ({ skip }) => {
+    if (!WebAssembly.Module.exports(module).some(entry => entry.name === 'rf_batch_run_compact')) skip();
+    const { state: { core, draws }, batches } = observeBatchDraws(() => setup());
+    try {
+      const { buffer } = scene(core);
+      core.bufferData(GL.ARRAY_BUFFER, new Uint8Array(64), GL.STATIC_DRAW);
+      const indexBuffer = core.createBuffer()!;
+      core.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, indexBuffer);
+      core.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint8Array(16), GL.STATIC_DRAW);
+      function vao(type = GL.FLOAT as number, normalized = false, stride = 0, offset = 0, enabled = true,
+        element = indexBuffer) {
+        const array = core.invoke('createVertexArrayOES', []) as VertexArrayHandle;
+        core.invoke('bindVertexArrayOES', [array]);
+        core.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, element);
+        core.invoke('vertexAttribPointer', [0, 2, type, normalized, stride, offset]);
+        if (enabled) core.invoke('enableVertexAttribArray', [0]);
+        return array;
+      }
+      const alternateIndexBuffer = core.createBuffer()!;
+      core.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, alternateIndexBuffer);
+      core.bufferData(GL.ELEMENT_ARRAY_BUFFER, new Uint8Array(16), GL.STATIC_DRAW);
+      const plain = vao();
+      const equivalent = vao();
+      const byte = vao(GL.UNSIGNED_BYTE);
+      const normalized = vao(GL.UNSIGNED_BYTE, true);
+      const strided = vao(GL.UNSIGNED_BYTE, true, 8);
+      const offset = vao(GL.UNSIGNED_BYTE, true, 8, 4);
+      const constant = vao(GL.UNSIGNED_BYTE, true, 8, 4, false);
+      const alternateIndex = vao(GL.FLOAT, false, 0, 0, true, alternateIndexBuffer);
+      const ack = vi.fn();
+      const bind = (array: VertexArrayHandle) => expect(core.enqueueVertexArrayBind!(array, ack)).toBe(true);
+      const draw = (type: number = GL.UNSIGNED_BYTE, offset = 0) =>
+        core.invoke('drawElements', [GL.TRIANGLES, 3, type, offset]);
+      for (const array of [plain, equivalent, byte, normalized, strided, offset, constant, alternateIndex, plain]) {
+        bind(array);
+        draw();
+      }
+      draw(GL.UNSIGNED_BYTE, 2);
+      draw(GL.UNSIGNED_SHORT, 2);
+      draw(GL.UNSIGNED_SHORT, 2);
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      expect(ack.mock.calls).toEqual(Array.from({ length: 9 }, () => [true]));
+      expect(batches[0].tags.map(tag => Boolean(tag & 0x200))).toEqual([
+        false, expectGeometryReferences, false, false, false, false, false, false, false, false, false, expectGeometryReferences,
+      ]);
+      expect(draws.slice(0, 7).map(({ attributes: [attribute] }) =>
+        [attribute.type, attribute.normalized, attribute.stride, attribute.offset, attribute.data !== null])).toEqual([
+        [GL.FLOAT, false, 0, 0, true], [GL.FLOAT, false, 0, 0, true],
+        [GL.UNSIGNED_BYTE, false, 0, 0, true], [GL.UNSIGNED_BYTE, true, 0, 0, true],
+        [GL.UNSIGNED_BYTE, true, 8, 0, true], [GL.UNSIGNED_BYTE, true, 8, 4, true],
+        [GL.UNSIGNED_BYTE, true, 8, 4, false],
+      ]);
+      expect(draws.slice(8).map(({ indices }) => [indices!.type, indices!.offset])).toEqual([
+        [GL.UNSIGNED_BYTE, 0], [GL.UNSIGNED_BYTE, 2], [GL.UNSIGNED_SHORT, 2], [GL.UNSIGNED_SHORT, 2],
+      ]);
+      expect(draws[7].indices!.bufferVersion).not.toBe(draws[8].indices!.bufferVersion);
+
+      core.bindBuffer(GL.ARRAY_BUFFER, buffer);
+      core.bufferSubData(GL.ARRAY_BUFFER, 0, new Uint8Array([42]));
+      draw(); draw();
+      core.bufferData(GL.ARRAY_BUFFER, new Uint8Array(64).fill(17), GL.DYNAMIC_DRAW);
+      draw(); draw();
+      core.bufferSubData(GL.ELEMENT_ARRAY_BUFFER, 0, new Uint8Array([1]));
+      draw(); draw();
+      bind(constant);
+      draw();
+      core.invoke('vertexAttrib4f', [0, -0, 1, 2, 3]);
+      draw(); draw();
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      expect(batches.slice(1).map(batch => batch.tags.map(tag => Boolean(tag & 0x200)))).toEqual([
+        [false, expectGeometryReferences], [false, expectGeometryReferences], [false, expectGeometryReferences, false],
+        [false, expectGeometryReferences],
+      ]);
+      expect(draws[0].attributes[0].data![0]).toBe(0);
+      expect(draws[12].attributes[0].data![0]).toBe(42);
+      expect(draws[14].attributes[0].data![0]).toBe(17);
+      expect(draws[0].indices!.data[0]).toBe(0);
+      expect(draws[16].indices!.data[0]).toBe(1);
+      expect(draws[19].attributes[0].constant).toEqual([-0, 1, 2, 3]);
+    } finally { core.dispose(); }
+  });
+
+  it('keeps oversized buffer hits and VAO acknowledgments across reentrant drains', ({ skip }) => {
+    if (!WebAssembly.Module.exports(module).some(entry => entry.name === 'rf_batch_run_compact')) skip();
+    const byteLength = 32 * 1024 * 1024 + 4;
+    const { state: { core, host, draws }, batches } = observeBatchDraws(() => setup(1, byteLength));
+    try {
+      scene(core);
+      const small = core.invoke('createVertexArrayOES', []) as VertexArrayHandle;
+      const large = core.invoke('createVertexArrayOES', []) as VertexArrayHandle;
+      core.invoke('bindVertexArrayOES', [large]);
+      core.bufferData(GL.ARRAY_BUFFER, byteLength, GL.STATIC_DRAW);
+      core.invoke('vertexAttribPointer', [0, 2, GL.FLOAT, false, 0, 0]);
+      core.invoke('enableVertexAttribArray', [0]);
+      const draw = () => core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      const innerAck = vi.fn();
+      const outerAck = vi.fn();
+      const record = vi.mocked(host.draw).getMockImplementation()!;
+      vi.mocked(host.draw).mockImplementationOnce(op => {
+        record(op);
+        expect(core.enqueueVertexArrayBind!(small, innerAck)).toBe(true);
+        draw(); draw();
+        expect(core.getError()).toBe(GL.NO_ERROR);
+      });
+      draw();
+      expect(core.enqueueVertexArrayBind!(large, outerAck)).toBe(true);
+      draw();
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      expect(innerAck.mock.calls).toEqual([[true]]);
+      expect(outerAck.mock.calls).toEqual([[true]]);
+      expect(core.enqueueVertexArrayBind!(large, outerAck)).toBe(true);
+      draw();
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      expect(batches.map(batch => batch.tags.map(tag => Boolean(tag & 0x200)))).toEqual([
+        [false, expectGeometryReferences], [false, expectGeometryReferences], [false],
+      ]);
+      const [initial, innerFirst, innerSecond, resumed, next] = draws.map(draw => draw.attributes[0].data);
+      expect(initial?.byteLength).toBe(byteLength);
+      expect(innerFirst).toBeNull();
+      expect(innerSecond).toBeNull();
+      expect(resumed === initial).toBe(expectGeometryReferences);
+      expect(next).toBe(resumed);
+      expect(core.invoke('commandBatchStatsForTesting', [])).toMatchObject({
+        bufferCopies: expectGeometryReferences ? 1 : 2,
+      });
+    } finally { core.dispose(); }
+  });
+
+  it('rejects geometry references without a predecessor in the drain', ({ skip }) => {
+    if (!WebAssembly.Module.exports(module).some(entry => entry.name === 'rf_batch_run_compact')) skip();
+    let corrupt = false;
+    const { state: { core, draws } } = observeBatchDraws(() => setup(), {
+      editTag: tag => corrupt ? tag | 0x200 : tag,
+    });
+    try {
+      scene(core);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.getError();
+      corrupt = true;
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      expect(() => core.getError()).toThrow(/geometry reference/i);
       expect(draws).toHaveLength(1);
     } finally { core.dispose(); }
   });

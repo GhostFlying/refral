@@ -109,7 +109,7 @@ pub extern "C" fn rf_batch_run_compact(
             ],
         );
         let mut previous = DrawReferences {
-            enabled: supported & RASTER_REFERENCE,
+            enabled: supported & (RASTER_REFERENCE | GEOMETRY_REFERENCE),
             ..Default::default()
         };
         while !input.0.is_empty() {

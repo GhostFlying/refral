@@ -658,12 +658,41 @@ fn encode_clear(output: &mut Vec<u8>, snapshot: refral_core::ClearSnapshot) {
 }
 
 const RASTER_REFERENCE: u32 = 1;
+const GEOMETRY_REFERENCE: u32 = 2;
 
 // References are local to a single batch reply and are disabled for direct draws.
 #[derive(Default)]
 struct DrawReferences {
     enabled: u32,
     raster: Option<refral_core::RasterState>,
+    geometry: Option<DrawGeometry>,
+}
+
+struct DrawGeometry {
+    attributes: Vec<refral_core::AttributeDraw>,
+    indices: Option<(BufferMetadata, u32, usize)>,
+}
+
+impl DrawGeometry {
+    fn matches(&self, snapshot: &refral_core::DrawSnapshot) -> bool {
+        self.indices == snapshot.indices
+            && self.attributes.len() == snapshot.attributes.len()
+            && self
+                .attributes
+                .iter()
+                .zip(&snapshot.attributes)
+                .all(|(prior, current)| {
+                    prior.location == current.location
+                        && prior.shader_type == current.shader_type
+                        && prior.size == current.size
+                        && prior.ty == current.ty
+                        && prior.normalized == current.normalized
+                        && prior.stride == current.stride
+                        && prior.offset == current.offset
+                        && prior.constant.map(f32::to_bits) == current.constant.map(f32::to_bits)
+                        && prior.data == current.data
+                })
+    }
 }
 
 fn same_raster(a: &refral_core::RasterState, b: &refral_core::RasterState) -> bool {
@@ -694,7 +723,12 @@ fn encode_draw(
         .raster
         .as_ref()
         .is_some_and(|state| same_raster(state, &snapshot.state));
-    let flags = u32::from(reuse_raster) * RASTER_REFERENCE;
+    let reuse_geometry = previous
+        .geometry
+        .as_ref()
+        .is_some_and(|geometry| geometry.matches(&snapshot));
+    let flags = (u32::from(reuse_raster) * RASTER_REFERENCE)
+        | (u32::from(reuse_geometry) * GEOMETRY_REFERENCE);
     u32_value(output, 0x38444652);
     u32_value(output, 8 | (flags << 8));
     u32_value(output, snapshot.artifact_id);
@@ -718,35 +752,17 @@ fn encode_draw(
         snapshot.vertex_count,
         snapshot.first,
         snapshot.count,
-        snapshot.attributes.len() as u32,
     ] {
         u32_value(output, value);
     }
-    for attribute in snapshot.attributes {
-        for value in [
-            attribute.location,
-            attribute.shader_type,
-            attribute.size,
-            attribute.ty,
-            u32::from(attribute.normalized),
-            attribute.stride,
-            attribute.offset as u32,
-        ] {
-            u32_value(output, value);
+    if !reuse_geometry {
+        draw_geometry(output, &snapshot.attributes, snapshot.indices);
+        if previous.enabled & GEOMETRY_REFERENCE != 0 {
+            previous.geometry = Some(DrawGeometry {
+                attributes: snapshot.attributes,
+                indices: snapshot.indices,
+            });
         }
-        for value in attribute.constant {
-            f32_value(output, value);
-        }
-        u32_value(output, u32::from(attribute.data.is_some()));
-        if let Some(snapshot) = attribute.data {
-            buffer(output, snapshot);
-        }
-    }
-    u32_value(output, u32::from(snapshot.indices.is_some()));
-    if let Some((snapshot, ty, offset)) = snapshot.indices {
-        u32_value(output, ty);
-        u32_value(output, offset as u32);
-        buffer(output, snapshot);
     }
     bytes(output, &snapshot.vertex_uniforms);
     bytes(output, &snapshot.fragment_uniforms);
@@ -782,6 +798,40 @@ fn encode_draw(
             }
         }
         crate::resources::parameters(output, binding.parameters);
+    }
+}
+
+fn draw_geometry(
+    output: &mut Vec<u8>,
+    attributes: &[refral_core::AttributeDraw],
+    indices: Option<(BufferMetadata, u32, usize)>,
+) {
+    u32_value(output, attributes.len() as u32);
+    for attribute in attributes {
+        for value in [
+            attribute.location,
+            attribute.shader_type,
+            attribute.size,
+            attribute.ty,
+            u32::from(attribute.normalized),
+            attribute.stride,
+            attribute.offset as u32,
+        ] {
+            u32_value(output, value);
+        }
+        for value in attribute.constant {
+            f32_value(output, value);
+        }
+        u32_value(output, u32::from(attribute.data.is_some()));
+        if let Some(metadata) = attribute.data {
+            buffer(output, metadata);
+        }
+    }
+    u32_value(output, u32::from(indices.is_some()));
+    if let Some((metadata, ty, offset)) = indices {
+        u32_value(output, ty);
+        u32_value(output, offset as u32);
+        buffer(output, metadata);
     }
 }
 

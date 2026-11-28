@@ -3,19 +3,24 @@ import { vi } from 'vitest';
 /** Inspect the real encoder's ordered output before the adapter consumes it. */
 export function observeBatchDraws<T>(create: () => T, options: {
   legacy?: boolean;
+  direct?: boolean;
+  supported?: number;
   editTag?: (tag: number) => number;
 } = {}) {
-  const batches: { compact: boolean; tags: number[] }[] = [];
+  const batches: { compact: boolean; supported?: number; tags: number[] }[] = [];
   const prototype = WebAssembly.Instance.prototype;
   const getExports = Object.getOwnPropertyDescriptor(prototype, 'exports')!.get!;
   const spy = vi.spyOn(prototype, 'exports', 'get').mockImplementationOnce(function (this: WebAssembly.Instance) {
     const raw: WebAssembly.Exports = getExports.call(this);
     const wrapped = { ...raw };
     if (options.legacy) delete wrapped.rf_batch_run_compact;
+    if (options.direct) delete wrapped.rf_batch_protocol_version;
     for (const name of ['rf_batch_run', 'rf_batch_run_compact']) {
       const run = wrapped[name];
       if (typeof run !== 'function') continue;
       wrapped[name] = (...args: number[]) => {
+        if (name === 'rf_batch_run_compact' && options.supported !== undefined)
+          args[3] = options.supported;
         const length = run(...args) >>> 0;
         if (!length || length === 0xffff_ffff) return length;
         const pointer = (raw.rf_batch_output_pointer as () => number)();
@@ -33,7 +38,7 @@ export function observeBatchDraws<T>(create: () => T, options: {
           }
           offset += 8 + size;
         }
-        if (tags.length) batches.push({ compact: name === 'rf_batch_run_compact', tags });
+        if (tags.length) batches.push({ compact: name === 'rf_batch_run_compact', supported: args[3], tags });
         return length;
       };
     }

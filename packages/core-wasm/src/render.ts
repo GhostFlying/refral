@@ -1,6 +1,6 @@
 import { createRasterState, GL, isDrawMode, vertexComponentBytes } from '@refral/core-api';
 import { createDirectCommands, noDirectCommand } from './direct.js';
-import { createCommandBatch, rasterReference, type BatchDrawReferences } from './batch.js';
+import { createCommandBatch, geometryReference, rasterReference, type BatchDrawReferences } from './batch.js';
 import type {
   BufferHandle,
   BufferSnapshot,
@@ -34,6 +34,12 @@ interface DrawBufferVersion {
   content: number;
   data: Uint8Array;
   bufferVersion: string;
+}
+
+export interface DrawGeometry {
+  attributes: DrawOperation['attributes'];
+  indices: DrawOperation['indices'];
+  oversize?: Map<number, DrawBufferVersion>;
 }
 
 interface ABI {
@@ -604,8 +610,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
   // versions, and Rust lends the data only until another GL operation.
   const bufferVersions = new Map<number, DrawBufferVersion>();
   let cachedBufferBytes = 0;
-  let previousOversize = new Map<number, DrawBufferVersion>();
-  let currentOversize = new Map<number, DrawBufferVersion>();
+  let previousOversize: ReadonlyMap<number, DrawBufferVersion> | undefined;
 
   function forgetBufferVersion(slot: number): void {
     const version = bufferVersions.get(slot);
@@ -617,11 +622,10 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
   function clearBufferVersions(): void {
     bufferVersions.clear();
     cachedBufferBytes = 0;
-    previousOversize.clear();
-    currentOversize.clear();
+    previousOversize = undefined;
   }
 
-  function drawBuffer(reader: Reader, fromBatch: boolean): DrawBufferVersion {
+  function drawBuffer(reader: Reader, fromBatch: boolean, geometry: DrawGeometry): DrawBufferVersion {
     const owner = reader.u32();
     const slot = reader.u32();
     const generation = reader.u32();
@@ -633,7 +637,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
       throw new Error('Invalid Rust draw buffer version.');
     }
     const oversize = length > maxCachedBufferBytes;
-    let version = bufferVersions.get(slot) ?? currentOversize.get(slot) ?? previousOversize.get(slot);
+    let version = bufferVersions.get(slot) ?? geometry.oversize?.get(slot) ?? previousOversize?.get(slot);
     if (version?.generation === generation && version.storage === storage && version.content === content) {
       if (version.data.byteLength !== length) throw new Error('Inconsistent Rust draw buffer length.');
     } else {
@@ -649,7 +653,6 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
         batch.stats.bufferBytes += length;
       }
       forgetBufferVersion(slot);
-      previousOversize.delete(slot);
       if (!oversize) {
         // Evict in insertion order so the common hit path performs no writes.
         while (bufferVersions.size >= maxCachedBufferVersions || cachedBufferBytes + length > maxCachedBufferBytes)
@@ -658,7 +661,7 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
         cachedBufferBytes += length;
       }
     }
-    if (oversize) currentOversize.set(slot, version);
+    if (oversize) (geometry.oversize ??= new Map()).set(slot, version);
     return version;
   }
   function readDrawRaster(reader: Reader, width: number, height: number): RasterState {
@@ -671,8 +674,32 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     state.polygonOffsetClamp = reader.f32();
     return state;
   }
+  function readDrawGeometry(reader: Reader, fromBatch: boolean): DrawGeometry {
+    const attributeCount = reader.u32();
+    const geometry: DrawGeometry = { attributes: [], indices: null };
+    for (let index = 0; index < attributeCount; index++) {
+      const location = reader.u32();
+      const shaderType = reader.u32();
+      const size = reader.u32();
+      const type = reader.u32();
+      const normalized = reader.u32();
+      if (!vertexComponentBytes(type) || normalized > 1) throw new Error('Invalid Rust vertex attribute format.');
+      const stride = reader.u32();
+      const offset = reader.u32();
+      const constant = [reader.f32(), reader.f32(), reader.f32(), reader.f32()];
+      const buffer = reader.u32() ? drawBuffer(reader, fromBatch, geometry) : null;
+      geometry.attributes.push({ location, shaderType, size, type, normalized: normalized === 1,
+        stride, offset, constant, data: buffer?.data ?? null, bufferVersion: buffer?.bufferVersion });
+    }
+    if (reader.u32()) {
+      const type = reader.u32();
+      const offset = reader.u32();
+      const { data, bufferVersion } = drawBuffer(reader, fromBatch, geometry);
+      geometry.indices = { type, offset, data, bufferVersion };
+    }
+    return geometry;
+  }
   function executeDraw(bytes: Uint8Array, previous?: BatchDrawReferences): void {
-    const fromBatch = previous !== undefined;
     const reader = new Reader(bytes);
     const magic = reader.u32();
     const tag = reader.u32();
@@ -684,57 +711,34 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     const drawTarget = readTarget(reader);
     const state = flags & rasterReference ? previous?.raster : readDrawRaster(reader, drawTarget.width, drawTarget.height);
     if (!state) throw new Error('Missing Rust batch raster reference.');
-    if (previous) previous.raster = state;
     const mode = reader.u32();
     if (!isDrawMode(mode)) throw new Error('Invalid Rust draw mode.');
     const vertexCount = reader.u32();
     const first = reader.u32();
     const count = reader.u32();
-    const attributeCount = reader.u32();
-    const vertexAttributes: DrawOperation['attributes'] = [];
-    for (let index = 0; index < attributeCount; index++) {
-      const location = reader.u32();
-      const shaderType = reader.u32();
-      const size = reader.u32();
-      const type = reader.u32();
-      const normalized = reader.u32();
-      if (!vertexComponentBytes(type) || normalized > 1) throw new Error('Invalid Rust vertex attribute format.');
-      const stride = reader.u32();
-      const offset = reader.u32();
-      const constant = [reader.f32(), reader.f32(), reader.f32(), reader.f32()];
-      const buffer = reader.u32() ? drawBuffer(reader, fromBatch) : null;
-      vertexAttributes.push({ location, shaderType, size, type, normalized: normalized === 1,
-        stride, offset, constant, data: buffer?.data ?? null, bufferVersion: buffer?.bufferVersion });
-    }
-    let indices: DrawOperation['indices'] = null;
-    if (reader.u32()) {
-      const type = reader.u32();
-      const offset = reader.u32();
-      const { data, bufferVersion } = drawBuffer(reader, fromBatch);
-      indices = { type, offset, data, bufferVersion };
-    }
+    const geometry = flags & geometryReference ? previous?.geometry : readDrawGeometry(reader, previous !== undefined);
+    if (!geometry) throw new Error('Missing Rust batch geometry reference.');
     const vertexUniforms = reader.bytes();
     const fragmentUniforms = reader.bytes();
     const textureCount = reader.u32();
     const textures: TextureBinding[] = [];
     for (let index = 0; index < textureCount; index++) textures.push(textureBinding(reader));
     reader.finish();
-    if (previousOversize.size || currentOversize.size) {
-      const scratch = previousOversize;
-      previousOversize = currentOversize;
-      currentOversize = scratch;
-      currentOversize.clear();
+    if (previous) {
+      previous.raster = state;
+      previous.geometry = geometry;
     }
+    previousOversize = geometry.oversize;
     services.host.draw({
       program,
       mode,
       target: drawTarget,
       state,
-      attributes: vertexAttributes,
+      attributes: geometry.attributes,
       vertexCount,
       first,
       count,
-      indices,
+      indices: geometry.indices,
       vertexUniforms,
       fragmentUniforms,
       textures,
@@ -876,7 +880,11 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
         abi.rf_delete_buffer(context, slot, generation);
         if (context === contextId) {
           if (bufferVersions.get(slot)?.generation === generation) forgetBufferVersion(slot);
-          if (previousOversize.get(slot)?.generation === generation) previousOversize.delete(slot);
+          if (previousOversize?.get(slot)?.generation === generation) {
+            const remaining = new Map(previousOversize);
+            remaining.delete(slot);
+            previousOversize = remaining.size ? remaining : undefined;
+          }
         }
       });
     },

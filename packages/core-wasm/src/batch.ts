@@ -1,5 +1,6 @@
 import type { DrawingSurface, RasterState, VertexArrayHandle } from '@refral/core-api';
 import { handle, lists, littleEndian, scalars } from './direct.js';
+import type { DrawGeometry } from './render.js';
 
 const capacity = 128 * 1024;
 const baseNumericCommands = new Map([
@@ -10,10 +11,12 @@ const frontFaceOpcode = 28;
 const extendedNumericCommands = new Map(baseNumericCommands).set('frontFace', [frontFaceOpcode, 1]);
 
 export const rasterReference = 1;
+export const geometryReference = 2;
 
 export interface BatchDrawReferences {
   supported: number;
   raster?: RasterState;
+  geometry?: DrawGeometry;
 }
 
 type Acknowledge = (accepted: boolean) => void;
@@ -38,7 +41,7 @@ export function createCommandBatch(exports: WebAssembly.Exports,
       typeof open !== 'function' || typeof run !== 'function' || typeof output !== 'function') return null;
 
   const compact = exports.rf_batch_run_compact;
-  const supported = typeof compact === 'function' ? rasterReference : 0;
+  const supported = typeof compact === 'function' ? rasterReference | geometryReference : 0;
   const runBatch = typeof compact === 'function'
     ? (length: number, width: number, height: number) => compact(length, width, height, supported)
     : run;
@@ -54,7 +57,7 @@ export function createCommandBatch(exports: WebAssembly.Exports,
   let width = surface.width;
   let height = surface.height;
   const pollResize = surface.bindResizeBarrier?.(replay);
-  const acknowledgments: Acknowledge[] = [];
+  let pendingAcknowledgments: Acknowledge[] | undefined;
   const stats: RustCommandBatchStats = {
     commands: 0, batches: 0, inputBytes: 0, outputBytes: 0, bufferCopies: 0, bufferBytes: 0,
   };
@@ -71,35 +74,33 @@ export function createCommandBatch(exports: WebAssembly.Exports,
     stats.batches++;
     stats.inputBytes += cursor;
     cursor = 0;
+    const acknowledgments = pendingAcknowledgments;
+    pendingAcknowledgments = undefined;
     let acknowledged = 0;
-    try {
-      if (length === 0xffff_ffff) throw new Error('Rust rejected a command batch.');
-      stats.outputBytes += length;
-      if (length) {
-        // Own one copy for the whole drain. Host-side consumers can use Wasm
-        // exports while resolving the Buffer versions in these records.
-        const reply = memory((output as () => number)(), length).slice();
-        const records = new DataView(reply.buffer);
-        const previous: BatchDrawReferences = { supported };
-        for (let offset = 0; offset < length;) {
-          const kind = records.getUint32(offset, true);
-          const size = records.getUint32(offset + 4, true);
-          offset += 8;
-          if (size > length - offset) throw new Error('Invalid Rust batch record length.');
-          if (kind === 5) {
-            const callback = acknowledgments[acknowledged++];
-            if (!callback || size !== 4) throw new Error('Invalid Rust VAO acknowledgment.');
-            callback(records.getUint32(offset, true) === 1);
-          } else {
-            apply(kind, reply.subarray(offset, offset + size), previous);
-          }
-          offset += size;
+    if (length === 0xffff_ffff) throw new Error('Rust rejected a command batch.');
+    stats.outputBytes += length;
+    if (length) {
+      // Own one copy for the whole drain. Host-side consumers can use Wasm
+      // exports while resolving the Buffer versions in these records.
+      const reply = memory((output as () => number)(), length).slice();
+      const records = new DataView(reply.buffer);
+      const previous: BatchDrawReferences = { supported };
+      for (let offset = 0; offset < length;) {
+        const kind = records.getUint32(offset, true);
+        const size = records.getUint32(offset + 4, true);
+        offset += 8;
+        if (size > length - offset) throw new Error('Invalid Rust batch record length.');
+        if (kind === 5) {
+          const callback = acknowledgments?.[acknowledged++];
+          if (!callback || size !== 4) throw new Error('Invalid Rust VAO acknowledgment.');
+          callback(records.getUint32(offset, true) === 1);
+        } else {
+          apply(kind, reply.subarray(offset, offset + size), previous);
         }
+        offset += size;
       }
-      if (acknowledged !== acknowledgments.length) throw new Error('Missing Rust VAO acknowledgment.');
-    } finally {
-      acknowledgments.length = 0;
     }
+    if (acknowledged !== (acknowledgments?.length ?? 0)) throw new Error('Missing Rust VAO acknowledgment.');
   }
 
   function begin(length: number, opcode: number): number {
@@ -136,7 +137,7 @@ export function createCommandBatch(exports: WebAssembly.Exports,
     drain,
     discard() {
       cursor = 0;
-      acknowledgments.length = 0;
+      pendingAcknowledgments = undefined;
     },
     surface(nextWidth: number, nextHeight: number) {
       pollResize?.();
@@ -150,7 +151,7 @@ export function createCommandBatch(exports: WebAssembly.Exports,
       const object = handle(value, 'vertex-array');
       if (!object) return false;
       writeHandle(begin(16, 19), object);
-      acknowledgments.push(acknowledgment);
+      (pendingAcknowledgments ??= []).push(acknowledgment);
       return true;
     },
     enqueue(operation: string, args: unknown[]): boolean {

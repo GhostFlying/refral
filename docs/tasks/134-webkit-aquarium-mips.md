@@ -36,3 +36,7 @@ mkdir -p "$d/recheck-webkit" "$d/recheck-chrome"
 python3 artifacts/geometry-performance/lock.py "$d/probe" http://127.0.0.1:4536/index.html "$d/recheck-webkit"
 python3 artifacts/geometry-performance/lock.py node "$d/chrome.mjs" http://127.0.0.1:4536/index.html "$d/recheck-chrome"
 ```
+
+## Follow-up status
+
+Deferred by agreement. Keep the task 131 screenshot threshold and its Aquarium failures visible. Task 133 isolated the dominant inner-tank normal-map difference. The two native engines on this Mini generated identical mip RGB values for that texture. Revisit the shared host filter if closer device-specific matching becomes a product requirement. Performance comparisons continue with the image result reported alongside the workload.

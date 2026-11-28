@@ -78,6 +78,8 @@ The full drawing adapter additionally requires rf_readback_protocol_version() eq
 
 A read-pixels reply contains the existing target encoding, sourceX/sourceY/copyWidth/copyHeight as four u32 values, then destinationOffset/destinationStride/requiredBytes as three u64 values bounded by JavaScript's safe-integer range. The selected Rust core validates state and computes the plan. The common facade performs the completed host capture and destination copy. Actual-Wasm tests exercise clipping, packing, target versions, errors, stale modules, loss and independent result ownership.
 
+## Compact batch replies
+
 The optional `rf_batch_run_compact(length, width, height, supported)` entry point has the same input and record framing as `rf_batch_run`. The adapter passes the draw-reference bits it can decode (`3`); the producer only emits agreed bits and ignores unknown requests. Both the legacy entry point and individual commands always emit complete version-8 draw records. In compact replies the low byte of the version word is 8 and the upper bits mark omitted groups:
 
 - Flag bit 0 references the preceding draw's raster group, including polygon offset.

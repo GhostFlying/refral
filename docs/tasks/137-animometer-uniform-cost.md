@@ -1,0 +1,5 @@
+# 137 Animometer uniform and draw CPU costs
+
+Measure fixed per-draw cost and the marginal cost of active scalar uniform writes on the task 136 Mini baseline. Own the opt-in external benchmark variants, page audit and the measured hot path selected after attribution. Keep the upstream sources pinned and unmodified. Reuse the WebGL subset contract, ordered draw semantics and actual Rust module.
+
+Use the original shader, buffer and 20,000 triangle draw calls. Initialize all six locations each frame. Sweep 0, 1, 3 and 6 varying uniform1f writes inside the loop. Keep images comparable across the sweep and audit actual call counts. Include a clear/setup-only reference for frame overhead and the unmodified upstream workload for external validity. Measure native, JS and Rust headless on the hardware adapter under the shared GPU lock, one worker, three rounds, 30 warmup and 120 timed frames. Compare p50/p95, fixed cost and marginal costs. Optimize the largest measured excess and repeat affected measurements. Check retained pixels and GL errors, pnpm check, ci:check, actual Wasm when applicable and Chrome regression tests.

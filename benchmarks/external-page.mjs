@@ -1,4 +1,4 @@
-export async function installExternalPage({ backend, unity }) {
+export async function installExternalPage({ backend, unity, auditUniforms }) {
   const api = await import('/packages/webgl/src/index.ts');
   const factory = backend === 'native' ? null : await api.prepareContextFactory({ core: backend });
   const acquire = HTMLCanvasElement.prototype.getContext;
@@ -77,6 +77,14 @@ export async function installExternalPage({ backend, unity }) {
       await hooks?.device.queue.onSubmittedWorkDone();
       const after = { ...hooks?.stats };
       // Audit the next deterministic frame after stopping both clocks.
+      let uniformCalls = 0;
+      if (auditUniforms) {
+        const original = gl.uniform1f;
+        gl.uniform1f = function(...args) {
+          uniformCalls++;
+          return original.apply(this, args);
+        };
+      }
       let auditDraws = 0;
       for (const name of ['drawArrays', 'drawElements']) {
         const original = gl[name];
@@ -95,7 +103,7 @@ export async function installExternalPage({ backend, unity }) {
       const timerStart = performance.now();
       let now;
       do { now = performance.now(); } while (now === timerStart);
-      return { cpu, intervals, auditDraws, timerStep: now - timerStart,
+      return { cpu, intervals, auditDraws, ...(auditUniforms ? { auditUniforms: uniformCalls } : {}), timerStep: now - timerStart,
         before, after, core: hooks?.core ?? 'native',
         adapter: hooks?.environment.adapter ?? gl.getParameter(debug?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER),
         attributes: gl.getContextAttributes(), width: gl.drawingBufferWidth, height: gl.drawingBufferHeight,

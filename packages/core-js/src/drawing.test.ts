@@ -156,7 +156,8 @@ describe("JS DrawingCore logical boundary", () => {
     core.bufferSubData(GL.ARRAY_BUFFER, 0, new Uint8Array(new Float32Array([0, 0]).buffer));
     core.invoke("uniform4f", [location, 0, 1, 0, 1]);
     core.invoke("drawArrays", [GL.TRIANGLES, 0, 3]);
-    expect(Array.from(new Float32Array(earlier.vertexUniforms.buffer))).toEqual([1, 0, 0, 1]);
+    const bytes = earlier.vertexUniforms;
+    expect(Array.from(new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4))).toEqual([1, 0, 0, 1]);
     expect(Array.from(new Float32Array(earlier.attributes[0]!.data!.buffer))).toEqual([-1, -1, 1, -1, 0, 1]);
     expect(core.invoke("getUniform", [program, location])).toEqual(new Float32Array([0, 1, 0, 1]));
     expect(core.getError()).toBe(GL.NO_ERROR);

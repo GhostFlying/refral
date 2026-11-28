@@ -82,8 +82,8 @@ describe("JS typed uniform semantics", () => {
     core.uniformMatrix3fv(location, false, values);
     expect(core.getError()).toBe(GL.NO_ERROR);
     core.drawArrays(GL.TRIANGLES, 0, 3);
-    const draw = host.draw.mock.calls[0]![0];
-    const packed = new Float32Array(draw.vertexUniforms.buffer);
+    const bytes = host.draw.mock.calls[0]![0].vertexUniforms;
+    const packed = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
     expect(Array.from(packed.slice(16, 28))).toEqual([1, 2, 3, 0, 4, 5, 6, 0, 7, 8, 9, 0]);
     expect(Array.from(packed.slice(28, 40))).toEqual([10, 11, 12, 0, 13, 14, 15, 0, 16, 17, 18, 0]);
     const second = core.getUniformLocation(program, "u_matrix[1]")!;
@@ -100,7 +100,8 @@ describe("JS typed uniform semantics", () => {
     core.uniform4iv(location, values);
     expect(core.getUniform(program, location)).toEqual(values);
     core.drawArrays(GL.TRIANGLES, 0, 3);
-    const packed = new Int32Array(host.draw.mock.calls[0]![0].vertexUniforms.buffer);
+    const bytes = host.draw.mock.calls[0]![0].vertexUniforms;
+    const packed = new Int32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
     expect(packed.slice(40, 44)).toEqual(values);
     expect(core.getError()).toBe(GL.NO_ERROR);
   });
@@ -111,7 +112,9 @@ describe("JS typed uniform semantics", () => {
     core.uniform4fv(location, new Float32Array([0, -0, NaN, Infinity]));
     expect(core.getUniform(program, location)).toEqual([false, false, true, true]);
     core.drawArrays(GL.TRIANGLES, 0, 3);
-    expect(new Int32Array(host.draw.mock.calls[0]![0].vertexUniforms.buffer).slice(44, 48)).toEqual(new Int32Array([0, 0, 1, 1]));
+    const bytes = host.draw.mock.calls[0]![0].vertexUniforms;
+    const packed = new Int32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+    expect(packed.slice(44, 48)).toEqual(new Int32Array([0, 0, 1, 1]));
     core.uniform4iv(location, new Int32Array([0, -1, 1, 2]));
     expect(core.getUniform(program, location)).toEqual([false, true, true, true]);
     expect(core.getError()).toBe(GL.NO_ERROR);

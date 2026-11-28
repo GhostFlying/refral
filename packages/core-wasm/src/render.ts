@@ -1,6 +1,6 @@
 import { createRasterState, GL, isDrawMode, vertexComponentBytes } from '@refral/core-api';
 import { createDirectCommands, noDirectCommand } from './direct.js';
-import { createCommandBatch, geometryReference, rasterReference, type BatchDrawReferences } from './batch.js';
+import { createCommandBatch, geometryReference, rasterReference, textureReference, type BatchDrawReferences } from './batch.js';
 import type {
   BufferHandle,
   BufferSnapshot,
@@ -543,6 +543,12 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     reader.finish();
     if (count) schedule();
   }
+  function readTextures(reader: Reader): TextureBinding[] {
+    const textureCount = reader.u32();
+    const textures: TextureBinding[] = [];
+    for (let index = 0; index < textureCount; index++) textures.push(textureBinding(reader));
+    return textures;
+  }
   function textureBinding(reader: Reader): TextureBinding {
     const kind = reader.u32();
     const levels = reader.u32();
@@ -720,13 +726,13 @@ function drawingCoreFromExports(exports: WebAssembly.Exports, options: DrawingCo
     if (!geometry) throw new Error('Missing Rust batch geometry reference.');
     const vertexUniforms = reader.bytes();
     const fragmentUniforms = reader.bytes();
-    const textureCount = reader.u32();
-    const textures: TextureBinding[] = [];
-    for (let index = 0; index < textureCount; index++) textures.push(textureBinding(reader));
+    const textures = flags & textureReference ? previous?.textures : readTextures(reader);
+    if (!textures) throw new Error('Missing Rust batch texture reference.');
     reader.finish();
     if (previous) {
       previous.raster = state;
       previous.geometry = geometry;
+      previous.textures = textures.length ? textures : undefined;
     }
     previousOversize = geometry.oversize;
     services.host.draw({

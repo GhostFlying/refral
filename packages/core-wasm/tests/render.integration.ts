@@ -350,7 +350,7 @@ describe('actual Rust drawing Wasm', () => {
         expect(core.getError()).toBe(GL.NO_ERROR);
         const reused = geometry && expectGeometryReferences;
         const flags = (reused ? 0x200 : 0) | (raster ? 0x100 : 0);
-        expect(batches.map(batch => batch.supported)).toEqual([supported ?? 3, supported ?? 3]);
+        expect(batches.map(batch => batch.supported)).toEqual([supported ?? 7, supported ?? 7]);
         expect(batches.map(batch => batch.tags)).toEqual([[8, 8 | flags], [8]]);
         expect(draws.map(draw => [draw.first, draw.count])).toEqual([[0, 3], [1, 2], [0, 3]]);
         expect([...new Float32Array(draws[0].fragmentUniforms.slice().buffer)]).toEqual([1, 0, 0, 1]);
@@ -992,6 +992,68 @@ describe('owned texture resource protocol', () => {
     });
     return scene(state.core);
   }
+  for (const supported of [3, 7]) {
+    it(`isolates sampled bindings across unit switches and nested drains (mask ${supported})`, () => {
+      const { state, batches } = observeBatchDraws(() => setup(), { supported });
+      const { core, host, draws } = state;
+      try {
+        const { program } = sampled(state);
+        const location = core.invoke('getUniformLocation', [program, 'u_texture']);
+        for (const unit of [0, 1]) {
+          core.invoke('activeTexture', [GL.TEXTURE0 + unit]);
+          texture(core);
+          define(core, 1, 1, GL.RGBA, upload(new Uint8Array([unit, 0, 0, 255])));
+        }
+        const draw = () => core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+        const record = vi.mocked(host.draw).getMockImplementation()!;
+        vi.mocked(host.draw).mockImplementationOnce(operation => {
+          record(operation);
+          core.invoke('uniform1i', [location, 1]);
+          draw();
+          draw();
+          core.drainPendingCommands!();
+        });
+        draw();
+        draw();
+        core.drainPendingCommands!();
+        core.invoke('uniform1i', [location, 0]);
+        draw();
+        core.invoke('uniform1i', [location, 1]);
+        draw();
+        draw();
+        core.drainPendingCommands!();
+        expect(draws.map(draw => draw.textures[0].storage!.data![0])).toEqual([0, 1, 1, 0, 0, 1, 1]);
+        const hit = supported === 7 && process.env.REFRAL_WASM_TEST_LEGACY_TEXTURES !== '1'
+          && WebAssembly.Module.exports(module).some(entry => entry.name === 'rf_batch_run_compact');
+        expect(batches.map(batch => batch.tags.map(tag => Boolean(tag & 0x400))))
+          .toEqual([[false, hit], [false, hit], [false, false, hit]]);
+        expect(core.getError()).toBe(GL.NO_ERROR);
+      } finally { core.dispose(); }
+    });
+  }
+
+  it('preserves sampler changes for two incomplete textures in the same drain', () => {
+    const { state, batches } = observeBatchDraws(() => setup());
+    const { core, draws } = state;
+    try {
+      const { program } = sampled(state);
+      const location = core.invoke('getUniformLocation', [program, 'u_texture']);
+      for (const unit of [0, 1]) {
+        core.invoke('activeTexture', [GL.TEXTURE0 + unit]);
+        texture(core);
+        core.invoke('texParameteri', [GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, unit ? GL.LINEAR : GL.NEAREST]);
+      }
+      for (const unit of [0, 1, 0]) {
+        core.invoke('uniform1i', [location, unit]);
+        core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      }
+      core.drainPendingCommands!();
+      expect(batches.at(-1)!.tags.map(tag => tag & 0x400)).toEqual([0, 0, 0]);
+      expect(draws.map(draw => draw.textures[0].parameters.magFilter)).toEqual([GL.NEAREST, GL.LINEAR, GL.NEAREST]);
+      expect(draws.every(draw => draw.textures[0].storage === null)).toBe(true);
+    } finally { core.dispose(); }
+  });
+
   it('copies five formats, null definitions, view offsets, alignment, flip and premultiply', () => {
     const state = setup();
     const { core } = state;

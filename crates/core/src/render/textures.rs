@@ -104,6 +104,7 @@ impl Default for TextureParameters {
         }
     }
 }
+#[derive(PartialEq, Eq)]
 pub struct TextureBinding {
     pub images: TextureImages,
     pub parameters: TextureParameters,

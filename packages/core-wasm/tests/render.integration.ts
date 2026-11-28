@@ -23,6 +23,7 @@ import { createRustDrawingCoreFromModule, prepareRustDrawingCores } from '../src
 import { checkHintAndLineWidth, checkOffsetAndSampleState } from '../../../tests/core/raster-queries';
 import { checkMatrixColumnDraws, checkPrimitiveDraws } from '../../../tests/core/primitive-draw-contract';
 import { runBufferCoreContract } from '../../../tests/core/buffer-contract';
+import { observeBatchDraws } from './batch-replies';
 
 let module: WebAssembly.Module;
 beforeAll(async () => {
@@ -253,6 +254,81 @@ function scene(core: DrawingCore) {
   return { vertex, fragment, program, location, buffer };
 }
 describe('actual Rust drawing Wasm', () => {
+  it.each([false, true])('retains exact raster snapshots through batch changes and drains (legacy=%s)', (legacy) => {
+    const { state: { core, draws }, batches } = observeBatchDraws(() => setup(), { legacy });
+    try {
+      scene(core);
+      const draw = () => core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      draw();
+      draw();
+      core.invoke('viewport', [2, 1, 8, 9]);
+      draw();
+      core.invoke('enable', [GL.DEPTH_TEST]);
+      draw();
+      core.invoke('enable', [GL.BLEND]);
+      draw();
+      core.invoke('clear', [GL.COLOR_BUFFER_BIT]);
+      draw();
+      core.getError();
+      draw();
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      expect(draws.map(d => [d.state.viewport, d.state.depthTest, d.state.blend])).toEqual([
+        [[0, 0, 16, 16], false, false], [[0, 0, 16, 16], false, false],
+        [[2, 1, 8, 9], false, false], [[2, 1, 8, 9], true, false],
+        [[2, 1, 8, 9], true, true], [[2, 1, 8, 9], true, true], [[2, 1, 8, 9], true, true],
+      ]);
+      const exports = WebAssembly.Module.exports(module).map(entry => entry.name);
+      if (exports.includes('rf_batch_run')) {
+        const compact = !legacy && exports.includes('rf_batch_run_compact');
+        expect(batches.map(b => b.compact)).toEqual([compact, compact]);
+        if (compact) {
+          expect(batches.map(b => b.tags.map(tag => Boolean(tag & 0x100)))).toEqual([
+            [false, true, false, false, false, true], [false],
+          ]);
+        } else {
+          expect(batches.map(b => b.tags)).toEqual([[8, 8, 8, 8, 8, 8], [8]]);
+        }
+      }
+    } finally { core.dispose(); }
+  });
+
+  it('resolves the rest of a draw batch after a host callback drains the same core', ({ skip }) => {
+    if (!WebAssembly.Module.exports(module).some(entry => entry.name === 'rf_batch_run')) skip();
+    const { core, host, draws } = setup();
+    try {
+      scene(core);
+      const draw = () => core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      const record = vi.mocked(host.draw).getMockImplementation()!;
+      vi.mocked(host.draw).mockImplementationOnce(op => {
+        record(op);
+        core.invoke('viewport', [1, 2, 7, 8]);
+        draw();
+        core.getError();
+      });
+      draw();
+      draw();
+      expect(core.getError()).toBe(GL.NO_ERROR);
+      expect(draws.map(d => d.state.viewport)).toEqual([[0, 0, 16, 16], [1, 2, 7, 8], [0, 0, 16, 16]]);
+    } finally { core.dispose(); }
+  });
+
+  it('rejects a raster reference before the first draw of a fresh batch', ({ skip }) => {
+    if (!WebAssembly.Module.exports(module).some(entry => entry.name === 'rf_batch_run_compact')) skip();
+    let corrupt = false;
+    const { state: { core, draws } } = observeBatchDraws(() => setup(), {
+      editTag: tag => corrupt ? tag | 0x100 : tag,
+    });
+    try {
+      scene(core);
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      core.getError();
+      corrupt = true;
+      core.invoke('drawArrays', [GL.TRIANGLES, 0, 3]);
+      expect(() => core.getError()).toThrow(/raster|reference/i);
+      expect(draws).toHaveLength(1);
+    } finally { core.dispose(); }
+  });
+
   it('preserves winding and GL errors across queued draws on each supported transport', () => {
     const { core, draws } = setup();
     const batchedWinding = WebAssembly.Module.exports(module).some(entry => entry.name === 'rf_batch_numeric_opcode_max');

@@ -641,7 +641,7 @@ fn reply(value: Reply, output: &mut Vec<u8>) -> Value {
             json!({"type":"clear"})
         }
         Reply::Draw(snapshot) => {
-            encode_draw(output, snapshot);
+            encode_draw(output, snapshot, &mut DrawReferences::default());
             json!({"type":"draw"})
         }
     }
@@ -657,9 +657,46 @@ fn encode_clear(output: &mut Vec<u8>, snapshot: refral_core::ClearSnapshot) {
     f32_value(output, snapshot.depth);
 }
 
-fn encode_draw(output: &mut Vec<u8>, snapshot: refral_core::DrawSnapshot) {
+const RASTER_REFERENCE: u32 = 1;
+
+// References are local to a single batch reply and are disabled for direct draws.
+#[derive(Default)]
+struct DrawReferences {
+    enabled: u32,
+    raster: Option<refral_core::RasterState>,
+}
+
+fn same_raster(a: &refral_core::RasterState, b: &refral_core::RasterState) -> bool {
+    // PartialEq covers all fields, but signed zero must also survive the wire.
+    a == b
+        && a.depth_range.map(f32::to_bits) == b.depth_range.map(f32::to_bits)
+        && a.blend_color.map(f32::to_bits) == b.blend_color.map(f32::to_bits)
+        && a.polygon_offset_factor.to_bits() == b.polygon_offset_factor.to_bits()
+        && a.polygon_offset_units.to_bits() == b.polygon_offset_units.to_bits()
+        && a.polygon_offset_clamp.to_bits() == b.polygon_offset_clamp.to_bits()
+}
+
+fn draw_raster(output: &mut Vec<u8>, state: refral_core::RasterState) {
+    raster(output, state);
+    let raster_flags = u32::from(state.polygon_offset_fill) | (u32::from(state.depth_clamp) << 1);
+    u32_value(output, raster_flags);
+    f32_value(output, state.polygon_offset_factor);
+    f32_value(output, state.polygon_offset_units);
+    f32_value(output, state.polygon_offset_clamp);
+}
+
+fn encode_draw(
+    output: &mut Vec<u8>,
+    snapshot: refral_core::DrawSnapshot,
+    previous: &mut DrawReferences,
+) {
+    let reuse_raster = previous
+        .raster
+        .as_ref()
+        .is_some_and(|state| same_raster(state, &snapshot.state));
+    let flags = u32::from(reuse_raster) * RASTER_REFERENCE;
     u32_value(output, 0x38444652);
-    u32_value(output, 8);
+    u32_value(output, 8 | (flags << 8));
     u32_value(output, snapshot.artifact_id);
     for value in [
         snapshot.program.context_id,
@@ -670,13 +707,12 @@ fn encode_draw(output: &mut Vec<u8>, snapshot: refral_core::DrawSnapshot) {
     }
     output.extend_from_slice(&snapshot.link_generation.to_le_bytes());
     crate::resources::target(output, snapshot.target);
-    raster(output, snapshot.state);
-    let raster_flags = u32::from(snapshot.state.polygon_offset_fill)
-        | (u32::from(snapshot.state.depth_clamp) << 1);
-    u32_value(output, raster_flags);
-    f32_value(output, snapshot.state.polygon_offset_factor);
-    f32_value(output, snapshot.state.polygon_offset_units);
-    f32_value(output, snapshot.state.polygon_offset_clamp);
+    if !reuse_raster {
+        draw_raster(output, snapshot.state);
+        if previous.enabled & RASTER_REFERENCE != 0 {
+            previous.raster = Some(snapshot.state);
+        }
+    }
     for value in [
         snapshot.mode,
         snapshot.vertex_count,

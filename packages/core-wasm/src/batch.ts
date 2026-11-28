@@ -1,4 +1,4 @@
-import type { DrawingSurface, VertexArrayHandle } from '@refral/core-api';
+import type { DrawingSurface, RasterState, VertexArrayHandle } from '@refral/core-api';
 import { handle, lists, littleEndian, scalars } from './direct.js';
 
 const capacity = 128 * 1024;
@@ -8,6 +8,13 @@ const baseNumericCommands = new Map([
 ]);
 const frontFaceOpcode = 28;
 const extendedNumericCommands = new Map(baseNumericCommands).set('frontFace', [frontFaceOpcode, 1]);
+
+export const rasterReference = 1;
+
+export interface BatchDrawReferences {
+  supported: number;
+  raster?: RasterState;
+}
 
 type Acknowledge = (accepted: boolean) => void;
 
@@ -22,13 +29,19 @@ export interface RustCommandBatchStats {
 
 export function createCommandBatch(exports: WebAssembly.Exports,
   memory: (pointer: number, length: number) => Uint8Array,
-  apply: (kind: number, bytes: Uint8Array) => void, surface: DrawingSurface) {
+  apply: (kind: number, bytes: Uint8Array, previous: BatchDrawReferences) => void, surface: DrawingSurface) {
   const version = exports.rf_batch_protocol_version;
   const open = exports.rf_batch_input_pointer;
   const run = exports.rf_batch_run;
   const output = exports.rf_batch_output_pointer;
   if (!littleEndian || typeof version !== 'function' || version() !== 1 ||
       typeof open !== 'function' || typeof run !== 'function' || typeof output !== 'function') return null;
+
+  const compact = exports.rf_batch_run_compact;
+  const supported = typeof compact === 'function' ? rasterReference : 0;
+  const runBatch = typeof compact === 'function'
+    ? (length: number, width: number, height: number) => compact(length, width, height, supported)
+    : run;
 
   const numericMax = exports.rf_batch_numeric_opcode_max;
   const numericCommands = typeof numericMax === 'function' && numericMax() >= frontFaceOpcode
@@ -54,7 +67,7 @@ export function createCommandBatch(exports: WebAssembly.Exports,
 
   function replay(): void {
     if (!cursor) return;
-    const length = (run as (length: number, width: number, height: number) => number)(cursor, width, height) >>> 0;
+    const length = (runBatch as (length: number, width: number, height: number) => number)(cursor, width, height) >>> 0;
     stats.batches++;
     stats.inputBytes += cursor;
     cursor = 0;
@@ -67,6 +80,7 @@ export function createCommandBatch(exports: WebAssembly.Exports,
         // exports while resolving the Buffer versions in these records.
         const reply = memory((output as () => number)(), length).slice();
         const records = new DataView(reply.buffer);
+        const previous: BatchDrawReferences = { supported };
         for (let offset = 0; offset < length;) {
           const kind = records.getUint32(offset, true);
           const size = records.getUint32(offset + 4, true);
@@ -77,7 +91,7 @@ export function createCommandBatch(exports: WebAssembly.Exports,
             if (!callback || size !== 4) throw new Error('Invalid Rust VAO acknowledgment.');
             callback(records.getUint32(offset, true) === 1);
           } else {
-            apply(kind, reply.subarray(offset, offset + size));
+            apply(kind, reply.subarray(offset, offset + size), previous);
           }
           offset += size;
         }

@@ -53,12 +53,6 @@ export function textureImageKey(version: TextureVersion): string {
   return `${resourceHandleKey(version.texture)}/${version.imageTarget ?? GL.TEXTURE_2D}/${version.level ?? 0}`;
 }
 
-function sameVersion(first: TextureVersion, second: TextureVersion): boolean {
-  return textureImageKey(first) === textureImageKey(second)
-    && first.storageGeneration === second.storageGeneration
-    && first.contentVersion === second.contentVersion;
-}
-
 interface TextureRecord { version: TextureVersion; storage: TextureStorage }
 interface DepthRecord { id: number; generations: Set<number> }
 let nextDepthId = 1;
@@ -76,14 +70,13 @@ export class ExecutionResources implements ResourceRegistry {
     }
   }
 
-  private handle(handle: TextureHandle | RenderbufferHandle): string {
+  private validateHandle(handle: TextureHandle | RenderbufferHandle): void {
     if (this.disposed) throw new Error('Execution resources are disposed.');
     if (handle.contextId !== this.contextId || !Number.isInteger(handle.slot) || handle.slot <= 0
       || handle.slot > 0xffff_ffff || !Number.isInteger(handle.generation)
       || handle.generation <= 0 || handle.generation > 0xffff_ffff) {
       throw new Error('Execution resource refers to an invalid or foreign handle.');
     }
-    return resourceHandleKey(handle);
   }
 
   private version(version: TextureVersion): string {
@@ -96,13 +89,15 @@ export class ExecutionResources implements ResourceRegistry {
       || !Number.isInteger(level) || level < 0 || level > 0x7fff_ffff) {
       throw new Error('Invalid texture image subresource.');
     }
-    this.handle(version.texture);
+    this.validateHandle(version.texture);
     return textureImageKey(version);
   }
 
   private current(version: TextureVersion): TextureRecord {
     const record = this.textures.get(this.version(version));
-    if (!record || !sameVersion(record.version, version)) {
+    // The map key already identifies the context, object generation, face and level.
+    if (!record || record.version.storageGeneration !== version.storageGeneration
+      || record.version.contentVersion !== version.contentVersion) {
       throw new Error('Texture execution operation refers to a stale version.');
     }
     return record;
@@ -118,7 +113,8 @@ export class ExecutionResources implements ResourceRegistry {
 
   apply(operation: ResourceOperation): void {
     if (operation.kind === 'retire-renderbuffer') {
-      const key = this.handle(operation.renderbuffer);
+      this.validateHandle(operation.renderbuffer);
+      const key = resourceHandleKey(operation.renderbuffer);
       const record = this.depths.get(key);
       if (record?.generations.delete(operation.storageGeneration)) {
         this.host.retireDepth(record.id, operation.storageGeneration);
@@ -232,7 +228,8 @@ export class ExecutionResources implements ResourceRegistry {
   texture(version: TextureVersion): TextureStorage { return this.current(version).storage; }
 
   depth(handle: RenderbufferHandle, storageGeneration: number): { readonly id: number } {
-    const key = this.handle(handle);
+    this.validateHandle(handle);
+    const key = resourceHandleKey(handle);
     if (handle.kind !== 'renderbuffer' || !Number.isSafeInteger(storageGeneration) || storageGeneration <= 0) {
       throw new Error('Invalid depth storage identity.');
     }
@@ -248,7 +245,8 @@ export class ExecutionResources implements ResourceRegistry {
 
   colorRenderbuffer(handle: RenderbufferHandle, storageGeneration: number,
     width: number, height: number, format: number): TextureStorage {
-    const key = this.handle(handle);
+    this.validateHandle(handle);
+    const key = resourceHandleKey(handle);
     if (handle.kind !== 'renderbuffer' || !Number.isSafeInteger(storageGeneration) || storageGeneration <= 0
       || !Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0
       || !isColorRenderbufferFormat(format)) throw new Error('Invalid color renderbuffer storage.');

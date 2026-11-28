@@ -34,3 +34,7 @@ The scene code in `benchmarks/three-large.ts` adapts the separate-mesh path from
 ## External WebGL1 benchmarks
 
 The acquisition script pins Git revisions and retains the upstream files under ignored `artifacts/external-benchmarks/sources/`. The Refral runner supplies the context selection, clock and measurement code. The WebGL Samples repository specifies BSD-3-Clause with per-file exceptions. The Animometer extraction identifies its WebKit provenance in its README. Mozilla's AreWeFastYet license explicitly distinguishes the bundled third-party benchmarks from its MPL-2.0 harness. Unity player binaries and assets are fetched from that pinned upstream checkout. [WebGL Samples](https://github.com/WebGLSamples/WebGLSamples.github.io) · [Animometer extraction](https://github.com/kenrussell/webgl-animometer) · [Mozilla AreWeFastYet](https://github.com/mozilla/arewefastyet)
+
+## Native Animometer comparison
+
+The optional Mini benchmark links the local Chromium component build of ANGLE and Dawn. Their source checkouts retain their licenses and third-party notices. The benchmark uses Node 24.14.0 headers and obtains the matching V8 Fast API header from the Node distribution source under its original V8 license. The native build script pins and verifies its SHA-256 and the Chromium, ANGLE and Dawn revisions. The benchmark's isolated Cargo lock records the serde_json graph. [Build and revisions](benchmarks/native-dawn/build.sh)
